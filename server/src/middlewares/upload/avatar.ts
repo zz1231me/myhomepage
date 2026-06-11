@@ -138,8 +138,10 @@ export async function processAvatar(buffer: Buffer, userId: string): Promise<str
 
     return relativePath;
   } catch (error) {
+    // fileFilter(MIME/확장자)를 이미 통과한 파일이 sharp 처리에서 실패하면 손상/비정상 이미지로
+    // 보고 400(클라이언트 오류)로 반환한다. (sharp 0.35는 비정상 PNG에 더 엄격)
     logError('아바타 이미지 처리 실패', error);
-    throw new Error('이미지 처리 중 오류가 발생했습니다.');
+    throw new AppError(400, '이미지 처리에 실패했습니다. 올바른 이미지 파일인지 확인해주세요.');
   }
 }
 
