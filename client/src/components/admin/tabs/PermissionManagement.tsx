@@ -7,6 +7,7 @@ import { LoadingSpinner } from '../common/LoadingSpinner';
 import { AdminSection } from '../common/AdminSection';
 import { PermissionGraph } from '../PermissionGraph';
 import { fetchWikiPermissions, updateWikiPermissions } from '../../../api/admin';
+import { toast } from '../../../utils/toast';
 
 export const PermissionManagement = () => {
   const {
@@ -35,15 +36,23 @@ export const PermissionManagement = () => {
   }, []);
 
   const toggleWikiRole = async (roleId: string) => {
+    // 동시 저장 차단 — rapid click 시 stale state로 인한 race 방지
+    if (wikiSaving) return;
     const next = wikiRoles.includes(roleId)
       ? wikiRoles.filter(r => r !== roleId)
       : [...wikiRoles, roleId];
     setWikiSaving(true);
+    // optimistic UI — 클릭 즉시 체크박스 토글
+    const previous = wikiRoles;
+    setWikiRoles(next);
     try {
       const data = await updateWikiPermissions(next);
       setWikiRoles(data.roles ?? next);
-    } catch {
-      // revert on error
+    } catch (err) {
+      // 실패 시 이전 상태로 롤백 + 사용자에게 알림 (silent failure 방지)
+      setWikiRoles(previous);
+      if (import.meta.env.DEV) console.error('위키 권한 저장 실패', err);
+      toast.error('위키 권한 저장에 실패했습니다.');
     } finally {
       setWikiSaving(false);
     }

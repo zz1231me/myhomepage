@@ -26,11 +26,23 @@ export class ErrorLogService extends BaseService {
     const where: any = {};
     if (filters.severity) where.severity = filters.severity;
     if (filters.userId) where.userId = filters.userId;
-    if (filters.route) where.route = { [Op.like]: `%${filters.route}%` };
+    if (filters.route) {
+      // LIKE 와일드카드 문자 이스케이프 (%, _, \)
+      const escapedRoute = filters.route.replace(/[%_\\]/g, '\\$&');
+      where.route = { [Op.like]: `%${escapedRoute}%` };
+    }
     if (filters.dateFrom || filters.dateTo) {
       where.createdAt = {};
-      if (filters.dateFrom) where.createdAt[Op.gte] = new Date(filters.dateFrom);
-      if (filters.dateTo) where.createdAt[Op.lte] = new Date(filters.dateTo);
+      if (filters.dateFrom) {
+        const d = new Date(filters.dateFrom);
+        if (isNaN(d.getTime())) throw new AppError(400, 'dateFrom이 유효한 날짜 형식이 아닙니다.');
+        where.createdAt[Op.gte] = d;
+      }
+      if (filters.dateTo) {
+        const d = new Date(filters.dateTo);
+        if (isNaN(d.getTime())) throw new AppError(400, 'dateTo가 유효한 날짜 형식이 아닙니다.');
+        where.createdAt[Op.lte] = d;
+      }
     }
 
     const offset = (page - 1) * limit;
@@ -75,7 +87,11 @@ export class ErrorLogService extends BaseService {
     if (options.ids && options.ids.length > 0) {
       where.id = { [Op.in]: options.ids };
     } else {
-      if (options.before) where.createdAt = { [Op.lt]: new Date(options.before) };
+      if (options.before) {
+        const d = new Date(options.before);
+        if (isNaN(d.getTime())) throw new AppError(400, 'before가 유효한 날짜 형식이 아닙니다.');
+        where.createdAt = { [Op.lt]: d };
+      }
       if (options.severity) where.severity = options.severity;
       if (Object.keys(where).length === 0) {
         // 조건 없는 전체 삭제는 deleteAll()을 명시적으로 사용해야 함
@@ -88,7 +104,7 @@ export class ErrorLogService extends BaseService {
 
   /** 전체 에러 로그 삭제 */
   async deleteAll(): Promise<number> {
-    return ErrorLog.destroy({ truncate: true } as any);
+    return ErrorLog.destroy({ where: {} });
   }
 }
 

@@ -11,7 +11,7 @@ interface PaginationOptions {
  * query.page / query.limit을 안전하게 파싱·범위 제한
  */
 export function parsePagination(req: Request, options: PaginationOptions = {}) {
-  const { defaultLimit = getSettings().defaultPageSize, maxPage = 1000, maxLimit = 50 } = options;
+  const { defaultLimit = getSettings().defaultPageSize, maxPage = 1000, maxLimit = 100 } = options;
 
   const page = Math.min(maxPage, Math.max(1, parseInt(req.query.page as string) || 1));
   const limit = Math.min(

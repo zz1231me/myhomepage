@@ -46,7 +46,7 @@ export const fetchErrorLogs = (params?: Record<string, string | number>) =>
  * - 둘 다 없으면 전체 삭제
  */
 export const deleteErrorLogs = (
-  options: { before?: string; severity?: string; ids?: string[] } = {}
+  options: { before?: string; severity?: string; ids?: string[]; all?: boolean } = {}
 ): Promise<{ deleted: number }> => api.delete('/admin/error-logs', { data: options }).then(unwrap);
 
 // ─── 로그인 이력 ───────────────────────────────────────────────────────────────

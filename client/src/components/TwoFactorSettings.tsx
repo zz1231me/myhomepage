@@ -5,14 +5,25 @@ import api from '../api/axios';
 export const TwoFactorSettings = () => {
   const [is2FAEnabled, setIs2FAEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // ── 활성화 플로우 ──────────────────────────────────────────────────────────
+  // 1단계: 비밀번호 확인 패널
+  const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
+  const [setupPassword, setSetupPassword] = useState<string>('');
+  // 2단계: QR 코드 패널
   const [showSetup, setShowSetup] = useState(false);
   const [qrCode, setQrCode] = useState<string>('');
   const [secret, setSecret] = useState<string>('');
   const [token, setToken] = useState<string>('');
-  const [error, setError] = useState<string>('');
-  const [isProcessing, setIsProcessing] = useState(false);
+
+  // ── 비활성화 플로우 ────────────────────────────────────────────────────────
   const [showDisableInput, setShowDisableInput] = useState(false);
   const [disableCode, setDisableCode] = useState<string>('');
+  const [disablePassword, setDisablePassword] = useState<string>('');
+
+  // ── 공통 ──────────────────────────────────────────────────────────────────
+  const [error, setError] = useState<string>('');
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // 2FA 상태 조회
   useEffect(() => {
@@ -29,14 +40,26 @@ export const TwoFactorSettings = () => {
     checkStatus();
   }, []);
 
-  // 2FA 설정 시작
+  // 활성화 버튼 클릭 → 비밀번호 확인 단계 진입
+  const handleClickEnable = () => {
+    setSetupPassword('');
+    setError('');
+    setShowPasswordPrompt(true);
+  };
+
+  // 비밀번호 확인 후 2FA 비밀키 생성 요청
   const handleStartSetup = async () => {
+    if (!setupPassword) {
+      setError('현재 비밀번호를 입력해주세요.');
+      return;
+    }
     try {
       setIsProcessing(true);
       setError('');
-      const response = await api.post('/2fa/generate');
+      const response = await api.post('/2fa/generate', { currentPassword: setupPassword });
       setQrCode(response.data.data.qrCode);
       setSecret(response.data.data.secret);
+      setShowPasswordPrompt(false);
       setShowSetup(true);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
@@ -46,7 +69,7 @@ export const TwoFactorSettings = () => {
     }
   };
 
-  // 2FA 활성화
+  // 2FA 활성화 (QR 스캔 후 코드 검증)
   const handleEnable2FA = async () => {
     if (!token || token.length !== 6) {
       setError('6자리 인증 코드를 입력해주세요.');
@@ -60,6 +83,7 @@ export const TwoFactorSettings = () => {
       setIs2FAEnabled(true);
       setShowSetup(false);
       setToken('');
+      setSetupPassword('');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       setError(err.response?.data?.message || '잘못된 인증 코드입니다.');
@@ -69,16 +93,17 @@ export const TwoFactorSettings = () => {
   };
 
   // 2FA 비활성화
-  const handleDisable2FA = async (code: string) => {
-    if (!code) return;
+  const handleDisable2FA = async () => {
+    if (!disableCode || !disablePassword) return;
 
     try {
       setIsProcessing(true);
       setError('');
-      await api.post('/2fa/disable', { token: code });
+      await api.post('/2fa/disable', { token: disableCode, currentPassword: disablePassword });
       setIs2FAEnabled(false);
       setShowDisableInput(false);
       setDisableCode('');
+      setDisablePassword('');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       setError(err.response?.data?.message || '비활성화에 실패했습니다.');
@@ -120,9 +145,9 @@ export const TwoFactorSettings = () => {
           </p>
         </div>
 
-        {!showSetup && (
+        {!showSetup && !showPasswordPrompt && (
           <button
-            onClick={is2FAEnabled ? () => setShowDisableInput(true) : handleStartSetup}
+            onClick={is2FAEnabled ? () => setShowDisableInput(true) : handleClickEnable}
             disabled={isProcessing || showDisableInput}
             className={`
               px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200
@@ -147,12 +172,74 @@ export const TwoFactorSettings = () => {
         </div>
       )}
 
+      {/* 1단계: 비밀번호 확인 (활성화 시작 전) */}
+      {showPasswordPrompt && (
+        <div className="p-4 border border-blue-200 dark:border-blue-800 rounded-lg bg-blue-50 dark:bg-blue-900/10">
+          <p className="text-sm font-medium text-slate-900 dark:text-slate-100 mb-3">
+            2FA를 설정하려면 현재 비밀번호를 입력하세요.
+          </p>
+          <input
+            type="password"
+            value={setupPassword}
+            onChange={e => setSetupPassword(e.target.value)}
+            placeholder="현재 비밀번호"
+            autoComplete="current-password"
+            className="
+              w-full px-4 py-3 text-sm
+              border border-slate-300 dark:border-slate-600 rounded-lg
+              focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50
+              bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100
+            "
+          />
+          <div className="flex gap-3 mt-3">
+            <button
+              onClick={handleStartSetup}
+              disabled={isProcessing || !setupPassword}
+              className="
+                flex-1 px-4 py-2 text-sm font-medium text-white
+                bg-primary-600 hover:bg-primary-700 disabled:bg-primary-400
+                rounded-lg transition-all duration-200 disabled:cursor-not-allowed
+              "
+            >
+              {isProcessing ? '확인 중...' : '계속'}
+            </button>
+            <button
+              onClick={() => {
+                setShowPasswordPrompt(false);
+                setSetupPassword('');
+                setError('');
+              }}
+              className="
+                flex-1 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300
+                bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600
+                rounded-lg transition-all duration-200
+              "
+            >
+              취소
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 2FA 비활성화 인라인 입력 */}
       {showDisableInput && (
         <div className="mt-4 p-4 border border-red-200 dark:border-red-800 rounded-lg bg-red-50 dark:bg-red-900/10">
           <p className="text-sm font-medium text-slate-900 dark:text-slate-100 mb-3">
-            비활성화하려면 현재 인증 코드를 입력하세요.
+            비활성화하려면 현재 비밀번호와 인증 코드를 입력하세요.
           </p>
+          <input
+            type="password"
+            value={disablePassword}
+            onChange={e => setDisablePassword(e.target.value)}
+            placeholder="현재 비밀번호"
+            autoComplete="current-password"
+            className="
+              w-full px-4 py-3 text-sm mb-3
+              border border-slate-300 dark:border-slate-600 rounded-lg
+              focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50
+              bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100
+            "
+          />
           <input
             type="text"
             inputMode="numeric"
@@ -161,22 +248,22 @@ export const TwoFactorSettings = () => {
             onChange={e => setDisableCode(e.target.value.replace(/\D/g, ''))}
             placeholder="인증 코드 6자리 입력"
             className="
-                            w-full px-4 py-3 text-center text-xl font-mono tracking-widest
-                            border border-slate-300 dark:border-slate-600 rounded-lg
-                            focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50
-                            bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100
-                        "
+              w-full px-4 py-3 text-center text-xl font-mono tracking-widest
+              border border-slate-300 dark:border-slate-600 rounded-lg
+              focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50
+              bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100
+            "
             maxLength={6}
           />
           <div className="flex gap-3 mt-3">
             <button
-              onClick={() => handleDisable2FA(disableCode)}
-              disabled={isProcessing || disableCode.length !== 6}
+              onClick={handleDisable2FA}
+              disabled={isProcessing || disableCode.length !== 6 || !disablePassword}
               className="
-                                flex-1 px-4 py-2 text-sm font-medium text-white
-                                bg-red-600 hover:bg-red-700 disabled:bg-red-400
-                                rounded-lg transition-all duration-200 disabled:cursor-not-allowed
-                            "
+                flex-1 px-4 py-2 text-sm font-medium text-white
+                bg-red-600 hover:bg-red-700 disabled:bg-red-400
+                rounded-lg transition-all duration-200 disabled:cursor-not-allowed
+              "
             >
               {isProcessing ? '처리 중...' : '확인'}
             </button>
@@ -184,13 +271,14 @@ export const TwoFactorSettings = () => {
               onClick={() => {
                 setShowDisableInput(false);
                 setDisableCode('');
+                setDisablePassword('');
                 setError('');
               }}
               className="
-                                flex-1 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300
-                                bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600
-                                rounded-lg transition-all duration-200
-                            "
+                flex-1 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300
+                bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600
+                rounded-lg transition-all duration-200
+              "
             >
               취소
             </button>
@@ -198,7 +286,7 @@ export const TwoFactorSettings = () => {
         </div>
       )}
 
-      {/* 2FA 설정 패널 */}
+      {/* 2FA 설정 패널 (2단계: QR 코드) */}
       {showSetup && (
         <div className="p-5 border border-blue-200 dark:border-blue-800 rounded-lg bg-blue-50 dark:bg-blue-900/10">
           <h5 className="font-medium text-slate-900 dark:text-slate-100 mb-4">
@@ -253,6 +341,7 @@ export const TwoFactorSettings = () => {
                 onClick={() => {
                   setShowSetup(false);
                   setToken('');
+                  setSetupPassword('');
                   setError('');
                 }}
                 className="

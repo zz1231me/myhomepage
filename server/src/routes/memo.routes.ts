@@ -3,9 +3,11 @@ import asyncHandler from 'express-async-handler';
 import { getMemos, createMemo, updateMemo, deleteMemo } from '../controllers/memo.controller';
 import { authenticate } from '../middlewares/auth.middleware';
 import { AuthRequest } from '../types/auth-request';
+import { apiLimiter } from '../middlewares/rate-limit.middleware';
 
 const router = Router();
 router.use(authenticate as RequestHandler);
+router.use(apiLimiter);
 
 router.get(
   '/',

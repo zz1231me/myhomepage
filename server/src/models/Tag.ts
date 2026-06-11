@@ -20,7 +20,11 @@ class TagModel extends Model<InferAttributes<TagModel>, InferCreationAttributes<
 TagModel.init(
   {
     id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
-    name: { type: DataTypes.STRING(50), allowNull: false },
+    name: {
+      type: DataTypes.STRING(50),
+      allowNull: false,
+      validate: { notEmpty: true, len: [1, 50] },
+    },
     color: { type: DataTypes.STRING(20), allowNull: false, defaultValue: '#3b82f6' },
     description: { type: DataTypes.TEXT, allowNull: true },
     boardId: { type: DataTypes.STRING(50), allowNull: true, defaultValue: null },
@@ -32,8 +36,12 @@ TagModel.init(
     tableName: 'Tags',
     modelName: 'Tag',
     timestamps: true,
-    // 인덱스는 addTagColumns 마이그레이션에서 수동으로 생성 (alter:false SQLite 호환)
-    indexes: [],
+    indexes: [
+      // (name, boardId) 복합 유니크: 같은 게시판 내 태그명 중복 방지
+      // alter:true(MySQL/PostgreSQL)에서는 서버 시작 시 자동 적용;
+      // SQLite(alter:false)는 최초 테이블 생성 시에만 적용됨
+      { unique: true, fields: ['name', 'boardId'], name: 'idx_tags_name_boardId' },
+    ],
   }
 );
 

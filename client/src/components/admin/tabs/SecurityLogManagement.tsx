@@ -3,11 +3,12 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import api from '../../../api/axios';
 import { unwrap } from '../../../api/utils';
 import { deleteSecurityLogs } from '../../../api/admin';
-import { SecurityLog } from '../../../types/admin.types';
 import { toast } from '../../../utils/toast';
+import { SecurityLog } from '../../../types/admin.types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { AdminSection } from '../common/AdminSection';
 import { formatDateTime } from '../../../utils/date';
+import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -33,6 +34,9 @@ export const SecurityLogManagement = () => {
   const [filterUserId, setFilterUserId] = useState('');
   const [filterAction, setFilterAction] = useState('');
   const [filterIp, setFilterIp] = useState('');
+  // 자유 입력 필터는 디바운스 — 키 입력마다 API 호출하지 않도록
+  const debouncedUserId = useDebouncedValue(filterUserId, 400);
+  const debouncedIp = useDebouncedValue(filterIp, 400);
 
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -53,9 +57,9 @@ export const SecurityLogManagement = () => {
         params: {
           page,
           limit: 20,
-          userId: filterUserId || undefined,
+          userId: debouncedUserId || undefined,
           action: filterAction || undefined,
-          ipAddress: filterIp || undefined,
+          ipAddress: debouncedIp || undefined,
         },
       });
       const data = unwrap(res);
@@ -68,7 +72,7 @@ export const SecurityLogManagement = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, filterUserId, filterAction, filterIp]);
+  }, [page, debouncedUserId, filterAction, debouncedIp]);
 
   useEffect(() => {
     fetchLogs();
@@ -82,6 +86,25 @@ export const SecurityLogManagement = () => {
 
   const toggleExpand = (id: string) => {
     setExpandedLogId(expandedLogId === id ? null : id);
+  };
+
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const res = await api.get('/admin/export/security-logs', { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data as Blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'security-logs.xlsx';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch {
+      toast.error('내보내기 중 오류가 발생했습니다.');
+    } finally {
+      setExporting(false);
+    }
   };
 
   /** 특정 날짜 이전 로그 삭제 또는 전체 삭제 */
@@ -122,13 +145,13 @@ export const SecurityLogManagement = () => {
         title="🛡️ 보안 로그"
         actions={
           <div className="flex items-center gap-3">
-            <a
-              href="/api/admin/export/security-logs"
-              className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-1.5"
-              download
+            <button
+              onClick={() => void handleExport()}
+              disabled={exporting}
+              className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Excel 내보내기
-            </a>
+              {exporting ? '내보내는 중...' : 'Excel 내보내기'}
+            </button>
             <span className="text-sm text-slate-500">총 {totalLogs}건</span>
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-400">삭제:</span>

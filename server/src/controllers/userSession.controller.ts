@@ -22,6 +22,28 @@ export const getUserSessions = async (req: Request, res: Response): Promise<void
 export const forceLogoutSession = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId, sessionId } = req.params;
+    const authReq = req as unknown as AuthRequest;
+
+    // ✅ 자기 자신의 세션을 이 관리자 엔드포인트로 종료하면 tokenVersion 증가로
+    //    현재 진행 중인 관리자 세션까지 모두 로그아웃되어 즉시 셀프 락아웃이 발생함.
+    //    자신의 세션 관리는 /auth/sessions(getOwnSessions) 전용 흐름을 사용해야 함.
+    if (authReq.user?.id === userId) {
+      sendError(res, 400, '본인의 세션은 관리자 메뉴에서 종료할 수 없습니다.');
+      return;
+    }
+
+    // 세션이 요청한 userId에 속하는지 확인 (다른 사용자의 세션 강제 종료 방지)
+    const { UserSession } = await import('../models/UserSession');
+    const session = await UserSession.findByPk(sessionId, { attributes: ['id', 'userId'] });
+    if (!session) {
+      sendNotFound(res, '세션');
+      return;
+    }
+    if (session.userId !== userId) {
+      sendError(res, 403, '해당 세션에 대한 접근 권한이 없습니다.');
+      return;
+    }
+
     const success = await userSessionService.forceLogout(sessionId);
 
     if (!success) {
@@ -41,7 +63,6 @@ export const forceLogoutSession = async (req: Request, res: Response): Promise<v
       // tokenVersion 증가 실패해도 세션 비활성화는 완료됐으므로 계속 진행
     }
 
-    const authReq = req as unknown as AuthRequest;
     auditLogService
       .createAuditLog({
         adminId: authReq.user?.id ?? 'unknown',

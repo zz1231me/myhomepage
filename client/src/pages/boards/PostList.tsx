@@ -3,20 +3,22 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { fetchPostsByType, PostListResponse } from '../../api/posts';
 import { getTags } from '../../api/tags';
-import { checkUserBoardAccess } from '../../api/boards';
+import { checkUserBoardAccess, checkBoardManageCapability } from '../../api/boards';
 import { useAuth } from '../../store/auth';
 import { Post, BoardInfo, PaginationInfo, Tag } from '../../types/board.types';
-import axios from 'axios';
 import { boardLogger } from '../../utils/logger';
 import { formatRelativeDate } from '../../utils/date';
 import { getBoardTitle } from '../../constants/boardTitles';
 
 import { PageHeader } from '../../components/common/PageHeader';
-import { AnimatedPage } from '../../components/common/AnimatedPage';
+import { PageContainer } from '../../components/common/PageContainer';
+import { scrollContentToTop } from '../../utils/scroll';
+import { SearchInput } from '../../components/common/SearchInput';
 import { SkeletonLoader } from '../../components/boards/SkeletonLoader';
 import { ErrorState } from '../../components/boards/ErrorState';
 import { EmptyState } from '../../components/boards/EmptyState';
 import { PostListTable } from '../../components/boards/PostListTable';
+import { BoardManagePanel } from '../../components/boards/BoardManagePanel';
 
 const PostList = () => {
   const { boardType } = useParams<{ boardType: string }>();
@@ -35,6 +37,8 @@ const PostList = () => {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [availableTags, setAvailableTags] = useState<Tag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+  const [canManage, setCanManage] = useState(false);
+  const [showManage, setShowManage] = useState(false);
 
   const navigate = useNavigate();
   const { getUserRole } = useAuth();
@@ -72,7 +76,7 @@ const PostList = () => {
   const handlePageChange = useCallback(
     (page: number) => {
       setPage(page);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollContentToTop();
     },
     [setPage]
   );
@@ -99,6 +103,33 @@ const PostList = () => {
     getTags(boardType)
       .then(setAvailableTags)
       .catch(err => boardLogger.warn('태그 로드 실패', err));
+  }, [boardType]);
+
+  // 게시판 관리 권한(담당자/관리자) 확인 — 관리 버튼/패널 노출 판단
+  useEffect(() => {
+    setCanManage(false);
+    if (!boardType) return;
+    let mounted = true;
+    checkBoardManageCapability(boardType)
+      .then(res => {
+        if (mounted) setCanManage(!!res?.canManage);
+      })
+      .catch(() => {
+        if (mounted) setCanManage(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [boardType]);
+
+  // 관리 패널에서 태그/정보 변경 후 닫힐 때 — 태그 필터 목록 새로고침
+  const handleManageClose = useCallback(() => {
+    setShowManage(false);
+    if (boardType) {
+      getTags(boardType)
+        .then(setAvailableTags)
+        .catch(() => {});
+    }
   }, [boardType]);
 
   const handleTagToggle = useCallback(
@@ -199,7 +230,10 @@ const PostList = () => {
           setPagination(postResponse.pagination);
         }
       } catch (err) {
-        if (axios.isCancel(err)) return;
+        // AbortController 취소는 CanceledError 또는 ERR_CANCELED로 전달됨
+        // (axios.isCancel은 CancelToken 방식만 인식하므로 직접 체크)
+        const e = err as { name?: string; code?: string };
+        if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return;
 
         boardLogger.error('게시글 불러오기 실패', err);
 
@@ -275,146 +309,180 @@ const PostList = () => {
   }
 
   return (
-    <AnimatedPage className="min-h-screen bg-slate-50 dark:bg-slate-900 py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* ✅ 표준화된 페이지 헤더 적용 */}
-        <PageHeader
-          title={boardInfo?.name || '게시판'}
-          description={`${boardInfo?.description || '게시글 목록을 확인하세요'}\n총 ${pagination?.totalCount || 0}개의 게시글`}
-          icon={
-            <svg
-              className="w-6 h-6 text-primary-600 dark:text-primary-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+    <PageContainer className="space-y-6">
+      {/* ✅ 표준화된 페이지 헤더 적용 */}
+      <PageHeader
+        breadcrumbs={[
+          { label: '대시보드', to: '/dashboard' },
+          { label: boardInfo?.name || '게시판' },
+        ]}
+        title={boardInfo?.name || '게시판'}
+        description={`${boardInfo?.description || '게시글 목록을 확인하세요'}\n총 ${pagination?.totalCount || 0}개의 게시글`}
+        icon={
+          <svg
+            className="w-6 h-6 text-primary-600 dark:text-primary-400"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+            />
+          </svg>
+        }
+      >
+        <div className="flex items-center gap-2">
+          <SearchInput
+            value={localSearch}
+            onChange={setLocalSearch}
+            placeholder="빠른 검색..."
+            ariaLabel="게시글 빠른 검색"
+            className="w-40 sm:w-52"
+          />
+          {canManage && (
+            <button
+              onClick={() => setShowManage(true)}
+              aria-label="게시판 관리"
+              title="게시판 관리 (태그·정보)"
+              className="btn-secondary"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-              />
-            </svg>
-          }
-        >
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <svg
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
-              <input
-                type="text"
-                value={localSearch}
-                onChange={e => setLocalSearch(e.target.value)}
-                placeholder="빠른 검색..."
-                className="pl-9 pr-3 py-1.5 text-sm border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 w-40 sm:w-52"
-              />
-            </div>
-            <button onClick={handleNewPost} aria-label="새 게시글 작성" className="btn-primary">
               <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M12 4v16m8-8H4"
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
                 />
               </svg>
-              새 글 작성
+              관리
             </button>
-          </div>
-        </PageHeader>
+          )}
+          <button onClick={handleNewPost} aria-label="새 게시글 작성" className="btn-primary">
+            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 4v16m8-8H4"
+              />
+            </svg>
+            새 글 작성
+          </button>
+        </div>
+      </PageHeader>
 
-        {/* 태그 필터 */}
-        {availableTags.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={handleTagClear}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all border ${
-                selectedTagIds.length === 0
-                  ? 'bg-slate-700 dark:bg-slate-200 text-white dark:text-slate-900 border-transparent'
-                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:border-slate-400'
-              }`}
-            >
-              전체
-            </button>
-            {availableTags.map(tag => {
-              const isActive = selectedTagIds.includes(tag.id);
-              return (
-                <button
-                  key={tag.id}
-                  onClick={() => handleTagToggle(tag.id)}
-                  className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all border ${
-                    isActive
-                      ? 'text-white border-transparent shadow-sm'
-                      : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:border-slate-400'
-                  }`}
-                  style={isActive ? { backgroundColor: tag.color, borderColor: tag.color } : {}}
-                >
-                  {isActive && (
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-white/70 mr-1.5 align-middle" />
-                  )}
-                  {tag.name}
-                </button>
-              );
-            })}
-            {selectedTagIds.length > 0 && (
-              <span className="text-xs text-slate-400 dark:text-slate-500 ml-1">
-                {selectedTagIds.length}개 태그 필터 중
-              </span>
-            )}
+      {showManage && boardType && (
+        <BoardManagePanel
+          boardType={boardType}
+          initialName={boardInfo?.name || ''}
+          initialDescription={
+            boardInfo?.description === '게시글 목록을 확인하세요'
+              ? ''
+              : boardInfo?.description || ''
+          }
+          onClose={handleManageClose}
+          onBoardUpdated={info =>
+            setBoardInfo(prev =>
+              prev ? { ...prev, name: info.name, description: info.description } : prev
+            )
+          }
+        />
+      )}
+
+      {/* 태그 필터 */}
+      {availableTags.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleTagClear}
+            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all border ${
+              selectedTagIds.length === 0
+                ? 'bg-slate-700 dark:bg-slate-200 text-white dark:text-slate-900 border-transparent'
+                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:border-slate-400'
+            }`}
+          >
+            전체
+          </button>
+          {availableTags.map(tag => {
+            const isActive = selectedTagIds.includes(tag.id);
+            return (
+              <button
+                key={tag.id}
+                onClick={() => handleTagToggle(tag.id)}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all border ${
+                  isActive
+                    ? 'text-white border-transparent shadow-sm'
+                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:border-slate-400'
+                }`}
+                style={isActive ? { backgroundColor: tag.color, borderColor: tag.color } : {}}
+              >
+                {isActive && (
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-white/70 mr-1.5 align-middle" />
+                )}
+                {tag.name}
+              </button>
+            );
+          })}
+          {selectedTagIds.length > 0 && (
+            <span className="text-xs text-slate-400 dark:text-slate-500 ml-1">
+              {selectedTagIds.length}개 태그 필터 중
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ✅ 게시글 목록 카드 */}
+      <div
+        className="bg-white dark:bg-slate-800 rounded-2xl shadow-md border border-slate-200 dark:border-slate-700 overflow-hidden"
+        role="region"
+        aria-label={`${boardInfo?.name || '게시판'} 목록`}
+        aria-live="polite"
+        aria-busy={loading}
+      >
+        {loading && (
+          <div>
+            <div className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 px-6 py-4">
+              <div className="grid grid-cols-12 gap-4 text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                <div className="col-span-8">제목</div>
+                <div className="col-span-2 text-center hidden sm:block">작성자</div>
+                <div className="col-span-2 text-center">작성일</div>
+              </div>
+            </div>
+            <SkeletonLoader />
           </div>
         )}
 
-        {/* ✅ 게시글 목록 카드 */}
-        <div
-          className="bg-white dark:bg-slate-800 rounded-2xl shadow-md border border-slate-200 dark:border-slate-700 overflow-hidden"
-          role="region"
-          aria-label={`${boardInfo?.name || '게시판'} 목록`}
-          aria-live="polite"
-          aria-busy={loading}
-        >
-          {loading && (
-            <div>
-              <div className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 px-6 py-4">
-                <div className="grid grid-cols-12 gap-4 text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
-                  <div className="col-span-8">제목</div>
-                  <div className="col-span-2 text-center hidden sm:block">작성자</div>
-                  <div className="col-span-2 text-center">작성일</div>
-                </div>
-              </div>
-              <SkeletonLoader />
-            </div>
-          )}
+        {error && <ErrorState error={error} />}
 
-          {error && <ErrorState error={error} />}
+        {!loading && !error && posts.length === 0 && (
+          <EmptyState
+            debouncedSearchTerm={debouncedSearch}
+            selectedTagCount={selectedTagIds.length}
+            onClearTags={() => setSelectedTagIds([])}
+            onNewPost={handleNewPost}
+          />
+        )}
 
-          {!loading && !error && posts.length === 0 && (
-            <EmptyState debouncedSearchTerm={debouncedSearch} onNewPost={handleNewPost} />
-          )}
-
-          {!loading && !error && posts.length > 0 && (
-            <PostListTable
-              posts={posts}
-              currentPage={currentPage}
-              pagination={pagination}
-              onPostClick={handlePostClick}
-              onPageChange={handlePageChange}
-              formatDate={formatRelativeDate}
-            />
-          )}
-        </div>
+        {!loading && !error && posts.length > 0 && (
+          <PostListTable
+            posts={posts}
+            currentPage={currentPage}
+            pagination={pagination}
+            onPostClick={handlePostClick}
+            onPageChange={handlePageChange}
+            formatDate={formatRelativeDate}
+          />
+        )}
       </div>
-    </AnimatedPage>
+    </PageContainer>
   );
 };
 

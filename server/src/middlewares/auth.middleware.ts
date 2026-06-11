@@ -58,7 +58,14 @@ export const authenticate = async (
 
     const decoded = jwt.verify(access_token, env.JWT_SECRET, {
       algorithms: [JWT_ALGORITHM],
-    }) as { id: string; tv?: number };
+    }) as { id: string; tv?: number; type?: string };
+
+    // ✅ 2fa_pending 임시 토큰은 액세스 토큰으로 사용 불가
+    if (decoded.type === '2fa_pending') {
+      logWarning('인증 실패: 2FA 임시 토큰은 액세스 토큰으로 사용할 수 없음');
+      sendUnauthorized(res, '유효하지 않은 토큰 형식입니다.');
+      return;
+    }
 
     if (env.NODE_ENV === 'development') {
       logInfo(`디코딩된 사용자 ID: ${decoded.id}`);

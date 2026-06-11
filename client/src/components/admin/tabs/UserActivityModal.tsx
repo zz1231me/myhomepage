@@ -33,12 +33,22 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   deactivate_user: '계정 비활성화',
   reset_password: '비밀번호 초기화',
   change_role: '역할 변경',
+  create_board: '게시판 생성',
   update_board: '게시판 수정',
   delete_board: '게시판 삭제',
+  create_role: '역할 생성',
+  update_role: '역할 수정',
+  delete_role: '역할 삭제',
   update_permission: '권한 설정',
   delete_event: '이벤트 삭제',
+  update_event: '이벤트 수정',
   update_site_settings: '사이트 설정',
   force_logout: '강제 로그아웃',
+  delete_security_log: '보안 로그 삭제',
+  delete_error_log: '에러 로그 삭제',
+  create_ip_rule: 'IP 규칙 생성',
+  update_ip_rule: 'IP 규칙 수정',
+  delete_ip_rule: 'IP 규칙 삭제',
 };
 
 const LOGIN_STATUS_BADGE: Record<string, string> = {

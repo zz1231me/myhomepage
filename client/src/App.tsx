@@ -34,6 +34,8 @@ const NotFound = lazy(() => import('./pages/NotFound'));
 const MemoBoard = lazy(() => import('./pages/memos/MemoBoard'));
 const WikiPageRoute = lazy(() => import('./pages/wiki/WikiPage'));
 const LoginTwoFactor = lazy(() => import('./pages/LoginTwoFactor'));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 
 function App() {
   const { setSettings } = useSiteSettings();
@@ -108,8 +110,11 @@ function App() {
           <Routes>
             {/* ✅ 공개 라우트 */}
             <Route path="/" element={<Login />} />
+            <Route path="/login" element={<Login />} />
             <Route path="/login/2fa" element={<LoginTwoFactor />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
 
             {/* ✅ 프로필 페이지 - 독립적인 보호된 라우트 */}
             <Route

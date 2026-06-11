@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Bell, MessageSquare, Heart, AtSign, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { stagger, listItem, scaleIn } from '../../utils/animations';
+import { useUIOverlays } from '../../store/uiOverlays';
 import {
   getNotifications,
   getUnreadCount,
@@ -45,12 +46,26 @@ const TYPE_ICON: Record<string, { icon: React.ReactNode; bg: string; color: stri
 };
 
 export function NotificationBell() {
-  const [open, setOpen] = useState(false);
+  // 통합 overlay store — 다른 dropdown(userMenu/search 등)과 자동 배타.
+  // 모바일 사이드바가 열리면 자동으로 닫힌다.
+  const open = useUIOverlays(s => s.activeDropdown === 'notifications');
+  // setOpen은 useCallback dep을 비워 매 렌더에서 동일 ref 유지 (useEffect cleanup→setup 사이클 차단).
+  // 함수형 호출 시 prev는 store의 최신 상태에서 직접 읽어 stale closure 위험도 차단.
+  const setOpen = useCallback((value: boolean | ((prev: boolean) => boolean)) => {
+    const state = useUIOverlays.getState();
+    const currentOpen = state.activeDropdown === 'notifications';
+    const next = typeof value === 'function' ? value(currentOpen) : value;
+    if (next) state.openDropdown('notifications');
+    else state.closeDropdown('notifications');
+  }, []);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<number | null>(null);
+  // 알림 fetch 실패 시 사용자에게 안내 + 재시도 버튼 제공 (이전엔 무음 catch라
+  // "알림 없음" 빈 상태와 "에러" 빈 상태가 구분되지 않았음)
+  const [fetchError, setFetchError] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
@@ -65,13 +80,14 @@ export function NotificationBell() {
 
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
+    setFetchError(false);
     try {
       const data = await getNotifications(undefined, 20);
       setNotifications(Array.isArray(data?.notifications) ? data.notifications : []);
       setUnreadCount(data?.unreadCount ?? 0);
       setNextCursor(data?.nextCursor ?? null);
     } catch {
-      /* 알림 API 에러 무시 */
+      setFetchError(true);
     } finally {
       setLoading(false);
     }
@@ -115,13 +131,14 @@ export function NotificationBell() {
     };
     if (open) document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
+  }, [open, setOpen]);
 
   const handleRead = async (n: Notification) => {
     try {
       await markAsRead(n.id);
       setNotifications(prev => prev.map(x => (x.id === n.id ? { ...x, isRead: true } : x)));
-      setUnreadCount(prev => Math.max(0, prev - 1));
+      // 이미 읽은 알림은 카운트를 감소시키지 않음
+      if (!n.isRead) setUnreadCount(prev => Math.max(0, prev - 1));
     } catch {
       /* 알림 API 에러 무시 */
     }
@@ -129,6 +146,10 @@ export function NotificationBell() {
       setOpen(false);
       navigate(n.link);
     }
+    // link가 없으면 "이동할 페이지 없음" — 사용자에게 무동작으로 보이지 않게 패널을 닫고
+    // 시각적으로 읽음 상태(아래 dot 사라짐 + opacity 조정)로 피드백.
+    // setOpen(false) 호출은 link 분기에만 했으므로, link 없을 때도 패널을 유지하지만
+    // 읽음 상태로 즉시 반영되도록 위에서 이미 처리됨. 추가 토스트는 노이즈가 되므로 생략.
   };
 
   const handleMarkAll = async () => {
@@ -188,7 +209,11 @@ export function NotificationBell() {
             animate="visible"
             exit="hidden"
             style={{ originX: 1, originY: 0 }}
-            className="absolute right-0 top-full mt-2 w-[min(24rem,calc(100vw-1rem))] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 overflow-hidden"
+            role="dialog"
+            aria-label="알림 목록"
+            // 모바일: 헤더 바로 아래 가로 전체(여백 8px) 시트 형태로 고정
+            // 데스크톱: 알림벨 옆에 24rem 폭 dropdown으로 표시
+            className="fixed left-2 right-2 top-14 w-auto sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[min(24rem,calc(100vw-1rem))] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 overflow-hidden"
           >
             {/* 헤더 */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-700">
@@ -214,6 +239,22 @@ export function NotificationBell() {
             {loading ? (
               <div className="flex items-center justify-center py-10">
                 <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : fetchError ? (
+              <div className="flex flex-col items-center justify-center py-10 px-4 text-slate-500 dark:text-slate-400">
+                <Bell className="w-10 h-10 mb-3 text-red-400 dark:text-red-500" />
+                <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  알림을 불러올 수 없습니다
+                </p>
+                <p className="text-xs mb-4 text-center">
+                  네트워크 상태를 확인하고 다시 시도해주세요.
+                </p>
+                <button
+                  onClick={fetchNotifications}
+                  className="px-4 py-2 text-xs font-medium rounded-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors"
+                >
+                  다시 시도
+                </button>
               </div>
             ) : notifications.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 text-slate-400 dark:text-slate-500">
@@ -262,10 +303,10 @@ export function NotificationBell() {
                         )}
                         <button
                           onClick={e => handleDelete(e, n.id)}
-                          className="p-1 text-slate-300 dark:text-slate-600 hover:text-red-400 dark:hover:text-red-400 rounded transition-colors opacity-0 group-hover:opacity-100"
+                          className="min-w-[36px] min-h-[36px] p-2 inline-flex items-center justify-center text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
                           aria-label="알림 삭제"
                         >
-                          <X className="w-3.5 h-3.5" />
+                          <X className="w-4 h-4" />
                         </button>
                       </div>
                     </motion.div>

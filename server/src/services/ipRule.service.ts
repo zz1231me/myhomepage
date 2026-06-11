@@ -92,25 +92,27 @@ export async function createIpRule(data: {
   description?: string | null;
   createdBy: string;
 }) {
-  // 중복 체크
-  const existing = await IpRule.findOne({ where: { type: data.type, ip: data.ip.trim() } });
-  if (existing) {
+  const trimmedIp = data.ip.trim();
+  const [rule, created] = await IpRule.findOrCreate({
+    where: { type: data.type, ip: trimmedIp },
+    defaults: {
+      type: data.type,
+      ip: trimmedIp,
+      description: data.description ?? null,
+      createdBy: data.createdBy,
+      isActive: true,
+    },
+  });
+
+  if (!created) {
     throw new AppError(
       409,
       `이미 동일한 ${data.type === 'whitelist' ? '화이트리스트' : '블랙리스트'} 규칙이 존재합니다.`
     );
   }
 
-  const rule = await IpRule.create({
-    type: data.type,
-    ip: data.ip.trim(),
-    description: data.description ?? null,
-    createdBy: data.createdBy,
-    isActive: true,
-  });
-
   invalidateIpRuleCache();
-  logInfo('IP 규칙 추가', { type: data.type, ip: data.ip, by: data.createdBy });
+  logInfo('IP 규칙 추가', { type: data.type, ip: trimmedIp, by: data.createdBy });
   return rule;
 }
 

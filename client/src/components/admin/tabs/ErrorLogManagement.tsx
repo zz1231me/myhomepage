@@ -105,7 +105,7 @@ export const ErrorLogManagement = () => {
 
     setDeleting(true);
     try {
-      const options: { before?: string; severity?: string } = {};
+      const options: { before?: string; severity?: string; all?: boolean } = {};
       if (mode === '7d') {
         const d = new Date();
         d.setDate(d.getDate() - 7);
@@ -116,6 +116,8 @@ export const ErrorLogManagement = () => {
         options.before = d.toISOString();
       } else if (mode === 'severity') {
         options.severity = filterSeverity;
+      } else if (mode === 'all') {
+        options.all = true;
       }
       const result = await deleteErrorLogs(options);
       toast.success(`${result.deleted}건의 에러 로그가 삭제되었습니다.`);

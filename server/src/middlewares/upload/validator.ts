@@ -1,7 +1,8 @@
 // server/src/middlewares/upload/validator.ts
+import path from 'path';
 import { Request, Response, NextFunction } from 'express';
 import fs from 'fs/promises';
-import { MAGIC_NUMBERS } from './config';
+import { MAGIC_NUMBERS, MIME_TYPE_MAP } from './config';
 import { logInfo, logWarning, logError } from '../../utils/logger';
 import { sendError } from '../../utils/response';
 
@@ -10,15 +11,35 @@ import { sendError } from '../../utils/response';
  *
  * - MAGIC_NUMBERS에 정의된 타입: magic byte로 검증
  * - MAGIC_NUMBERS에 빈 배열인 타입 (text/plain 등): magic byte 검증 불가 — 통과
- * - MAGIC_NUMBERS에 없는 타입: 허용되지 않은 MIME 타입으로 거부
+ * - MAGIC_NUMBERS에 없는 타입이지만 originalname 확장자로 MIME 추론 가능: 추론된 타입으로 검증
+ *   (브라우저/OS가 application/octet-stream 등 generic MIME을 보내는 경우 대응)
+ * - 그 외: 허용되지 않은 MIME 타입으로 거부
  */
-async function validateFileContent(filePath: string, mimetype: string): Promise<boolean> {
+async function validateFileContent(
+  filePath: string,
+  mimetype: string,
+  originalname?: string
+): Promise<boolean> {
   try {
-    const expectedHeaders = MAGIC_NUMBERS[mimetype];
+    let effectiveMime = mimetype;
+    let expectedHeaders = MAGIC_NUMBERS[mimetype];
 
-    // MIME 타입이 화이트리스트에 없으면 거부
+    // MAGIC_NUMBERS에 없으면 확장자로 MIME 타입 재추론 (application/octet-stream 등 대응)
+    if (expectedHeaders === undefined && originalname) {
+      const ext = path.extname(originalname).toLowerCase();
+      const inferredMime = Object.entries(MIME_TYPE_MAP).find(([, exts]) =>
+        exts.includes(ext)
+      )?.[0];
+      if (inferredMime) {
+        effectiveMime = inferredMime;
+        expectedHeaders = MAGIC_NUMBERS[inferredMime];
+        logInfo('MIME 타입 재추론', { original: mimetype, inferred: inferredMime, ext });
+      }
+    }
+
+    // 여전히 화이트리스트에 없으면 거부
     if (expectedHeaders === undefined) {
-      logWarning('허용되지 않은 MIME 타입', { mimetype, filePath });
+      logWarning('허용되지 않은 MIME 타입', { mimetype: effectiveMime, filePath });
       return false;
     }
 
@@ -33,9 +54,16 @@ async function validateFileContent(filePath: string, mimetype: string): Promise<
     await fd.close();
 
     // mp4는 offset 4에 ftyp이 있으므로 별도 처리
-    if (mimetype === 'video/mp4') {
+    if (effectiveMime === 'video/mp4') {
       const ftypHeader = buf.slice(4, 8);
       return ftypHeader.equals(expectedHeaders[0]);
+    }
+
+    // WebP: RIFF(0-3) + WEBP(8-11) 모두 확인 — AVI도 RIFF 시작이라 구분 필요
+    if (effectiveMime === 'image/webp') {
+      const isRiff = buf.slice(0, 4).equals(Buffer.from([0x52, 0x49, 0x46, 0x46]));
+      const isWebp = buf.slice(8, 12).equals(Buffer.from([0x57, 0x45, 0x42, 0x50]));
+      return isRiff && isWebp;
     }
 
     return expectedHeaders.some(expected => buf.slice(0, expected.length).equals(expected));
@@ -81,9 +109,10 @@ export async function validateUploadedFile(
       const filePath = file.path;
 
       // 파일 내용 검증
-      const isValidContent = await validateFileContent(filePath, file.mimetype);
+      const isValidContent = await validateFileContent(filePath, file.mimetype, file.originalname);
       if (!isValidContent) {
-        await fs.unlink(filePath);
+        // 실패한 파일 + 이미 저장된 나머지 파일 모두 정리 (고아 파일 방지)
+        await Promise.all(files.map(f => fs.unlink(f.path).catch(() => {})));
         sendError(res, 400, `파일 내용이 올바르지 않습니다: ${file.originalname}`);
         return;
       }

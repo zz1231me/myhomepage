@@ -5,6 +5,7 @@ import { Avatar } from './Avatar';
 import { useAuthStore } from '../store/auth';
 import { useSiteSettings } from '../store/siteSettings';
 import { toast } from '../utils/toast';
+import { ConfirmationModal } from './admin/common/ConfirmationModal';
 
 interface User {
   id: string;
@@ -58,6 +59,7 @@ export const AvatarUpload: React.FC<AvatarUploadProps> = ({
   const [dragActive, setDragActive] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0); // ✅ 강제 새로고침용
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const updateUser = useAuthStore(state => state.updateUser);
   const { settings: siteSettings } = useSiteSettings();
 
@@ -85,9 +87,12 @@ export const AvatarUpload: React.FC<AvatarUploadProps> = ({
 
       setIsUploading(true);
 
+      // 미리보기 URL은 try/catch 스코프 모두에서 접근 가능하도록 외부에 선언
+      // (try 내부에 const로 선언하면 catch에서 접근 불가 → 실패 시 정리 누락)
+      let previewUrl: string | null = null;
       try {
         // 미리보기 생성
-        const previewUrl = URL.createObjectURL(file);
+        previewUrl = URL.createObjectURL(file);
         setPreview(previewUrl);
 
         // 서버 업로드
@@ -106,14 +111,17 @@ export const AvatarUpload: React.FC<AvatarUploadProps> = ({
 
         // 미리보기 정리
         URL.revokeObjectURL(previewUrl);
+        previewUrl = null;
         setPreview(null);
       } catch (error) {
         if (import.meta.env.DEV) console.error('❌ 아바타 업로드 실패:', error);
         toast.error(error instanceof Error ? error.message : '업로드 중 오류가 발생했습니다.');
 
-        // 미리보기 정리
-        if (preview) {
-          URL.revokeObjectURL(preview);
+        // 실패 시 새로 생성한 previewUrl 정리 (이전 closure의 preview state가 아닌 로컬 변수 사용)
+        // 기존 코드는 closure의 preview(콜백 생성 시점의 state, 보통 null)를 체크해
+        // 실제 정리가 누락되고 UI에 실패한 미리보기가 잔존하는 버그였음
+        if (previewUrl) {
+          URL.revokeObjectURL(previewUrl);
           setPreview(null);
         }
       } finally {
@@ -125,18 +133,20 @@ export const AvatarUpload: React.FC<AvatarUploadProps> = ({
         }
       }
     },
-    [onAvatarUpdate, updateUser, preview, siteSettings.maxAvatarSizeMb]
+    // preview를 deps에서 제거 — 더 이상 closure로 사용하지 않으므로 callback 재생성 불필요
+    [onAvatarUpdate, updateUser, siteSettings.maxAvatarSizeMb]
   );
 
-  // 아바타 삭제 처리
-  const handleDeleteAvatar = useCallback(async () => {
+  // 아바타 삭제 처리 — 사용자 확인을 위해 ConfirmationModal을 띄움 (브라우저 confirm 미사용)
+  const requestDeleteAvatar = useCallback(() => {
     if (!user.avatar) return;
+    setShowDeleteConfirm(true);
+  }, [user.avatar]);
 
-    const confirmed = window.confirm('프로필 사진을 삭제하시겠습니까?');
-    if (!confirmed) return;
-
+  const performDeleteAvatar = useCallback(async () => {
+    setShowDeleteConfirm(false);
+    if (!user.avatar) return;
     setIsDeleting(true);
-
     try {
       await deleteAvatar();
 
@@ -296,7 +306,7 @@ export const AvatarUpload: React.FC<AvatarUploadProps> = ({
 
         {allowDelete && user.avatar && (
           <button
-            onClick={handleDeleteAvatar}
+            onClick={requestDeleteAvatar}
             disabled={isLoading}
             className="
               px-4 py-2 text-sm font-medium text-red-600 bg-red-50 
@@ -310,21 +320,23 @@ export const AvatarUpload: React.FC<AvatarUploadProps> = ({
           </button>
         )}
 
-        {/* ✅ 강제 새로고침 버튼 (개발용) */}
-        <button
-          onClick={forceRefresh}
-          disabled={isLoading}
-          className="
-            px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 
-            rounded-lg hover:bg-slate-200 focus:outline-none focus:ring-2 
+        {/* ✅ 강제 새로고침 버튼 (개발용 — 프로덕션 빌드에서는 숨김) */}
+        {import.meta.env.DEV && (
+          <button
+            onClick={forceRefresh}
+            disabled={isLoading}
+            className="
+            px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100
+            rounded-lg hover:bg-slate-200 focus:outline-none focus:ring-2
             focus:ring-slate-500 focus:ring-opacity-50 transition-colors
             disabled:opacity-50 disabled:cursor-not-allowed
             dark:text-slate-400 dark:bg-slate-700 dark:hover:bg-slate-600
           "
-          title="아바타 새로고침"
-        >
-          🔄
-        </button>
+            title="아바타 새로고침"
+          >
+            🔄
+          </button>
+        )}
       </div>
 
       {/* 도움말 텍스트 */}
@@ -342,6 +354,16 @@ export const AvatarUpload: React.FC<AvatarUploadProps> = ({
         onChange={handleFileSelect}
         className="hidden"
         disabled={isLoading}
+      />
+      <ConfirmationModal
+        open={showDeleteConfirm}
+        title="프로필 사진 삭제"
+        message="프로필 사진을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다."
+        confirmLabel="삭제"
+        cancelLabel="취소"
+        variant="danger"
+        onConfirm={performDeleteAvatar}
+        onCancel={() => setShowDeleteConfirm(false)}
       />
     </div>
   );

@@ -45,6 +45,12 @@ export interface SiteSettings {
   globalSearchLimit: number;
   allowGuestComment: boolean;
   minPasswordLength: number;
+  /** 비밀번호 영문 대문자 포함 필수 여부 */
+  requireUppercase: boolean;
+  /** 비밀번호 영문 소문자 포함 필수 여부 */
+  requireLowercase: boolean;
+  /** 비밀번호 숫자 또는 특수문자 포함 필수 여부 */
+  requireNumberOrSpecial: boolean;
   /** 대댓글 최대 깊이 (1~5단계) */
   commentMaxDepth: number;
   /** 게시글당 최대 댓글 수 */
@@ -67,6 +73,14 @@ export interface SiteSettings {
   autoSaveIntervalSeconds: number;
   /** PostEditor 임시저장 복원 유효시간 (분) */
   draftExpiryMinutes: number;
+  /** 사용자당 최대 메모 개수 */
+  memoMaxPerUser: number;
+  /** 댓글 본문 최대 글자수 */
+  commentContentMaxLength: number;
+  /** 이벤트 본문 최대 글자수 */
+  eventBodyMaxLength: number;
+  /** 이벤트 장소 최대 글자수 */
+  eventLocationMaxLength: number;
 }
 
 /** 사이트 설정 조회 (공개) */

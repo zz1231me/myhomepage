@@ -2,6 +2,7 @@
 // CKEditor 5 대체용 임시 에디터
 
 import React, { forwardRef, useImperativeHandle, useState } from 'react';
+import { sanitizeHTML } from '../../../utils/htmlSanitizer';
 
 interface FallbackEditorProps {
   onImageUpload: (blob: Blob, callback: (url: string, alt?: string) => void) => void;
@@ -32,6 +33,7 @@ const FallbackEditor = forwardRef<FallbackEditorRef, FallbackEditorProps>((props
       getMarkdown: () => content,
       setMarkdown: (markdownContent: string) => setContent(markdownContent),
       getHTML: () => markdownToHtml(content),
+      getContent: () => markdownToHtml(content),
       setHTML: (htmlContent: string) => setContent(htmlToMarkdown(htmlContent)),
       focus: () => {
         if (textareaRef.current) {
@@ -174,16 +176,23 @@ FallbackEditor.displayName = 'FallbackEditor';
 function markdownToHtml(markdown: string): string {
   if (!markdown) return '';
 
-  return markdown
+  // ⚠️ link 변환에서 href는 안전 스킴만 허용 — javascript:/data:/vbscript: 등 XSS 차단.
+  //    최종 출력도 sanitizeHTML(DOMPurify)로 통과시켜 사용자 입력에 포함된 <script> 등 차단.
+  const SAFE_URL = /^(https?:\/\/|mailto:|\/|#)/i;
+  const rawHtml = markdown
     .replace(/^# (.*$)/gm, '<h1>$1</h1>')
     .replace(/^## (.*$)/gm, '<h2>$1</h2>')
     .replace(/^### (.*$)/gm, '<h3>$1</h3>')
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.*?)\*/g, '<em>$1</em>')
     .replace(/`(.*?)`/g, '<code>$1</code>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, label, href) => {
+      const safe = SAFE_URL.test(String(href).trim()) ? String(href).trim() : '#';
+      return `<a href="${safe}">${label}</a>`;
+    })
     .replace(/^- (.*$)/gm, '<li>$1</li>')
     .replace(/\n/g, '<br>');
+  return sanitizeHTML(rawHtml);
 }
 
 function htmlToMarkdown(html: string): string {

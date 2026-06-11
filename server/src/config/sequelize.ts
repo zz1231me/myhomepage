@@ -99,6 +99,23 @@ function createSequelizeConfig(): SequelizeOptions {
         busyTimeout: 5000,
       },
 
+      // ✅ 연결마다 PRAGMA foreign_keys=ON 재적용
+      //    SQLite의 foreign_keys는 연결 단위 설정이라, 풀 연결이 재생성되면 OFF로 돌아가
+      //    FK cascade(게시글 삭제 시 자식 정리 등)가 조용히 멈출 수 있음 → afterConnect에서 보장
+      hooks: {
+        afterConnect: async (connection: {
+          run?: (sql: string, cb: (err: Error | null) => void) => void;
+        }) => {
+          if (typeof connection.run === 'function') {
+            await new Promise<void>((resolve, reject) => {
+              connection.run!('PRAGMA foreign_keys = ON', (err: Error | null) =>
+                err ? reject(err) : resolve()
+              );
+            });
+          }
+        },
+      },
+
       // ✅ SQLite 쿼리 최적화
       transactionType: Transaction.TYPES.IMMEDIATE,
     };
@@ -135,7 +152,8 @@ function createSequelizeConfig(): SequelizeOptions {
             ssl: env.DB_SSL
               ? {
                   require: true,
-                  rejectUnauthorized: false,
+                  rejectUnauthorized: env.NODE_ENV === 'production',
+                  ...(env.DB_SSL_CA && { ca: env.DB_SSL_CA }),
                 }
               : false,
             // 타임아웃 설정
@@ -151,7 +169,8 @@ function createSequelizeConfig(): SequelizeOptions {
             // SSL 설정
             ...(env.DB_SSL && {
               ssl: {
-                rejectUnauthorized: false,
+                rejectUnauthorized: env.NODE_ENV === 'production',
+                ...(env.DB_SSL_CA && { ca: env.DB_SSL_CA }),
               },
             }),
           },

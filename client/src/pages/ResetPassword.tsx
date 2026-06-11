@@ -33,10 +33,13 @@ function ResetPassword() {
   }, [error]);
 
   const validatePassword = (pw: string): string | null => {
-    if (pw.length < 8) return '비밀번호는 8자 이상이어야 합니다.';
-    if (!/[A-Z]/.test(pw)) return '비밀번호는 대문자를 포함해야 합니다.';
-    if (!/[a-z]/.test(pw)) return '비밀번호는 소문자를 포함해야 합니다.';
-    if (!/[0-9!@#$%^&*]/.test(pw))
+    if (pw.length < settings.minPasswordLength)
+      return `비밀번호는 ${settings.minPasswordLength}자 이상이어야 합니다.`;
+    if (settings.requireUppercase && !/[A-Z]/.test(pw))
+      return '비밀번호는 영문 대문자를 포함해야 합니다.';
+    if (settings.requireLowercase && !/[a-z]/.test(pw))
+      return '비밀번호는 영문 소문자를 포함해야 합니다.';
+    if (settings.requireNumberOrSpecial && !/[0-9!@#$%^&*]/.test(pw))
       return '비밀번호는 숫자 또는 특수문자(!@#$%^&*)를 포함해야 합니다.';
     return null;
   };
@@ -171,20 +174,18 @@ function ResetPassword() {
                     onChange={e => setPassword(e.target.value)}
                     disabled={isLoading}
                     required
-                    className="w-full px-4 py-3 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100
+                    className="w-full pl-4 pr-12 py-3 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100
                               focus:bg-slate-50 dark:focus:bg-slate-600 focus:ring-2 focus:ring-primary-500/40
                               disabled:opacity-50 disabled:cursor-not-allowed
                               transition-all duration-200
                               placeholder:text-slate-400 dark:placeholder:text-slate-500"
-                    style={{ border: 'none', outline: 'none', paddingRight: '3rem' }}
-                    placeholder="새 비밀번호 (8자 이상, 대·소문자, 숫자/특수문자 포함)"
+                    placeholder={`새 비밀번호 (${settings.minPasswordLength}자 이상${settings.requireUppercase ? ', 대문자' : ''}${settings.requireLowercase ? ', 소문자' : ''}${settings.requireNumberOrSpecial ? ', 숫자/특수문자' : ''} 포함)`}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     disabled={isLoading}
                     className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-500 transition-colors"
-                    style={{ border: 'none', outline: 'none' }}
                     aria-label={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
                   >
                     {showPassword ? (
@@ -242,12 +243,11 @@ function ResetPassword() {
                     onChange={e => setPasswordConfirm(e.target.value)}
                     disabled={isLoading}
                     required
-                    className="w-full px-4 py-3 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100
+                    className="w-full pl-4 pr-12 py-3 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100
                               focus:bg-slate-50 dark:focus:bg-slate-600 focus:ring-2 focus:ring-primary-500/40
                               disabled:opacity-50 disabled:cursor-not-allowed
                               transition-all duration-200
                               placeholder:text-slate-400 dark:placeholder:text-slate-500"
-                    style={{ border: 'none', outline: 'none', paddingRight: '3rem' }}
                     placeholder="비밀번호를 다시 입력하세요"
                   />
                   <button
@@ -255,7 +255,6 @@ function ResetPassword() {
                     onClick={() => setShowPasswordConfirm(!showPasswordConfirm)}
                     disabled={isLoading}
                     className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-500 transition-colors"
-                    style={{ border: 'none', outline: 'none' }}
                     aria-label={showPasswordConfirm ? '비밀번호 숨기기' : '비밀번호 보기'}
                   >
                     {showPasswordConfirm ? (
@@ -299,22 +298,34 @@ function ResetPassword() {
 
               {/* 비밀번호 조건 안내 */}
               <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl text-xs text-slate-500 dark:text-slate-400 space-y-1">
-                <p className={password.length >= 8 ? 'text-green-600 dark:text-green-400' : ''}>
-                  • 8자 이상
-                </p>
-                <p className={/[A-Z]/.test(password) ? 'text-green-600 dark:text-green-400' : ''}>
-                  • 대문자 포함
-                </p>
-                <p className={/[a-z]/.test(password) ? 'text-green-600 dark:text-green-400' : ''}>
-                  • 소문자 포함
-                </p>
                 <p
                   className={
-                    /[0-9!@#$%^&*]/.test(password) ? 'text-green-600 dark:text-green-400' : ''
+                    password.length >= settings.minPasswordLength
+                      ? 'text-green-600 dark:text-green-400'
+                      : ''
                   }
                 >
-                  • 숫자 또는 특수문자(!@#$%^&*) 포함
+                  • {settings.minPasswordLength}자 이상
                 </p>
+                {settings.requireUppercase && (
+                  <p className={/[A-Z]/.test(password) ? 'text-green-600 dark:text-green-400' : ''}>
+                    • 대문자 포함
+                  </p>
+                )}
+                {settings.requireLowercase && (
+                  <p className={/[a-z]/.test(password) ? 'text-green-600 dark:text-green-400' : ''}>
+                    • 소문자 포함
+                  </p>
+                )}
+                {settings.requireNumberOrSpecial && (
+                  <p
+                    className={
+                      /[0-9!@#$%^&*]/.test(password) ? 'text-green-600 dark:text-green-400' : ''
+                    }
+                  >
+                    • 숫자 또는 특수문자(!@#$%^&*) 포함
+                  </p>
+                )}
               </div>
 
               <button
@@ -328,7 +339,6 @@ function ResetPassword() {
                           transition-all duration-150
                           disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100
                           flex items-center justify-center gap-2"
-                style={{ border: 'none', outline: 'none' }}
               >
                 {isLoading ? (
                   <>

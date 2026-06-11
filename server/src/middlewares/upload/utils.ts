@@ -75,6 +75,11 @@ export function validateMimeType(
  * 파일명 특수문자 검증
  */
 export function validateFilename(filename: string): boolean {
+  // null 바이트 차단 (multipart 파싱 후 NUL이 남아 경로 truncation 유발 가능)
+  if (filename.includes('\0')) {
+    return false;
+  }
+
   // 경로 조작 시도 차단
   if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
     return false;

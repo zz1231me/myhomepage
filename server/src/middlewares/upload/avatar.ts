@@ -8,27 +8,28 @@ import { UPLOAD_DIRS, getDynamicAllowedExtensions, getDynamicSizeLimits } from '
 import { validateFilename, deleteFile } from './utils';
 import { logInfo, logError } from '../../utils/logger';
 import { getAvatarSettings } from '../../utils/settingsCache';
+import { AppError } from '../error.middleware';
 
 /**
  * 아바타 필터 함수 — 허용 확장자·크기는 런타임에 settingsCache에서 읽음
  */
 function avatarFilter(_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) {
   try {
-    // 파일명 검증
+    // 파일명 검증 — 사용자 입력 오류이므로 400(AppError)로 전달(500 오인 방지)
     if (!validateFilename(file.originalname)) {
-      return cb(new Error('허용되지 않는 파일명입니다.'));
+      return cb(new AppError(400, '허용되지 않는 파일명입니다.'));
     }
 
     // MIME 타입 검사
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
     if (!allowedTypes.includes(file.mimetype)) {
-      return cb(new Error('지원하지 않는 파일 형식입니다. (JPEG, PNG, WebP, GIF만 허용)'));
+      return cb(new AppError(400, '지원하지 않는 파일 형식입니다. (JPEG, PNG, WebP, GIF만 허용)'));
     }
 
     // 파일 확장자 검사 (관리자 설정 반영)
     const fileExtension = path.extname(file.originalname).toLowerCase();
     if (!getDynamicAllowedExtensions().IMAGE.includes(fileExtension)) {
-      return cb(new Error('지원하지 않는 파일 확장자입니다.'));
+      return cb(new AppError(400, '지원하지 않는 파일 확장자입니다.'));
     }
 
     cb(null, true);
@@ -77,9 +78,42 @@ export const uploadAvatar: multer.Multer = new Proxy({} as multer.Multer, {
 });
 
 /**
+ * 아바타 버퍼 magic-number 검증 (memoryStorage는 file.path가 없어 disk-based validator 불가)
+ * JPEG(FF D8 FF), PNG(89 50 4E 47), GIF(47 49 46), WebP(RIFF+WEBP) 허용
+ */
+function validateAvatarBuffer(buffer: Buffer): boolean {
+  if (buffer.length < 12) return false;
+  // JPEG
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return true;
+  // PNG
+  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47)
+    return true;
+  // GIF
+  if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46) return true;
+  // WebP: RIFF.... WEBP
+  if (
+    buffer[0] === 0x52 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x46 &&
+    buffer[8] === 0x57 &&
+    buffer[9] === 0x45 &&
+    buffer[10] === 0x42 &&
+    buffer[11] === 0x50
+  )
+    return true;
+  return false;
+}
+
+/**
  * 아바타 이미지 처리 (Sharp 사용)
  */
 export async function processAvatar(buffer: Buffer, userId: string): Promise<string> {
+  // magic-number 검증 — multer memoryStorage는 disk validator를 우회하므로 여기서 검증
+  if (!validateAvatarBuffer(buffer)) {
+    throw new Error('이미지 파일 형식이 올바르지 않습니다.');
+  }
+
   try {
     const timestamp = Date.now();
     const unique = randomUUID().replace(/-/g, '').substring(0, 12);

@@ -19,7 +19,11 @@ import { authenticate } from '../middlewares/auth.middleware';
 import { uploadAvatar } from '../middlewares/upload/avatar'; // ✅ 직접 import
 import { getOwnSessions } from '../controllers/userSession.controller';
 
-import { authLimiter, refreshLimiter } from '../middlewares/rate-limit.middleware';
+import {
+  authLimiter,
+  refreshLimiter,
+  forgotPasswordLimiter,
+} from '../middlewares/rate-limit.middleware';
 import { validateBody } from '../middlewares/validate.middleware';
 import {
   loginSchema,
@@ -35,11 +39,22 @@ const router = Router();
 router.post('/login', authLimiter, validateBody(loginSchema), login);
 router.post('/register', authLimiter, validateBody(registerSchema), register);
 router.post('/refresh', refreshLimiter, refreshToken);
-router.post('/forgot-password', authLimiter, validateBody(forgotPasswordSchema), forgotPassword);
+router.post(
+  '/forgot-password',
+  forgotPasswordLimiter,
+  validateBody(forgotPasswordSchema),
+  forgotPassword
+);
 router.post('/reset-password', authLimiter, validateBody(resetPasswordSchema), resetPassword);
 router.post('/logout', authenticate, logout);
 router.get('/me', authenticate, getCurrentUser);
-router.post('/change-password', authenticate, validateBody(changePasswordSchema), changePassword);
+router.post(
+  '/change-password',
+  authenticate,
+  authLimiter,
+  validateBody(changePasswordSchema),
+  changePassword
+);
 router.get('/permissions', authenticate, getUserPermissions);
 
 // 🧑 프로필(이름) 변경

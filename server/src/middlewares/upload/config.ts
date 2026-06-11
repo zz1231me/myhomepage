@@ -45,11 +45,15 @@ export function getDynamicMaxImageCount(): number {
 // ─── MIME 타입 매핑 (정적 — MIME은 확장자와 1:1 매핑이므로 변경 필요 없음) ────
 
 export const MIME_TYPE_MAP: { [key: string]: string[] } = {
+  // 이미지
   'image/jpeg': ['.jpg', '.jpeg'],
   'image/png': ['.png'],
   'image/gif': ['.gif'],
   'image/webp': ['.webp'],
   'image/bmp': ['.bmp'],
+  'image/x-icon': ['.ico'],
+  'image/vnd.microsoft.icon': ['.ico'],
+  // 문서
   'application/pdf': ['.pdf'],
   'application/msword': ['.doc'],
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
@@ -59,57 +63,96 @@ export const MIME_TYPE_MAP: { [key: string]: string[] } = {
   'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'],
   'text/plain': ['.txt'],
   'text/csv': ['.csv'],
+  'application/rtf': ['.rtf'],
+  'text/rtf': ['.rtf'],
+  'application/vnd.oasis.opendocument.text': ['.odt'],
+  'application/vnd.oasis.opendocument.spreadsheet': ['.ods'],
+  'application/vnd.oasis.opendocument.presentation': ['.odp'],
+  'application/x-hwp': ['.hwp'],
+  'application/haansoftHWP': ['.hwp'],
+  // 압축
   'application/zip': ['.zip'],
   'application/x-rar-compressed': ['.rar'],
+  'application/vnd.rar': ['.rar'],
   'application/x-7z-compressed': ['.7z'],
+  'application/x-tar': ['.tar'],
+  'application/gzip': ['.gz'],
+  'application/x-gzip': ['.gz'],
+  // 오디오/비디오
   'audio/mpeg': ['.mp3'],
   'video/mp4': ['.mp4'],
+  'video/x-msvideo': ['.avi'],
+  'video/avi': ['.avi'],
+  'video/quicktime': ['.mov'],
+  'video/x-ms-wmv': ['.wmv'],
+  'video/x-flv': ['.flv'],
+  'video/webm': ['.webm'],
 };
 
 // Magic Numbers (파일 실제 타입 검증)
-// docx/xlsx/pptx는 zip 기반이라 동일한 PK 헤더를 가짐
+// 빈 배열([])은 magic byte 검증 불가 타입 — 확장자/MIME 일치로만 검증
 export const MAGIC_NUMBERS: { [key: string]: Buffer[] } = {
   // 이미지
   'image/jpeg': [Buffer.from([0xff, 0xd8, 0xff])],
   'image/png': [Buffer.from([0x89, 0x50, 0x4e, 0x47])],
   'image/gif': [Buffer.from([0x47, 0x49, 0x46])],
-  'image/webp': [Buffer.from([0x52, 0x49, 0x46, 0x46])], // RIFF
+  'image/webp': [Buffer.from([0x52, 0x49, 0x46, 0x46])], // RIFF (validator also checks bytes 8-11 for 'WEBP')
   'image/bmp': [Buffer.from([0x42, 0x4d])], // BM
+  'image/x-icon': [Buffer.from([0x00, 0x00, 0x01, 0x00])], // ICO
+  'image/vnd.microsoft.icon': [Buffer.from([0x00, 0x00, 0x01, 0x00])],
   // 문서
   'application/pdf': [Buffer.from([0x25, 0x50, 0x44, 0x46])], // %PDF
-  'application/msword': [
-    Buffer.from([0xd0, 0xcf, 0x11, 0xe0]), // OLE2 컨테이너 (doc)
-  ],
+  'application/msword': [Buffer.from([0xd0, 0xcf, 0x11, 0xe0])], // OLE2
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': [
     Buffer.from([0x50, 0x4b, 0x03, 0x04]), // PK (zip/docx)
   ],
-  'application/vnd.ms-excel': [
-    Buffer.from([0xd0, 0xcf, 0x11, 0xe0]), // OLE2 (xls)
-  ],
+  'application/vnd.ms-excel': [Buffer.from([0xd0, 0xcf, 0x11, 0xe0])], // OLE2
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
     Buffer.from([0x50, 0x4b, 0x03, 0x04]), // PK (xlsx)
   ],
-  'application/vnd.ms-powerpoint': [
-    Buffer.from([0xd0, 0xcf, 0x11, 0xe0]), // OLE2 (ppt)
-  ],
+  'application/vnd.ms-powerpoint': [Buffer.from([0xd0, 0xcf, 0x11, 0xe0])], // OLE2
   'application/vnd.openxmlformats-officedocument.presentationml.presentation': [
     Buffer.from([0x50, 0x4b, 0x03, 0x04]), // PK (pptx)
   ],
+  'text/plain': [],
+  'text/csv': [],
+  'application/rtf': [Buffer.from([0x7b, 0x5c, 0x72, 0x74, 0x66])], // {\rtf
+  'text/rtf': [Buffer.from([0x7b, 0x5c, 0x72, 0x74, 0x66])],
+  // ODF (LibreOffice) — ZIP 기반
+  'application/vnd.oasis.opendocument.text': [Buffer.from([0x50, 0x4b, 0x03, 0x04])],
+  'application/vnd.oasis.opendocument.spreadsheet': [Buffer.from([0x50, 0x4b, 0x03, 0x04])],
+  'application/vnd.oasis.opendocument.presentation': [Buffer.from([0x50, 0x4b, 0x03, 0x04])],
+  // HWP — OLE2(HWP5) 또는 ZIP(HWPX 2014+) 모두 허용
+  'application/x-hwp': [
+    Buffer.from([0xd0, 0xcf, 0x11, 0xe0]), // HWP5 OLE2
+    Buffer.from([0x50, 0x4b, 0x03, 0x04]), // HWPX ZIP
+  ],
+  'application/haansoftHWP': [
+    Buffer.from([0xd0, 0xcf, 0x11, 0xe0]),
+    Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+  ],
   // 압축
   'application/zip': [Buffer.from([0x50, 0x4b, 0x03, 0x04])], // PK
+  'application/x-rar-compressed': [Buffer.from([0x52, 0x61, 0x72, 0x21, 0x1a, 0x07])], // Rar!
+  'application/vnd.rar': [Buffer.from([0x52, 0x61, 0x72, 0x21, 0x1a, 0x07])],
   'application/x-7z-compressed': [Buffer.from([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c])], // 7z
-  // 미디어
+  'application/x-tar': [], // ustar 헤더가 offset 257에 있어 magic byte 검증 불가
+  'application/gzip': [Buffer.from([0x1f, 0x8b])], // GZ
+  'application/x-gzip': [Buffer.from([0x1f, 0x8b])],
+  // 오디오/비디오
   'audio/mpeg': [
     Buffer.from([0x49, 0x44, 0x33]), // ID3
     Buffer.from([0xff, 0xfb]), // MP3 frame sync
     Buffer.from([0xff, 0xf3]),
     Buffer.from([0xff, 0xf2]),
   ],
-  'video/mp4': [
-    Buffer.from([0x66, 0x74, 0x79, 0x70]), // ftyp (at offset 4, checked below)
-  ],
-  'text/plain': [], // 텍스트는 magic number로 검증 불가 — 확장자/MIME 일치로만 검증
-  'text/csv': [],
+  'video/mp4': [Buffer.from([0x66, 0x74, 0x79, 0x70])], // ftyp (offset 4, checked separately)
+  'video/x-msvideo': [Buffer.from([0x52, 0x49, 0x46, 0x46])], // RIFF (AVI)
+  'video/avi': [Buffer.from([0x52, 0x49, 0x46, 0x46])],
+  'video/quicktime': [], // MOV 헤더가 가변적(ftyp/moov/wide 등)이라 magic byte 검증 불가
+  'video/x-ms-wmv': [Buffer.from([0x30, 0x26, 0xb2, 0x75])], // ASF (WMV/WMA 공통)
+  'video/x-flv': [Buffer.from([0x46, 0x4c, 0x56])], // FLV
+  'video/webm': [Buffer.from([0x1a, 0x45, 0xdf, 0xa3])], // EBML (WebM/MKV)
 };
 
 // 업로드 디렉토리

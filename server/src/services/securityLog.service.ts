@@ -81,6 +81,9 @@ export class SecurityLogService extends BaseService {
           model: User,
           as: 'user',
           attributes: ['id', 'name', 'email'],
+          // required:false 미지정 시 INNER JOIN으로 userId NULL 행(익명 시스템 이벤트)이
+          // 페이지네이션 total에서 누락됨
+          required: false,
         },
       ],
     });
@@ -119,13 +122,15 @@ export class SecurityLogService extends BaseService {
   async deleteLogs(options: { before?: string; ids?: string[] } = {}): Promise<number> {
     const where: any = {};
 
-    if (options.ids && options.ids.length > 0) {
+    if (Array.isArray(options.ids)) {
+      // 빈 배열은 no-op으로 처리 (accidental delete-all 방지)
+      if (options.ids.length === 0) return 0;
       where.id = { [Op.in]: options.ids };
     } else if (options.before) {
       where.createdAt = { [Op.lt]: new Date(options.before) };
     } else {
-      // 조건 없으면 전체 삭제
-      return SecurityLog.destroy({ truncate: true } as any);
+      // 조건 없으면 전체 삭제 — truncate 대신 destroy로 훅 정상 실행
+      return SecurityLog.destroy({ where: {} });
     }
 
     return SecurityLog.destroy({ where });
@@ -133,7 +138,7 @@ export class SecurityLogService extends BaseService {
 
   /** 전체 보안 로그 삭제 */
   async deleteAll(): Promise<number> {
-    return SecurityLog.destroy({ truncate: true } as any);
+    return SecurityLog.destroy({ where: {} });
   }
 }
 

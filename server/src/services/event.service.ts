@@ -25,35 +25,46 @@ export class EventService extends BaseService {
             ],
           },
         ],
+        order: [['start', 'DESC']],
+        limit: 2000, // 사용자 대면 getEvents와 동일한 상한 (관리자 전체 조회)
       });
-    } catch (_error) {
+    } catch (error) {
+      logError('이벤트 조회 실패', error);
       throw new AppError(500, '이벤트 조회 실패');
     }
   }
 
   async deleteEvent(id: string): Promise<void> {
-    const event = await Event.findByPk(id);
-    if (!event) {
-      throw new AppError(404, '이벤트를 찾을 수 없습니다.');
-    }
-
     try {
-      await event.destroy();
-    } catch (_error) {
+      // findByPk를 트랜잭션 내 LOCK.UPDATE로 이동 — 동시 삭제 요청의 TOCTOU 방지
+      await sequelize.transaction(async t => {
+        const event = await Event.findByPk(id, { transaction: t, lock: t.LOCK.UPDATE });
+        if (!event) {
+          throw new AppError(404, '이벤트를 찾을 수 없습니다.');
+        }
+        // 반복 이벤트 자식 인스턴스까지 원자적으로 삭제 (고아화 방지)
+        await Event.destroy({ where: { parentEventId: id }, transaction: t });
+        await event.destroy({ transaction: t });
+      });
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      logError('이벤트 삭제 실패', error);
       throw new AppError(500, '이벤트 삭제 실패');
     }
   }
 
   async updateEvent(id: string, data: Partial<EventInstance>): Promise<EventInstance> {
-    const event = await Event.findByPk(id);
-    if (!event) {
-      throw new AppError(404, '이벤트를 찾을 수 없습니다.');
-    }
-
     try {
-      await event.update(data);
-      return event;
-    } catch (_error) {
+      return await sequelize.transaction(async t => {
+        const event = await Event.findByPk(id, { transaction: t, lock: t.LOCK.UPDATE });
+        if (!event) {
+          throw new AppError(404, '이벤트를 찾을 수 없습니다.');
+        }
+        await event.update(data, { transaction: t });
+        return event;
+      });
+    } catch (error) {
+      if (error instanceof AppError) throw error;
       throw new AppError(500, '이벤트 수정 실패');
     }
   }
@@ -77,7 +88,7 @@ export class EventService extends BaseService {
         } else {
           return {
             roleId: role.id,
-            canCreate: true, // 기본값
+            canCreate: false, // 기본값: 미설정 역할은 미들웨어와 동일하게 생성 불허
             canRead: true, // 기본값
             canUpdate: false,
             canDelete: false,
@@ -106,36 +117,36 @@ export class EventService extends BaseService {
   ): Promise<void> {
     const t = await sequelize.transaction();
     try {
-      await Promise.all(
-        permissions.map(async perm => {
-          const [permission, created] = await EventPermission.findOrCreate({
-            where: { roleId: perm.roleId },
-            defaults: {
-              roleId: perm.roleId,
-              canCreate: perm.canCreate ?? true,
-              canRead: perm.canRead ?? true,
-              canUpdate: perm.canUpdate ?? false,
-              canDelete: perm.canDelete ?? false,
-            },
-            transaction: t,
-          });
+      // Promise.all 대신 순차 처리 — 동일 트랜잭션 내 병렬 findOrCreate는 데드락 유발
+      for (const perm of permissions) {
+        const [permission, created] = await EventPermission.findOrCreate({
+          where: { roleId: perm.roleId },
+          defaults: {
+            roleId: perm.roleId,
+            canCreate: perm.canCreate ?? true,
+            canRead: perm.canRead ?? true,
+            canUpdate: perm.canUpdate ?? false,
+            canDelete: perm.canDelete ?? false,
+          },
+          transaction: t,
+        });
 
-          if (!created) {
-            await permission.update(
-              {
-                canCreate: perm.canCreate ?? permission.canCreate,
-                canRead: perm.canRead ?? permission.canRead,
-                canUpdate: perm.canUpdate ?? permission.canUpdate,
-                canDelete: perm.canDelete ?? permission.canDelete,
-              },
-              { transaction: t }
-            );
-          }
-        })
-      );
+        if (!created) {
+          await permission.update(
+            {
+              canCreate: perm.canCreate ?? permission.canCreate,
+              canRead: perm.canRead ?? permission.canRead,
+              canUpdate: perm.canUpdate ?? permission.canUpdate,
+              canDelete: perm.canDelete ?? permission.canDelete,
+            },
+            { transaction: t }
+          );
+        }
+      }
       await t.commit();
-    } catch (_error) {
+    } catch (error) {
       await t.rollback();
+      logError('이벤트 권한 설정 실패', error);
       throw new AppError(500, '이벤트 권한 설정 실패');
     }
   }

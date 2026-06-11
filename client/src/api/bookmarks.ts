@@ -13,8 +13,8 @@ export interface Bookmark {
   updatedAt?: string;
 }
 
-export const fetchBookmarks = async (): Promise<Bookmark[]> => {
-  const res = await axios.get('/bookmarks');
+export const fetchBookmarks = async (signal?: AbortSignal): Promise<Bookmark[]> => {
+  const res = await axios.get('/bookmarks', { signal });
   return unwrap(res);
 };
 

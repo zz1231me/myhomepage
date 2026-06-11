@@ -33,6 +33,7 @@ import {
 import { authenticate } from '../middlewares/auth.middleware';
 import { isAdmin } from '../middlewares/isAdmin';
 import { ipWhitelistMiddleware } from '../middlewares/ipWhitelistMiddleware';
+import { adminLimiter } from '../middlewares/rate-limit.middleware';
 import { getSecurityLogs, deleteSecurityLogs } from '../controllers/securityLog.controller';
 import { getErrorLogs, deleteErrorLogs } from '../controllers/errorLog.controller';
 import { getLoginHistory, getGlobalLoginHistory } from '../controllers/loginHistory.controller';
@@ -50,8 +51,9 @@ import {
 
 const router = Router();
 
-// 인증, 관리자 권한, IP 제한 체크
+// 인증, 관리자 권한, IP 제한, Rate limit 체크
 router.use(
+  adminLimiter as RequestHandler,
   authenticate as RequestHandler,
   isAdmin as RequestHandler,
   ipWhitelistMiddleware as RequestHandler

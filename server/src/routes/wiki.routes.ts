@@ -11,10 +11,12 @@ import {
 } from '../controllers/wiki.controller';
 import { authenticate } from '../middlewares/auth.middleware';
 import { checkWikiWritePermission } from '../middlewares/wikiPermission';
+import { apiLimiter } from '../middlewares/rate-limit.middleware';
 import { AuthRequest } from '../types/auth-request';
 
 const router = Router();
 router.use(authenticate as RequestHandler);
+router.use(apiLimiter as RequestHandler);
 
 router.get(
   '/permissions',
@@ -28,9 +30,9 @@ router.get(
   '/:slug',
   asyncHandler((req, res) => getPageBySlug(req as AuthRequest, res))
 );
+// 이력 조회는 읽기 권한으로 충분 — checkWikiWritePermission 불필요
 router.get(
   '/:slug/history',
-  checkWikiWritePermission as RequestHandler,
   asyncHandler((req, res) => getPageHistory(req as AuthRequest, res))
 );
 router.post(

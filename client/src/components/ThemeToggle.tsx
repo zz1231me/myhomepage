@@ -57,7 +57,7 @@ export function ThemeToggle() {
           key={t.value}
           onClick={() => setTheme(t.value)}
           className={`
-            flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200
+            flex items-center justify-center px-2.5 py-1.5 rounded-md transition-all duration-200
             ${
               theme === t.value
                 ? 'bg-white dark:bg-slate-600 text-slate-900 dark:text-slate-100 shadow-sm'
@@ -65,9 +65,10 @@ export function ThemeToggle() {
             }
           `}
           title={`${t.label} 모드로 전환`}
+          aria-label={`${t.label} 모드로 전환`}
+          aria-pressed={theme === t.value}
         >
           {t.icon}
-          <span className="hidden sm:inline">{t.label}</span>
         </button>
       ))}
     </div>

@@ -1,70 +1,47 @@
 // client/src/pages/components/calendar/components/EventForm.tsx
 import React, { useMemo } from 'react';
 import { CKEditor } from '@ckeditor/ckeditor5-react';
-import {
-  ClassicEditor,
-  Alignment,
-  AutoLink,
-  BlockQuote,
-  Bold,
-  Essentials,
-  FontColor,
-  Heading,
-  Image,
-  ImageCaption,
-  ImageResize,
-  ImageStyle,
-  ImageToolbar,
-  ImageUpload,
-  Indent,
-  IndentBlock,
-  Italic,
-  Link,
-  List,
-  ListProperties,
-  Paragraph,
-  PasteFromOffice,
-  RemoveFormat,
-  Strikethrough,
-  Underline,
-  type EditorConfig,
-} from 'ckeditor5';
-import 'ckeditor5/ckeditor5.css';
+import { ClassicEditor, type EditorConfig } from 'ckeditor5';
+import { buildEditorConfig } from '../../../../components/editor/core/editorConfig';
 import '../../../../components/editor/core/CKEditorOverride.css';
-import koTranslations from 'ckeditor5/translations/ko.js';
 import { EventFormData } from '../types';
 import { categories } from '../constants';
+import { uploadApi } from '../../../../api/axios';
+import { useSiteSettings } from '../../../../store/siteSettings';
 
-// 모듈 레벨 업로드 어댑터 (CKEditorWrapper와 동일한 패턴)
+// 다른 에디터들(CKEditorWrapper/WikiEditor)와 동일한 axios 기반 어댑터.
+// - 419(액세스 토큰 만료) 자동 갱신 + 재시도 (axios 인터셉터)
+// - AbortController로 컴포넌트 언마운트 시 업로드 취소 (메모리/네트워크 누수 방지)
+// - onUploadProgress로 CKEditor 진행률 표시
 class EventImageUploadAdapter {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private loader: any;
+  private controller = new AbortController();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(loader: any) {
     this.loader = loader;
   }
-  upload(): Promise<{ default: string }> {
-    return this.loader.file.then((file: File) => {
-      return new Promise<{ default: string }>((resolve, reject) => {
-        const formData = new FormData();
-        formData.append('image', file);
-        fetch('/api/uploads/images', {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'X-Requested-With': 'XMLHttpRequest' },
-          body: formData,
-        })
-          .then(res => res.json())
-          .then(data => {
-            const url = data?.data?.imageUrl ?? data?.data?.url ?? data?.imageUrl;
-            if (url) resolve({ default: url });
-            else reject(new Error('이미지 업로드 실패'));
-          })
-          .catch(reject);
-      });
+  async upload(): Promise<{ default: string }> {
+    const file: File = await this.loader.file;
+    const formData = new FormData();
+    formData.append('image', file);
+    const res = await uploadApi.post('/uploads/images', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      signal: this.controller.signal,
+      onUploadProgress: e => {
+        if (typeof e.total === 'number' && e.total > 0) {
+          this.loader.uploadTotal = e.total;
+          this.loader.uploaded = e.loaded;
+        }
+      },
     });
+    const url = res.data?.data?.imageUrl ?? res.data?.data?.url ?? res.data?.imageUrl;
+    if (!url) throw new Error('이미지 업로드 응답에 URL이 없습니다.');
+    return { default: url };
   }
-  abort() {}
+  abort() {
+    this.controller.abort();
+  }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -73,76 +50,6 @@ function EventUploadAdapterPlugin(editor: any) {
   editor.plugins.get('FileRepository').createUploadAdapter = (loader: any) =>
     new EventImageUploadAdapter(loader);
 }
-
-/* ── 플러그인 (이미지 업로드 포함) ── */
-const EVENT_PLUGINS = [
-  Essentials,
-  Paragraph,
-  Heading,
-  Bold,
-  Italic,
-  Underline,
-  Strikethrough,
-  FontColor,
-  Alignment,
-  Link,
-  AutoLink,
-  Image,
-  ImageCaption,
-  ImageResize,
-  ImageStyle,
-  ImageToolbar,
-  ImageUpload,
-  List,
-  ListProperties,
-  Indent,
-  IndentBlock,
-  BlockQuote,
-  PasteFromOffice,
-  RemoveFormat,
-];
-
-/*
- * 툴바: shouldNotGroupWhenFull: true → 넘치면 줄바꿈 (점점점 X)
- * 아이템을 두 줄에 나눠 표시되도록 구성
- */
-const EVENT_TOOLBAR_ITEMS = [
-  'undo',
-  'redo',
-  '|',
-  'heading',
-  '|',
-  'bold',
-  'italic',
-  'underline',
-  'strikethrough',
-  '|',
-  'fontColor',
-  'alignment',
-  '|',
-  'bulletedList',
-  'numberedList',
-  'outdent',
-  'indent',
-  '|',
-  'link',
-  'insertImage',
-  'blockQuote',
-  '|',
-  'removeFormat',
-];
-
-const EVENT_LINK_CONFIG = {
-  defaultProtocol: 'https://',
-  addTargetToExternalLinks: true,
-  decorators: {
-    isExternal: {
-      mode: 'automatic' as const,
-      callback: (url: string | null) => url !== null && /^(https?:)?\/\//.test(url),
-      attributes: { target: '_blank', rel: 'noopener noreferrer' },
-    },
-  },
-};
 
 interface EventFormProps {
   formData: EventFormData;
@@ -181,31 +88,15 @@ export const EventForm: React.FC<EventFormProps> = ({
   mode,
   submitting = false,
 }) => {
+  // 관리자 설정값 — 서버 검증과 동일 한도를 클라이언트에서도 사전 차단
+  const eventBodyMax = useSiteSettings(s => s.settings.eventBodyMaxLength);
+  const eventLocationMax = useSiteSettings(s => s.settings.eventLocationMaxLength);
   const editorConfig = useMemo<EditorConfig>(
-    () => ({
-      licenseKey: 'GPL',
-      translations: [koTranslations],
-      plugins: EVENT_PLUGINS,
-      extraPlugins: [EventUploadAdapterPlugin],
-      toolbar: {
-        items: EVENT_TOOLBAR_ITEMS,
-        shouldNotGroupWhenFull: true,
-      },
-      heading: {
-        options: [
-          { model: 'paragraph', title: '본문', class: 'ck-heading_paragraph' },
-          { model: 'heading2', view: 'h2', title: '제목 1', class: 'ck-heading_heading2' },
-          { model: 'heading3', view: 'h3', title: '제목 2', class: 'ck-heading_heading3' },
-        ],
-      },
-      list: { properties: { styles: true, startIndex: true, reversed: true } },
-      link: EVENT_LINK_CONFIG,
-      image: {
-        toolbar: ['imageStyle:inline', 'imageStyle:block', '|', 'imageTextAlternative'],
-        styles: { options: ['inline', 'block', 'side'] },
-      },
-      placeholder: '일정에 대한 메모나 설명을 입력하세요 (선택사항)',
-    }),
+    () =>
+      buildEditorConfig('event', {
+        placeholder: '일정에 대한 메모나 설명을 입력하세요 (선택사항)',
+        extraPlugins: [EventUploadAdapterPlugin],
+      }),
     []
   );
 
@@ -384,7 +275,8 @@ export const EventForm: React.FC<EventFormProps> = ({
           <input
             type="text"
             value={formData.location || ''}
-            onChange={e => onChange({ location: e.target.value })}
+            onChange={e => onChange({ location: e.target.value.slice(0, eventLocationMax) })}
+            maxLength={eventLocationMax}
             className={`${inputCls} pl-10`}
             placeholder="장소를 입력하세요 (선택사항)"
           />
@@ -403,9 +295,14 @@ export const EventForm: React.FC<EventFormProps> = ({
             config={editorConfig}
             data={formData.body}
             onChange={(_, editor) => {
-              onChange({ body: editor.getData() });
+              // 서버 검증과 동일 한도 적용 — 초과 입력은 잘라서 서버 400을 사전 차단
+              const data = editor.getData();
+              onChange({ body: data.length > eventBodyMax ? data.slice(0, eventBodyMax) : data });
             }}
           />
+          <div className="text-xs text-slate-500 dark:text-slate-400 px-2 py-1 text-right">
+            {(formData.body?.length ?? 0).toLocaleString()}/{eventBodyMax.toLocaleString()}자
+          </div>
         </div>
       </div>
 

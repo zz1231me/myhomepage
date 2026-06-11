@@ -11,6 +11,7 @@ import {
   DEFAULT_ALLOWED_EXTENSIONS,
 } from '../utils/settingsCache';
 import { refreshUploaders } from '../middlewares/upload/refresh';
+import { auditLogService } from '../services/auditLog.service';
 
 /** All fields we expose / accept */
 const DEFAULTS = {
@@ -106,6 +107,9 @@ function toPayload(s: SiteSettings) {
     globalSearchLimit: s.globalSearchLimit ?? DEFAULTS.globalSearchLimit,
     allowGuestComment: s.allowGuestComment ?? DEFAULTS.allowGuestComment,
     minPasswordLength: s.minPasswordLength ?? DEFAULTS.minPasswordLength,
+    requireUppercase: s.requireUppercase ?? DEFAULTS.requireUppercase,
+    requireLowercase: s.requireLowercase ?? DEFAULTS.requireLowercase,
+    requireNumberOrSpecial: s.requireNumberOrSpecial ?? DEFAULTS.requireNumberOrSpecial,
     commentMaxDepth: s.commentMaxDepth ?? DEFAULTS.commentMaxDepth,
     commentMaxCount: s.commentMaxCount ?? DEFAULTS.commentMaxCount,
     avatarSizePx: s.avatarSizePx ?? DEFAULTS.avatarSizePx,
@@ -117,16 +121,18 @@ function toPayload(s: SiteSettings) {
     rateLimitDownloadMax: s.rateLimitDownloadMax ?? DEFAULTS.rateLimitDownloadMax,
     autoSaveIntervalSeconds: s.autoSaveIntervalSeconds ?? DEFAULTS.autoSaveIntervalSeconds,
     draftExpiryMinutes: s.draftExpiryMinutes ?? DEFAULTS.draftExpiryMinutes,
+    memoMaxPerUser: s.memoMaxPerUser ?? DEFAULTS.memoMaxPerUser,
+    commentContentMaxLength: s.commentContentMaxLength ?? DEFAULTS.commentContentMaxLength,
+    eventBodyMaxLength: s.eventBodyMaxLength ?? DEFAULTS.eventBodyMaxLength,
+    eventLocationMaxLength: s.eventLocationMaxLength ?? DEFAULTS.eventLocationMaxLength,
   };
 }
 
 /** GET /api/site-settings — public */
 export const getSiteSettings = async (_req: Request, res: Response) => {
   try {
-    let settings = await SiteSettings.findByPk(1);
-    if (!settings) {
-      settings = await SiteSettings.create(DEFAULTS);
-    }
+    // findOrCreate로 원자적 처리 — 동시 요청 시 설정 행 중복 생성 방지
+    const [settings] = await SiteSettings.findOrCreate({ where: {}, defaults: DEFAULTS });
     sendSuccess(res, toPayload(settings));
   } catch (error) {
     logError('사이트 설정 조회 실패', error);
@@ -172,6 +178,9 @@ export const updateSiteSettings = async (req: Request, res: Response) => {
       globalSearchLimit,
       allowGuestComment,
       minPasswordLength,
+      requireUppercase,
+      requireLowercase,
+      requireNumberOrSpecial,
       commentMaxDepth,
       commentMaxCount,
       avatarSizePx,
@@ -183,6 +192,10 @@ export const updateSiteSettings = async (req: Request, res: Response) => {
       rateLimitDownloadMax,
       autoSaveIntervalSeconds,
       draftExpiryMinutes,
+      memoMaxPerUser,
+      commentContentMaxLength,
+      eventBodyMaxLength,
+      eventLocationMaxLength,
     } = req.body;
 
     // ── 입력 유효성 검사 ──────────────────────────────────────────────────────
@@ -206,7 +219,7 @@ export const updateSiteSettings = async (req: Request, res: Response) => {
       // 계정 보안
       [maxLoginAttempts, 'maxLoginAttempts', 1, 20],
       [accountLockMinutes, 'accountLockMinutes', 1, 1440],
-      [minPasswordLength, 'minPasswordLength', 4, 32],
+      [minPasswordLength, 'minPasswordLength', 6, 72],
       // 파일 업로드
       [maxFileCount, 'maxFileCount', 1, 20],
       [maxFileSizeMb, 'maxFileSizeMb', 1, 1000],
@@ -242,6 +255,11 @@ export const updateSiteSettings = async (req: Request, res: Response) => {
       // 에디터
       [autoSaveIntervalSeconds, 'autoSaveIntervalSeconds', 10, 300],
       [draftExpiryMinutes, 'draftExpiryMinutes', 10, 1440],
+      // 신규 (관리자 조정 가능 항목 — 사용자 메모 한도/댓글·이벤트 길이)
+      [memoMaxPerUser, 'memoMaxPerUser', 10, 2000],
+      [commentContentMaxLength, 'commentContentMaxLength', 100, 10000],
+      [eventBodyMaxLength, 'eventBodyMaxLength', 100, 100000],
+      [eventLocationMaxLength, 'eventLocationMaxLength', 10, 2000],
     ];
 
     for (const [value, field, min, max] of numericChecks) {
@@ -249,6 +267,55 @@ export const updateSiteSettings = async (req: Request, res: Response) => {
         const err = validateInt(value, field, min, max);
         if (err) return sendError(res, 400, err);
       }
+    }
+
+    // ── 문자열 길이 검증 (DB 컬럼 길이와 정합) ────────────────────────────────
+    function validateString(
+      value: unknown,
+      field: string,
+      maxLen: number,
+      allowEmpty: boolean
+    ): string | null {
+      if (value === null && allowEmpty) return null;
+      if (typeof value !== 'string') return `${field}는 문자열이어야 합니다.`;
+      if (!allowEmpty && value.trim().length === 0) {
+        return `${field}는 비어 있을 수 없습니다.`;
+      }
+      if (value.length > maxLen) return `${field}는 ${maxLen}자 이내여야 합니다.`;
+      return null;
+    }
+
+    const stringChecks: Array<[unknown, string, number, boolean]> = [
+      [siteName, 'siteName', 100, false],
+      [siteTitle, 'siteTitle', 100, false],
+      [faviconUrl, 'faviconUrl', 255, true],
+      [logoUrl, 'logoUrl', 255, true],
+      [description, 'description', 5000, true],
+      [maintenanceMessage, 'maintenanceMessage', 5000, true],
+      [loginMessage, 'loginMessage', 500, true],
+    ];
+    for (const [value, field, max, allowEmpty] of stringChecks) {
+      if (value !== undefined) {
+        const err = validateString(value, field, max, allowEmpty);
+        if (err) return sendError(res, 400, err);
+      }
+    }
+
+    // ── URL 형식 검증 (javascript:/data: 등 차단) ─────────────────────────────
+    function validateSafeUrl(value: unknown, field: string): string | null {
+      if (value === null || value === '') return null;
+      if (typeof value !== 'string') return `${field}는 문자열이어야 합니다.`;
+      // 허용: http(s)://, 상대 경로(/uploads/...)
+      if (/^(https?:\/\/|\/)/i.test(value)) return null;
+      return `${field}는 http(s):// 또는 / 로 시작해야 합니다.`;
+    }
+    if (faviconUrl !== undefined) {
+      const err = validateSafeUrl(faviconUrl, 'faviconUrl');
+      if (err) return sendError(res, 400, err);
+    }
+    if (logoUrl !== undefined) {
+      const err = validateSafeUrl(logoUrl, 'logoUrl');
+      if (err) return sendError(res, 400, err);
     }
 
     let parsedAllowedImage: string[] | undefined;
@@ -281,163 +348,139 @@ export const updateSiteSettings = async (req: Request, res: Response) => {
     }
 
     // ── DB 저장 ───────────────────────────────────────────────────────────────
-    let settings = await SiteSettings.findByPk(1);
+    // findOrCreate로 원자적 처리 — 동시 요청 시 설정 행 중복 생성 방지
+    // 신규 생성 시: settings.field = DEFAULTS.field → 아래 update의 `settings.field` 폴백이 곧 DEFAULTS
+    const [settings] = await SiteSettings.findOrCreate({ where: {}, defaults: DEFAULTS });
 
-    if (!settings) {
-      settings = await SiteSettings.create({
-        siteName: siteName ?? DEFAULTS.siteName,
-        siteTitle: siteTitle ?? DEFAULTS.siteTitle,
-        faviconUrl: faviconUrl ?? null,
-        logoUrl: logoUrl ?? null,
-        description: description ?? null,
-        allowRegistration: allowRegistration ?? true,
-        requireApproval: requireApproval ?? false,
-        maintenanceMode: maintenanceMode ?? false,
-        maintenanceMessage: maintenanceMessage ?? null,
-        loginMessage: loginMessage ?? null,
-        maxLoginAttempts: maxLoginAttempts ?? DEFAULTS.maxLoginAttempts,
-        accountLockMinutes: accountLockMinutes ?? DEFAULTS.accountLockMinutes,
-        maxFileCount: maxFileCount ?? DEFAULTS.maxFileCount,
-        maxFileSizeMb: maxFileSizeMb ?? DEFAULTS.maxFileSizeMb,
-        maxImageSizeMb: maxImageSizeMb ?? DEFAULTS.maxImageSizeMb,
-        maxAvatarSizeMb: maxAvatarSizeMb ?? DEFAULTS.maxAvatarSizeMb,
-        maxArchiveSizeMb: maxArchiveSizeMb ?? DEFAULTS.maxArchiveSizeMb,
-        maxImageCount: maxImageCount ?? DEFAULTS.maxImageCount,
-        bcryptRounds: bcryptRounds ?? DEFAULTS.bcryptRounds,
-        allowedImageExtensions: JSON.stringify(
-          parsedAllowedImage ?? DEFAULT_ALLOWED_EXTENSIONS.IMAGE
-        ),
-        allowedDocumentExtensions: JSON.stringify(
-          parsedAllowedDocument ?? DEFAULT_ALLOWED_EXTENSIONS.DOCUMENT
-        ),
-        allowedArchiveExtensions: JSON.stringify(
-          parsedAllowedArchive ?? DEFAULT_ALLOWED_EXTENSIONS.ARCHIVE
-        ),
-        allowedMediaExtensions: JSON.stringify(
-          parsedAllowedMedia ?? DEFAULT_ALLOWED_EXTENSIONS.MEDIA
-        ),
-        defaultPageSize: defaultPageSize ?? DEFAULTS.defaultPageSize,
-        securityLogRetentionDays: securityLogRetentionDays ?? DEFAULTS.securityLogRetentionDays,
-        errorLogRetentionDays: errorLogRetentionDays ?? DEFAULTS.errorLogRetentionDays,
-        jwtAccessTokenHours: jwtAccessTokenHours ?? DEFAULTS.jwtAccessTokenHours,
-        jwtRefreshTokenDays: jwtRefreshTokenDays ?? DEFAULTS.jwtRefreshTokenDays,
-        postTitleMaxLength: postTitleMaxLength ?? DEFAULTS.postTitleMaxLength,
-        postContentMaxLength: postContentMaxLength ?? DEFAULTS.postContentMaxLength,
-        postSecretPasswordMinLength:
-          postSecretPasswordMinLength ?? DEFAULTS.postSecretPasswordMinLength,
-        globalSearchLimit: globalSearchLimit ?? DEFAULTS.globalSearchLimit,
-        allowGuestComment: allowGuestComment ?? DEFAULTS.allowGuestComment,
-        minPasswordLength: minPasswordLength ?? DEFAULTS.minPasswordLength,
-        commentMaxDepth: commentMaxDepth ?? DEFAULTS.commentMaxDepth,
-        commentMaxCount: commentMaxCount ?? DEFAULTS.commentMaxCount,
-        avatarSizePx: avatarSizePx ?? DEFAULTS.avatarSizePx,
-        avatarQuality: avatarQuality ?? DEFAULTS.avatarQuality,
-        passwordResetTokenHours: passwordResetTokenHours ?? DEFAULTS.passwordResetTokenHours,
-        rateLimitApiMax: rateLimitApiMax ?? DEFAULTS.rateLimitApiMax,
-        rateLimitAuthMax: rateLimitAuthMax ?? DEFAULTS.rateLimitAuthMax,
-        rateLimitUploadMax: rateLimitUploadMax ?? DEFAULTS.rateLimitUploadMax,
-        rateLimitDownloadMax: rateLimitDownloadMax ?? DEFAULTS.rateLimitDownloadMax,
-        autoSaveIntervalSeconds: autoSaveIntervalSeconds ?? DEFAULTS.autoSaveIntervalSeconds,
-        draftExpiryMinutes: draftExpiryMinutes ?? DEFAULTS.draftExpiryMinutes,
-      });
-    } else {
-      await settings.update({
-        siteName: siteName !== undefined ? siteName : settings.siteName,
-        siteTitle: siteTitle !== undefined ? siteTitle : settings.siteTitle,
-        faviconUrl: faviconUrl !== undefined ? faviconUrl : settings.faviconUrl,
-        logoUrl: logoUrl !== undefined ? logoUrl : settings.logoUrl,
-        description: description !== undefined ? description : settings.description,
-        allowRegistration:
-          allowRegistration !== undefined ? allowRegistration : settings.allowRegistration,
-        requireApproval: requireApproval !== undefined ? requireApproval : settings.requireApproval,
-        maintenanceMode: maintenanceMode !== undefined ? maintenanceMode : settings.maintenanceMode,
-        maintenanceMessage:
-          maintenanceMessage !== undefined ? maintenanceMessage : settings.maintenanceMessage,
-        loginMessage: loginMessage !== undefined ? loginMessage : settings.loginMessage,
-        maxLoginAttempts:
-          maxLoginAttempts !== undefined ? maxLoginAttempts : settings.maxLoginAttempts,
-        accountLockMinutes:
-          accountLockMinutes !== undefined ? accountLockMinutes : settings.accountLockMinutes,
-        maxFileCount: maxFileCount !== undefined ? maxFileCount : settings.maxFileCount,
-        maxFileSizeMb: maxFileSizeMb !== undefined ? maxFileSizeMb : settings.maxFileSizeMb,
-        maxImageSizeMb: maxImageSizeMb !== undefined ? maxImageSizeMb : settings.maxImageSizeMb,
-        maxAvatarSizeMb: maxAvatarSizeMb !== undefined ? maxAvatarSizeMb : settings.maxAvatarSizeMb,
-        maxArchiveSizeMb:
-          maxArchiveSizeMb !== undefined ? maxArchiveSizeMb : settings.maxArchiveSizeMb,
-        maxImageCount: maxImageCount !== undefined ? maxImageCount : settings.maxImageCount,
-        bcryptRounds: bcryptRounds !== undefined ? bcryptRounds : settings.bcryptRounds,
-        allowedImageExtensions:
-          parsedAllowedImage !== undefined
-            ? JSON.stringify(parsedAllowedImage)
-            : settings.allowedImageExtensions,
-        allowedDocumentExtensions:
-          parsedAllowedDocument !== undefined
-            ? JSON.stringify(parsedAllowedDocument)
-            : settings.allowedDocumentExtensions,
-        allowedArchiveExtensions:
-          parsedAllowedArchive !== undefined
-            ? JSON.stringify(parsedAllowedArchive)
-            : settings.allowedArchiveExtensions,
-        allowedMediaExtensions:
-          parsedAllowedMedia !== undefined
-            ? JSON.stringify(parsedAllowedMedia)
-            : settings.allowedMediaExtensions,
-        defaultPageSize: defaultPageSize !== undefined ? defaultPageSize : settings.defaultPageSize,
-        securityLogRetentionDays:
-          securityLogRetentionDays !== undefined
-            ? securityLogRetentionDays
-            : settings.securityLogRetentionDays,
-        errorLogRetentionDays:
-          errorLogRetentionDays !== undefined
-            ? errorLogRetentionDays
-            : settings.errorLogRetentionDays,
-        jwtAccessTokenHours:
-          jwtAccessTokenHours !== undefined ? jwtAccessTokenHours : settings.jwtAccessTokenHours,
-        jwtRefreshTokenDays:
-          jwtRefreshTokenDays !== undefined ? jwtRefreshTokenDays : settings.jwtRefreshTokenDays,
-        postTitleMaxLength:
-          postTitleMaxLength !== undefined ? postTitleMaxLength : settings.postTitleMaxLength,
-        postContentMaxLength:
-          postContentMaxLength !== undefined ? postContentMaxLength : settings.postContentMaxLength,
-        postSecretPasswordMinLength:
-          postSecretPasswordMinLength !== undefined
-            ? postSecretPasswordMinLength
-            : settings.postSecretPasswordMinLength,
-        globalSearchLimit:
-          globalSearchLimit !== undefined ? globalSearchLimit : settings.globalSearchLimit,
-        allowGuestComment:
-          allowGuestComment !== undefined ? allowGuestComment : settings.allowGuestComment,
-        minPasswordLength:
-          minPasswordLength !== undefined ? minPasswordLength : settings.minPasswordLength,
-        commentMaxDepth: commentMaxDepth !== undefined ? commentMaxDepth : settings.commentMaxDepth,
-        commentMaxCount: commentMaxCount !== undefined ? commentMaxCount : settings.commentMaxCount,
-        avatarSizePx: avatarSizePx !== undefined ? avatarSizePx : settings.avatarSizePx,
-        avatarQuality: avatarQuality !== undefined ? avatarQuality : settings.avatarQuality,
-        passwordResetTokenHours:
-          passwordResetTokenHours !== undefined
-            ? passwordResetTokenHours
-            : settings.passwordResetTokenHours,
-        rateLimitApiMax: rateLimitApiMax !== undefined ? rateLimitApiMax : settings.rateLimitApiMax,
-        rateLimitAuthMax:
-          rateLimitAuthMax !== undefined ? rateLimitAuthMax : settings.rateLimitAuthMax,
-        rateLimitUploadMax:
-          rateLimitUploadMax !== undefined ? rateLimitUploadMax : settings.rateLimitUploadMax,
-        rateLimitDownloadMax:
-          rateLimitDownloadMax !== undefined ? rateLimitDownloadMax : settings.rateLimitDownloadMax,
-        autoSaveIntervalSeconds:
-          autoSaveIntervalSeconds !== undefined
-            ? autoSaveIntervalSeconds
-            : settings.autoSaveIntervalSeconds,
-        draftExpiryMinutes:
-          draftExpiryMinutes !== undefined ? draftExpiryMinutes : settings.draftExpiryMinutes,
-      });
-    }
+    await settings.update({
+      siteName: siteName !== undefined ? siteName : settings.siteName,
+      siteTitle: siteTitle !== undefined ? siteTitle : settings.siteTitle,
+      faviconUrl: faviconUrl !== undefined ? faviconUrl : settings.faviconUrl,
+      logoUrl: logoUrl !== undefined ? logoUrl : settings.logoUrl,
+      description: description !== undefined ? description : settings.description,
+      allowRegistration:
+        allowRegistration !== undefined ? allowRegistration : settings.allowRegistration,
+      requireApproval: requireApproval !== undefined ? requireApproval : settings.requireApproval,
+      maintenanceMode: maintenanceMode !== undefined ? maintenanceMode : settings.maintenanceMode,
+      maintenanceMessage:
+        maintenanceMessage !== undefined ? maintenanceMessage : settings.maintenanceMessage,
+      loginMessage: loginMessage !== undefined ? loginMessage : settings.loginMessage,
+      maxLoginAttempts:
+        maxLoginAttempts !== undefined ? maxLoginAttempts : settings.maxLoginAttempts,
+      accountLockMinutes:
+        accountLockMinutes !== undefined ? accountLockMinutes : settings.accountLockMinutes,
+      maxFileCount: maxFileCount !== undefined ? maxFileCount : settings.maxFileCount,
+      maxFileSizeMb: maxFileSizeMb !== undefined ? maxFileSizeMb : settings.maxFileSizeMb,
+      maxImageSizeMb: maxImageSizeMb !== undefined ? maxImageSizeMb : settings.maxImageSizeMb,
+      maxAvatarSizeMb: maxAvatarSizeMb !== undefined ? maxAvatarSizeMb : settings.maxAvatarSizeMb,
+      maxArchiveSizeMb:
+        maxArchiveSizeMb !== undefined ? maxArchiveSizeMb : settings.maxArchiveSizeMb,
+      maxImageCount: maxImageCount !== undefined ? maxImageCount : settings.maxImageCount,
+      bcryptRounds: bcryptRounds !== undefined ? bcryptRounds : settings.bcryptRounds,
+      allowedImageExtensions:
+        parsedAllowedImage !== undefined
+          ? JSON.stringify(parsedAllowedImage)
+          : settings.allowedImageExtensions,
+      allowedDocumentExtensions:
+        parsedAllowedDocument !== undefined
+          ? JSON.stringify(parsedAllowedDocument)
+          : settings.allowedDocumentExtensions,
+      allowedArchiveExtensions:
+        parsedAllowedArchive !== undefined
+          ? JSON.stringify(parsedAllowedArchive)
+          : settings.allowedArchiveExtensions,
+      allowedMediaExtensions:
+        parsedAllowedMedia !== undefined
+          ? JSON.stringify(parsedAllowedMedia)
+          : settings.allowedMediaExtensions,
+      defaultPageSize: defaultPageSize !== undefined ? defaultPageSize : settings.defaultPageSize,
+      securityLogRetentionDays:
+        securityLogRetentionDays !== undefined
+          ? securityLogRetentionDays
+          : settings.securityLogRetentionDays,
+      errorLogRetentionDays:
+        errorLogRetentionDays !== undefined
+          ? errorLogRetentionDays
+          : settings.errorLogRetentionDays,
+      jwtAccessTokenHours:
+        jwtAccessTokenHours !== undefined ? jwtAccessTokenHours : settings.jwtAccessTokenHours,
+      jwtRefreshTokenDays:
+        jwtRefreshTokenDays !== undefined ? jwtRefreshTokenDays : settings.jwtRefreshTokenDays,
+      postTitleMaxLength:
+        postTitleMaxLength !== undefined ? postTitleMaxLength : settings.postTitleMaxLength,
+      postContentMaxLength:
+        postContentMaxLength !== undefined ? postContentMaxLength : settings.postContentMaxLength,
+      postSecretPasswordMinLength:
+        postSecretPasswordMinLength !== undefined
+          ? postSecretPasswordMinLength
+          : settings.postSecretPasswordMinLength,
+      globalSearchLimit:
+        globalSearchLimit !== undefined ? globalSearchLimit : settings.globalSearchLimit,
+      allowGuestComment:
+        allowGuestComment !== undefined ? allowGuestComment : settings.allowGuestComment,
+      minPasswordLength:
+        minPasswordLength !== undefined ? minPasswordLength : settings.minPasswordLength,
+      requireUppercase:
+        requireUppercase !== undefined ? requireUppercase : settings.requireUppercase,
+      requireLowercase:
+        requireLowercase !== undefined ? requireLowercase : settings.requireLowercase,
+      requireNumberOrSpecial:
+        requireNumberOrSpecial !== undefined
+          ? requireNumberOrSpecial
+          : settings.requireNumberOrSpecial,
+      commentMaxDepth: commentMaxDepth !== undefined ? commentMaxDepth : settings.commentMaxDepth,
+      commentMaxCount: commentMaxCount !== undefined ? commentMaxCount : settings.commentMaxCount,
+      avatarSizePx: avatarSizePx !== undefined ? avatarSizePx : settings.avatarSizePx,
+      avatarQuality: avatarQuality !== undefined ? avatarQuality : settings.avatarQuality,
+      passwordResetTokenHours:
+        passwordResetTokenHours !== undefined
+          ? passwordResetTokenHours
+          : settings.passwordResetTokenHours,
+      rateLimitApiMax: rateLimitApiMax !== undefined ? rateLimitApiMax : settings.rateLimitApiMax,
+      rateLimitAuthMax:
+        rateLimitAuthMax !== undefined ? rateLimitAuthMax : settings.rateLimitAuthMax,
+      rateLimitUploadMax:
+        rateLimitUploadMax !== undefined ? rateLimitUploadMax : settings.rateLimitUploadMax,
+      rateLimitDownloadMax:
+        rateLimitDownloadMax !== undefined ? rateLimitDownloadMax : settings.rateLimitDownloadMax,
+      autoSaveIntervalSeconds:
+        autoSaveIntervalSeconds !== undefined
+          ? autoSaveIntervalSeconds
+          : settings.autoSaveIntervalSeconds,
+      draftExpiryMinutes:
+        draftExpiryMinutes !== undefined ? draftExpiryMinutes : settings.draftExpiryMinutes,
+      memoMaxPerUser: memoMaxPerUser !== undefined ? memoMaxPerUser : settings.memoMaxPerUser,
+      commentContentMaxLength:
+        commentContentMaxLength !== undefined
+          ? commentContentMaxLength
+          : settings.commentContentMaxLength,
+      eventBodyMaxLength:
+        eventBodyMaxLength !== undefined ? eventBodyMaxLength : settings.eventBodyMaxLength,
+      eventLocationMaxLength:
+        eventLocationMaxLength !== undefined
+          ? eventLocationMaxLength
+          : settings.eventLocationMaxLength,
+    });
 
     // ── 캐시 갱신 ─────────────────────────────────────────────────────────────
     refreshMaintenanceCache();
     await refreshSettingsCache();
     // 파일 크기·허용 확장자·이미지 개수가 변경될 수 있으므로 multer 인스턴스 재빌드
     refreshUploaders();
+
+    // ── 감사 로그 ─────────────────────────────────────────────────────────────
+    const authReq = req as unknown as AuthRequest;
+    auditLogService
+      .createAuditLog({
+        adminId: authReq.user?.id ?? 'unknown',
+        adminName: authReq.user?.name ?? 'unknown',
+        action: 'update_site_settings',
+        targetType: 'setting',
+        targetId: 'site-settings',
+        afterValue: { siteName: settings.siteName },
+        ipAddress: req.ip ?? null,
+      })
+      .catch(err => logError('사이트 설정 감사 로그 기록 실패', err));
 
     logInfo('사이트 설정 업데이트', { siteName: settings.siteName });
     sendSuccess(res, toPayload(settings), '사이트 설정이 업데이트되었습니다.');

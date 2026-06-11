@@ -11,14 +11,32 @@ export type AuditAction =
   | 'deactivate_user'
   | 'reset_password'
   | 'change_role'
+  | 'create_board'
   | 'update_board'
   | 'delete_board'
+  | 'create_role'
+  | 'update_role'
+  | 'delete_role'
   | 'update_permission'
   | 'delete_event'
+  | 'update_event'
   | 'update_site_settings'
-  | 'force_logout';
+  | 'force_logout'
+  | 'delete_security_log'
+  | 'delete_error_log'
+  | 'create_ip_rule'
+  | 'update_ip_rule'
+  | 'delete_ip_rule';
 
-export type AuditTargetType = 'user' | 'board' | 'role' | 'event' | 'setting';
+export type AuditTargetType =
+  | 'user'
+  | 'board'
+  | 'role'
+  | 'event'
+  | 'setting'
+  | 'security_log'
+  | 'error_log'
+  | 'ip_rule';
 
 export interface AuditLogAttributes {
   id: string;
@@ -73,10 +91,15 @@ AuditLog.init(
         'deactivate_user',
         'reset_password',
         'change_role',
+        'create_board',
         'update_board',
         'delete_board',
+        'create_role',
+        'update_role',
+        'delete_role',
         'update_permission',
         'delete_event',
+        'update_event',
         'update_site_settings',
         'force_logout'
       ),

@@ -47,6 +47,9 @@ export interface SiteSettingsInstance extends Model<
   globalSearchLimit: CreationOptional<number>;
   allowGuestComment: CreationOptional<boolean>;
   minPasswordLength: CreationOptional<number>;
+  requireUppercase: CreationOptional<boolean>;
+  requireLowercase: CreationOptional<boolean>;
+  requireNumberOrSpecial: CreationOptional<boolean>;
   commentMaxDepth: CreationOptional<number>;
   commentMaxCount: CreationOptional<number>;
   avatarSizePx: CreationOptional<number>;
@@ -59,6 +62,11 @@ export interface SiteSettingsInstance extends Model<
   autoSaveIntervalSeconds: CreationOptional<number>;
   draftExpiryMinutes: CreationOptional<number>;
   wikiEditRoles: CreationOptional<string>;
+  // ── 신규 (관리자 조정 가능) ────────────────────────────────────────────────
+  memoMaxPerUser: CreationOptional<number>;
+  commentContentMaxLength: CreationOptional<number>;
+  eventBodyMaxLength: CreationOptional<number>;
+  eventLocationMaxLength: CreationOptional<number>;
   createdAt: CreationOptional<Date>;
   updatedAt: CreationOptional<Date>;
 }
@@ -105,6 +113,9 @@ export class SiteSettings
   declare public globalSearchLimit: CreationOptional<number>;
   declare public allowGuestComment: CreationOptional<boolean>;
   declare public minPasswordLength: CreationOptional<number>;
+  declare public requireUppercase: CreationOptional<boolean>;
+  declare public requireLowercase: CreationOptional<boolean>;
+  declare public requireNumberOrSpecial: CreationOptional<boolean>;
   declare public commentMaxDepth: CreationOptional<number>;
   declare public commentMaxCount: CreationOptional<number>;
   declare public avatarSizePx: CreationOptional<number>;
@@ -117,6 +128,10 @@ export class SiteSettings
   declare public autoSaveIntervalSeconds: CreationOptional<number>;
   declare public draftExpiryMinutes: CreationOptional<number>;
   declare public wikiEditRoles: CreationOptional<string>;
+  declare public memoMaxPerUser: CreationOptional<number>;
+  declare public commentContentMaxLength: CreationOptional<number>;
+  declare public eventBodyMaxLength: CreationOptional<number>;
+  declare public eventLocationMaxLength: CreationOptional<number>;
   declare public readonly createdAt: Date;
   declare public readonly updatedAt: Date;
 }
@@ -341,6 +356,24 @@ SiteSettings.init(
       defaultValue: 8,
       field: 'min_password_length',
     },
+    requireUppercase: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true,
+      field: 'require_uppercase',
+    },
+    requireLowercase: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true,
+      field: 'require_lowercase',
+    },
+    requireNumberOrSpecial: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true,
+      field: 'require_number_or_special',
+    },
     commentMaxDepth: {
       type: DataTypes.INTEGER,
       allowNull: false,
@@ -412,6 +445,31 @@ SiteSettings.init(
       allowNull: false,
       defaultValue: JSON.stringify(['admin', 'manager']),
       field: 'wiki_edit_roles',
+    },
+    // ── 신규 (관리자 조정 가능) ────────────────────────────────────────────
+    memoMaxPerUser: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 200,
+      field: 'memo_max_per_user',
+    },
+    commentContentMaxLength: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 1000,
+      field: 'comment_content_max_length',
+    },
+    eventBodyMaxLength: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 10000,
+      field: 'event_body_max_length',
+    },
+    eventLocationMaxLength: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 500,
+      field: 'event_location_max_length',
     },
     createdAt: {
       type: DataTypes.DATE,

@@ -44,7 +44,7 @@ export class AuditLogService extends BaseService {
    * 감사 로그 조회
    */
   async getAuditLogs(params: GetAuditLogsDTO) {
-    const page = params.page || 1;
+    const page = Math.max(1, params.page || 1);
     const limit = Math.min(params.limit || 20, 100);
     const offset = (page - 1) * limit;
 
@@ -67,14 +67,18 @@ export class AuditLogService extends BaseService {
       where.targetType = params.targetType;
     }
 
-    if (params.startDate && params.endDate) {
-      where.createdAt = {
-        [Op.between]: [new Date(params.startDate), new Date(params.endDate)],
-      };
-    } else if (params.startDate) {
-      where.createdAt = { [Op.gte]: new Date(params.startDate) };
-    } else if (params.endDate) {
-      where.createdAt = { [Op.lte]: new Date(params.endDate) };
+    // 날짜 파라미터 유효성 검증 (Invalid Date → DB 쿼리 오류 방지)
+    const startDateObj = params.startDate ? new Date(params.startDate) : null;
+    const endDateObj = params.endDate ? new Date(params.endDate) : null;
+    const validStart = startDateObj && !isNaN(startDateObj.getTime()) ? startDateObj : null;
+    const validEnd = endDateObj && !isNaN(endDateObj.getTime()) ? endDateObj : null;
+
+    if (validStart && validEnd) {
+      where.createdAt = { [Op.between]: [validStart, validEnd] };
+    } else if (validStart) {
+      where.createdAt = { [Op.gte]: validStart };
+    } else if (validEnd) {
+      where.createdAt = { [Op.lte]: validEnd };
     }
 
     const { count, rows } = await AuditLog.findAndCountAll({

@@ -27,6 +27,7 @@ export const EventManagement = () => {
     updatePermission,
     saving: savingEvents,
     loading,
+    dataLoaded,
   } = useEventManagement();
 
   useEffect(() => {
@@ -67,7 +68,8 @@ export const EventManagement = () => {
     }
   };
 
-  if (loading) return <LoadingSpinner message="일정 목록을 불러오는 중..." />;
+  // 최초 로드 시에만 전체 스피너 — 수정/삭제 후 재조회 시 목록이 깜빡이지 않도록
+  if (loading && !dataLoaded) return <LoadingSpinner message="일정 목록을 불러오는 중..." />;
 
   return (
     <div className="space-y-8">

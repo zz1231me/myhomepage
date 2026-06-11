@@ -12,7 +12,7 @@ export function useBookmarks() {
       setLoading(true);
       setError(null);
 
-      const bookmarkData = await fetchBookmarks();
+      const bookmarkData = await fetchBookmarks(signal);
       if (signal?.aborted) return;
       setBookmarks(bookmarkData);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -19,7 +19,7 @@ class WikiPageModel extends Model<
   declare public content: CreationOptional<string>;
   declare public parentId: CreationOptional<number | null>;
   declare public authorId: ForeignKey<string | null>;
-  declare public lastEditorId: CreationOptional<string | null>;
+  declare public lastEditorId: ForeignKey<string | null>;
   declare public order: CreationOptional<number>;
   declare public isPublished: CreationOptional<boolean>;
   declare public readonly createdAt: CreationOptional<Date>;
@@ -31,8 +31,8 @@ class WikiPageModel extends Model<
 WikiPageModel.init(
   {
     id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
-    slug: { type: DataTypes.STRING(200), allowNull: false }, // unique는 indexes에서 관리
-    title: { type: DataTypes.STRING(200), allowNull: false },
+    slug: { type: DataTypes.STRING(200), allowNull: false, validate: { notEmpty: true } },
+    title: { type: DataTypes.STRING(200), allowNull: false, validate: { notEmpty: true } },
     content: { type: DataTypes.TEXT('long'), allowNull: true, defaultValue: '' },
     parentId: { type: DataTypes.INTEGER, allowNull: true },
     authorId: { type: DataTypes.STRING(50), allowNull: true }, // SET NULL 지원을 위해 nullable
@@ -47,7 +47,10 @@ WikiPageModel.init(
     tableName: 'WikiPages',
     modelName: 'WikiPage',
     timestamps: true,
-    indexes: [{ unique: true, fields: ['slug'] }],
+    indexes: [
+      { unique: true, fields: ['slug'] },
+      { fields: ['parentId'] }, // 자식 페이지 조회 + 순환 참조 탐색 성능
+    ],
   }
 );
 

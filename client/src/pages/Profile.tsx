@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { LoadingSpinner } from '../components/common/LoadingStates';
 import { ArrowLeftIcon } from '../components/common/Icons';
+import { PageContainer } from '../components/common/PageContainer';
+import { scrollContentToTop } from '../utils/scroll';
 import {
   User,
   FileText,
@@ -201,6 +203,11 @@ export default function Profile() {
     loadSecurity,
   ]);
 
+  // 탭 전환 시 상단으로 스크롤 (긴 탭→짧은 탭 전환 시 빈 화면 노출 방지)
+  useEffect(() => {
+    scrollContentToTop();
+  }, [activeTab]);
+
   // ─── 이름 변경 ───────────────────────────────────────────────────────────
   const handleNameEdit = () => {
     setNameInput(user?.name ?? '');
@@ -248,10 +255,17 @@ export default function Profile() {
       toast.error(`새 비밀번호는 ${settings.minPasswordLength}자 이상이어야 합니다.`);
       return;
     }
-    const hasLower = /[a-z]/.test(newPassword);
-    const hasNumber = /[0-9]/.test(newPassword);
-    if (!hasLower || !hasNumber) {
-      toast.error('비밀번호는 영문 소문자와 숫자를 포함해야 합니다.');
+    // ✅ 복잡도 검증 (관리자 설정 기반)
+    if (settings.requireUppercase && !/[A-Z]/.test(newPassword)) {
+      toast.error('비밀번호는 영문 대문자를 포함해야 합니다.');
+      return;
+    }
+    if (settings.requireLowercase && !/[a-z]/.test(newPassword)) {
+      toast.error('비밀번호는 영문 소문자를 포함해야 합니다.');
+      return;
+    }
+    if (settings.requireNumberOrSpecial && !/[0-9!@#$%^&*]/.test(newPassword)) {
+      toast.error('비밀번호는 숫자 또는 특수문자(!@#$%^&*)를 포함해야 합니다.');
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -281,8 +295,8 @@ export default function Profile() {
 
   // ─── 렌더 ─────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 py-6">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
+      <PageContainer width="reading">
         {/* 상단 헤더 */}
         <div className="flex items-center gap-4 mb-6">
           <button
@@ -664,7 +678,7 @@ export default function Profile() {
                       {
                         key: 'newPassword',
                         label: '새 비밀번호',
-                        note: '6자 이상',
+                        note: `${settings.minPasswordLength}자 이상`,
                         autocomplete: 'new-password',
                       },
                       {
@@ -718,7 +732,7 @@ export default function Profile() {
             )}
           </motion.div>
         </AnimatePresence>
-      </div>
+      </PageContainer>
     </div>
   );
 }

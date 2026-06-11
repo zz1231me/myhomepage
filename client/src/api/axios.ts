@@ -1,10 +1,33 @@
 // client/src/api/axios.ts
 import axios from 'axios';
 import { refreshToken } from './auth';
+import { useAuth } from '../store/auth';
 
 const REDIRECT_LOGIN = '/';
 const REDIRECT_FORBIDDEN = '/forbidden';
 const AUTH_ENDPOINTS = ['/auth/me', '/auth/refresh'];
+
+// 토큰 갱신 응답에서 tokenInfo를 추출해 zustand store를 동기화
+// (인터셉터 자동 갱신 후 클라이언트 store의 만료시각이 stale 상태가 되면,
+//  AuthProvider 폴링이 "곧 만료" 판정을 계속 내려 중복 갱신 race가 발생함)
+const syncTokenInfoFromRefresh = (refreshResponse: unknown): void => {
+  try {
+    // sendSuccess 봉투: { success, data: { tokenInfo: {...} } }
+    const payload = (refreshResponse as { data?: { tokenInfo?: unknown } } | undefined)?.data;
+    const tokenInfo = (payload as { tokenInfo?: unknown } | undefined)?.tokenInfo as
+      | { accessTokenExpiry: number; refreshTokenExpiry: number }
+      | undefined;
+    if (
+      tokenInfo &&
+      typeof tokenInfo.accessTokenExpiry === 'number' &&
+      typeof tokenInfo.refreshTokenExpiry === 'number'
+    ) {
+      useAuth.getState().updateTokenInfo(tokenInfo);
+    }
+  } catch {
+    // store 동기화 실패는 무시 — 다음 폴링이 보정함
+  }
+};
 // 비밀글 비밀번호 검증 엔드포인트 — 401(비밀번호 틀림)이어도 로그인 리다이렉트 하지 않음
 const SECRET_VERIFY_PATTERN = /\/posts\/[^/]+\/[^/]+\/verify/;
 
@@ -76,7 +99,8 @@ api.interceptors.response.use(
 
         try {
           // Refresh Token으로 새 Access Token 발급
-          await refreshToken();
+          const refreshResponse = await refreshToken();
+          syncTokenInfoFromRefresh(refreshResponse);
           onRefreshed();
 
           // 원래 요청 재시도
@@ -141,23 +165,46 @@ export const uploadApi = axios.create({
   },
 });
 
-// 업로드 인스턴스에도 동일한 인터셉터 적용
+// 업로드 인스턴스에도 동일한 인터셉터 적용 (main api의 isRefreshing 큐 공유)
 uploadApi.interceptors.response.use(
   response => response,
   async error => {
     if (error.response?.status === 419 && !error.config._retry) {
       error.config._retry = true;
-      try {
-        await refreshToken();
-        return uploadApi(error.config);
-      } catch (refreshErr) {
-        window.location.href = REDIRECT_LOGIN;
-        return Promise.reject(refreshErr);
+
+      if (!isRefreshing) {
+        isRefreshing = true;
+        try {
+          const refreshResponse = await refreshToken();
+          syncTokenInfoFromRefresh(refreshResponse);
+          onRefreshed();
+          return uploadApi(error.config);
+        } catch (refreshErr) {
+          onRefreshFailed(refreshErr);
+          window.location.href = REDIRECT_LOGIN;
+          return Promise.reject(refreshErr);
+        } finally {
+          isRefreshing = false;
+        }
+      } else {
+        // 이미 갱신 중이면 완료 후 재시도
+        return new Promise((resolve, reject) => {
+          refreshSubscribers.push({
+            resolve: () => resolve(uploadApi(error.config)),
+            reject,
+          });
+        });
       }
     }
 
     if (error.response?.status === 401) {
-      window.location.href = REDIRECT_LOGIN;
+      // ✅ api 인터셉터와 동일하게 인증/비밀글 엔드포인트는 리다이렉트 제외
+      const uploadUrl = error.config?.url ?? '';
+      const isUploadAuthEndpoint = AUTH_ENDPOINTS.some(ep => uploadUrl.includes(ep));
+      const isUploadSecretVerify = SECRET_VERIFY_PATTERN.test(uploadUrl);
+      if (!isUploadAuthEndpoint && !isUploadSecretVerify) {
+        window.location.href = REDIRECT_LOGIN;
+      }
     }
 
     if (error.response?.status === 403) {

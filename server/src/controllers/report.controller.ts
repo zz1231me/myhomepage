@@ -88,8 +88,8 @@ export const getReports = async (req: AuthRequest, res: Response): Promise<void>
 
   const status = req.query.status as ReportStatus | undefined;
   const targetType = req.query.targetType as ReportTargetType | undefined;
-  const page = parseInt(String(req.query.page ?? '1'), 10);
-  const limit = Math.min(parseInt(String(req.query.limit ?? '20'), 10), 100);
+  const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10) || 1);
+  const limit = Math.min(Math.max(1, parseInt(String(req.query.limit ?? '20'), 10) || 20), 100);
 
   try {
     const result = await reportService.getReports({ status, targetType, page, limit });
@@ -117,6 +117,10 @@ export const reviewReport = async (req: AuthRequest, res: Response): Promise<voi
   const validStatuses = ['reviewed', 'dismissed', 'action_taken'];
   if (!status || !validStatuses.includes(status)) {
     sendValidationError(res, 'status', '유효하지 않은 처리 상태입니다.');
+    return;
+  }
+  if (reviewNote && reviewNote.length > 1000) {
+    sendValidationError(res, 'reviewNote', '처리 메모는 1,000자를 초과할 수 없습니다.');
     return;
   }
 

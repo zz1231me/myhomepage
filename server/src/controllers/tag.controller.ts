@@ -1,12 +1,48 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types/auth-request';
-import { sendSuccess, sendError, sendValidationError } from '../utils/response';
+import {
+  sendSuccess,
+  sendError,
+  sendValidationError,
+  sendForbidden,
+  sendNotFound,
+} from '../utils/response';
 import { logError } from '../utils/logger';
 import { tagService } from '../services/tag.service';
 import { AppError } from '../middlewares/error.middleware';
+import { Post } from '../models/Post';
+import { Board } from '../models/Board';
+import { Tag } from '../models/Tag';
+import { boardManagerService } from '../services/boardManager.service';
 
 // HEX 색상: 3자리(#fff) 또는 6자리(#3b82f6)만 허용
 const HEX_COLOR_REGEX = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+/**
+ * 태그 관리 인가 — 전역 태그(boardId=null)는 admin만, 게시판 태그는 admin/manager/해당 게시판 담당자.
+ * 통과하면 true, 실패 시 응답을 보내고 false 반환.
+ */
+async function ensureTagManagePermission(
+  req: AuthRequest,
+  res: Response,
+  boardId: string | null
+): Promise<boolean> {
+  const userId = req.user?.id ?? '';
+  const role = req.user?.role ?? 'guest';
+  if (boardId === null) {
+    if (role !== 'admin') {
+      sendForbidden(res, '전역(공용) 태그는 관리자만 관리할 수 있습니다.');
+      return false;
+    }
+    return true;
+  }
+  const ok = await boardManagerService.canManage(boardId, userId, role);
+  if (!ok) {
+    sendForbidden(res, '이 게시판의 태그를 관리할 권한이 없습니다.');
+    return false;
+  }
+  return true;
+}
 
 export const getTags = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -41,6 +77,13 @@ export const createTag = async (req: AuthRequest, res: Response): Promise<void> 
   const resolvedBoardId =
     boardId === undefined || boardId === null || boardId === '' ? null : String(boardId);
   try {
+    // boardId가 지정된 경우 해당 게시판 존재 여부 확인
+    if (resolvedBoardId !== null) {
+      const board = await Board.findByPk(resolvedBoardId, { attributes: ['id'] });
+      if (!board) return sendNotFound(res, '게시판');
+    }
+    // 인가: 전역 태그는 admin, 게시판 태그는 admin/manager/담당자
+    if (!(await ensureTagManagePermission(req, res, resolvedBoardId))) return;
     const tag = await tagService.createTag({ name, color, description, boardId: resolvedBoardId });
     sendSuccess(res, tag, '태그가 생성되었습니다.', 201);
   } catch (err) {
@@ -64,6 +107,10 @@ export const updateTag = async (req: AuthRequest, res: Response): Promise<void> 
     return sendValidationError(res, 'description', '태그 설명은 500자를 초과할 수 없습니다.');
   }
   try {
+    // 대상 태그의 boardId 기준으로 인가
+    const target = await Tag.findByPk(id, { attributes: ['id', 'boardId'] });
+    if (!target) return sendNotFound(res, '태그');
+    if (!(await ensureTagManagePermission(req, res, target.boardId ?? null))) return;
     const tag = await tagService.updateTag(id, { name, color, description });
     sendSuccess(res, tag);
   } catch (err) {
@@ -77,6 +124,9 @@ export const deleteTag = async (req: AuthRequest, res: Response): Promise<void> 
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) return sendValidationError(res, 'id', '잘못된 태그 ID입니다.');
   try {
+    const target = await Tag.findByPk(id, { attributes: ['id', 'boardId'] });
+    if (!target) return sendNotFound(res, '태그');
+    if (!(await ensureTagManagePermission(req, res, target.boardId ?? null))) return;
     await tagService.deleteTag(id);
     sendSuccess(res, null, '태그가 삭제되었습니다.');
   } catch (err) {
@@ -93,7 +143,18 @@ export const addPostTags = async (req: AuthRequest, res: Response): Promise<void
   if (!tagIds.every((id: unknown) => Number.isInteger(id) && (id as number) > 0)) {
     return sendError(res, 400, 'tagIds는 양의 정수 배열이어야 합니다.');
   }
+  if (tagIds.length > 20) {
+    return sendError(res, 400, '태그는 최대 20개까지 설정할 수 있습니다.');
+  }
   try {
+    const post = await Post.findByPk(postId, { attributes: ['id', 'UserId'] });
+    if (!post) return sendNotFound(res, '게시글');
+    const userId = req.user?.id;
+    const userRole = req.user?.role ?? 'guest';
+    const isAdminOrManager = userRole === 'admin' || userRole === 'manager';
+    if (!isAdminOrManager && post.UserId !== userId) {
+      return sendForbidden(res, '본인의 게시글에만 태그를 설정할 수 있습니다.');
+    }
     await tagService.addTagsToPost(postId, tagIds);
     sendSuccess(res, null, '태그가 저장되었습니다.');
   } catch (err) {

@@ -323,7 +323,7 @@ export const ReportManagement = React.memo(() => {
                 value={reviewNote}
                 onChange={e => setReviewNote(e.target.value)}
                 rows={3}
-                maxLength={500}
+                maxLength={1000}
                 placeholder="처리 사유 또는 조치 내용을 입력하세요..."
                 className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
               />

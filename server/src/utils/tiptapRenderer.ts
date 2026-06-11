@@ -1,6 +1,272 @@
 // server/src/utils/tiptapRenderer.ts
 // ✅ Tiptap JSON을 HTML로 변환하는 유틸리티 (서버사이드) - 개선 버전
+import sanitizeHtml from 'sanitize-html';
 import { logInfo } from './logger';
+
+// CKEditor 등에서 들어온 raw HTML 문자열을 서버 측에서 살균.
+// 클라이언트 DOMPurify에만 의존하면 OG 미리보기/검색 미리보기 등 비 DOMPurify 경로에서 XSS가 노출됨.
+//
+// ⚠️ 허용 태그/속성/CSS는 client/src/utils/htmlSanitizer.ts의 DOMPurify 설정과 동기화한다.
+//    서버 측 규칙이 더 엄격하면 정상 콘텐츠(밑줄/표/색상 등)가 잘려 사용자에게 깨져 보임.
+
+// client SAFE_CSS_PROPS와 동일 — CKEditor가 출력하는 스타일을 보존하되 javascript:/expression()만 차단
+const SAFE_CSS_PROPS = new Set<string>([
+  'color',
+  'background-color',
+  'font-size',
+  'font-family',
+  'text-align',
+  'text-decoration',
+  'width',
+  'height',
+  'border',
+  'border-collapse',
+  'border-spacing',
+  'border-color',
+  'border-width',
+  'border-style',
+  'border-top',
+  'border-right',
+  'border-bottom',
+  'border-left',
+  'border-top-color',
+  'border-right-color',
+  'border-bottom-color',
+  'border-left-color',
+  'border-top-width',
+  'border-right-width',
+  'border-bottom-width',
+  'border-left-width',
+  'border-top-style',
+  'border-right-style',
+  'border-bottom-style',
+  'border-left-style',
+  'padding',
+  'padding-top',
+  'padding-right',
+  'padding-bottom',
+  'padding-left',
+  'margin',
+  'margin-top',
+  'margin-right',
+  'margin-bottom',
+  'margin-left',
+  'vertical-align',
+  'float',
+  'min-width',
+  'max-width',
+  'min-height',
+  'max-height',
+  'line-height',
+  'letter-spacing',
+  'word-spacing',
+  'font-weight',
+  'font-style',
+  'text-indent',
+  'white-space',
+  // 렌더러가 생성하는 추가 속성 (renderNode의 list/blockquote/codeBlock/image 등)
+  'list-style-type',
+  'border-radius',
+  'box-shadow',
+  'display',
+  'overflow-x',
+  // 동영상 임베드 반응형 래퍼(figure.media)용 — position은 값 가드로 fixed/sticky 차단
+  'position',
+  'top',
+  'right',
+  'bottom',
+  'left',
+]);
+
+const DANGEROUS_CSS_VALUE = /javascript:|expression\s*\(|url\s*\(/i;
+
+function sanitizeStyleString(style: string): string {
+  return style
+    .split(';')
+    .map(s => s.trim())
+    .filter(s => {
+      if (!s) return false;
+      const colonIdx = s.indexOf(':');
+      if (colonIdx === -1) return false;
+      const prop = s.slice(0, colonIdx).trim().toLowerCase();
+      const value = s.slice(colonIdx + 1).trim();
+      if (!SAFE_CSS_PROPS.has(prop)) return false;
+      if (DANGEROUS_CSS_VALUE.test(value)) return false;
+      // position: fixed/sticky는 뷰포트 고정 오버레이(클릭재킹) 가능 → relative/absolute/static만 허용
+      if (prop === 'position' && !/^(static|relative|absolute)$/.test(value.toLowerCase())) {
+        return false;
+      }
+      return true;
+    })
+    .join('; ');
+}
+
+// 신뢰 동영상 임베드 호스트 — client htmlSanitizer.ts와 동기화(호스트 → 허용 경로 prefix)
+const ALLOWED_EMBED_HOSTS: Record<string, string> = {
+  'www.youtube.com': '/embed/',
+  'youtube.com': '/embed/',
+  'www.youtube-nocookie.com': '/embed/',
+  'youtube-nocookie.com': '/embed/',
+  'player.vimeo.com': '/video/',
+};
+
+/** iframe src가 신뢰 동영상 임베드(https + 허용 호스트 + 허용 경로)인지 검증 */
+function isAllowedEmbedSrc(src: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(src);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== 'https:') return false;
+  const prefix = ALLOWED_EMBED_HOSTS[u.hostname.toLowerCase()];
+  return !!prefix && u.pathname.startsWith(prefix);
+}
+
+const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
+  // client ALLOWED_TAGS와 일치
+  allowedTags: [
+    'p',
+    'br',
+    'hr',
+    'strong',
+    'b',
+    'em',
+    'i',
+    'u',
+    's',
+    'sub',
+    'sup',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'ul',
+    'ol',
+    'li',
+    'blockquote',
+    'pre',
+    'code',
+    'a',
+    'img',
+    'mark',
+    'table',
+    'thead',
+    'tbody',
+    'tfoot',
+    'tr',
+    'th',
+    'td',
+    'caption',
+    'colgroup',
+    'col',
+    'span',
+    'div',
+    'figure',
+    'figcaption',
+    'iframe', // 동영상 임베드 — src는 신뢰 호스트만(allowedIframeHostnames + exclusiveFilter)
+  ],
+  // client ALLOWED_ATTR과 일치 (style은 transformTags에서 직접 sanitize)
+  allowedAttributes: {
+    a: ['href', 'target', 'rel', 'title', 'class'],
+    img: ['src', 'alt', 'title', 'width', 'height', 'class', 'style'],
+    th: ['colspan', 'rowspan', 'class', 'style'],
+    td: ['colspan', 'rowspan', 'class', 'style'],
+    code: ['class'],
+    pre: ['class'],
+    figure: ['class', 'data-figure-type', 'style'],
+    table: ['class', 'style'],
+    col: ['style'],
+    colgroup: ['style', 'span'],
+    iframe: [
+      'src',
+      'width',
+      'height',
+      'frameborder',
+      'allow',
+      'allowfullscreen',
+      'referrerpolicy',
+      'loading',
+      'style',
+    ],
+    '*': ['class', 'style'],
+  },
+  // javascript:/vbscript:/data: 스킴 차단 (image는 http/https/data:image 허용 — CKEditor가 임베드 가능)
+  allowedSchemes: ['http', 'https', 'mailto'],
+  allowedSchemesByTag: { img: ['http', 'https'], iframe: ['https'] },
+  allowedSchemesAppliedToAttributes: ['href', 'src'],
+  // iframe: 신뢰 동영상 호스트만(상대/프로토콜상대 URL 거부)
+  allowedIframeHostnames: [
+    'www.youtube.com',
+    'youtube.com',
+    'www.youtube-nocookie.com',
+    'youtube-nocookie.com',
+    'player.vimeo.com',
+  ],
+  allowIframeRelativeUrls: false,
+  // 호스트가 맞아도 경로(/embed/, /video/)·https까지 맞지 않으면 iframe 통째로 제거
+  exclusiveFilter: frame => frame.tag === 'iframe' && !isAllowedEmbedSrc(frame.attribs?.src || ''),
+  // onclick 등 모든 이벤트 핸들러 속성 차단
+  disallowedTagsMode: 'discard',
+  // style 속성은 prop 화이트리스트 + dangerous 값 차단 (transformTags['*']에서 처리)
+  transformTags: {
+    '*': (tagName, attribs) => {
+      if (attribs.style) {
+        const safe = sanitizeStyleString(attribs.style);
+        if (safe) attribs.style = safe;
+        else delete attribs.style;
+      }
+      // on*= 이벤트 핸들러 속성 제거 (allowedAttributes 화이트리스트로 이미 차단되지만 방어적 추가)
+      for (const key of Object.keys(attribs)) {
+        if (key.toLowerCase().startsWith('on')) delete attribs[key];
+      }
+      return { tagName, attribs };
+    },
+    iframe: (tagName, attribs) => {
+      if (attribs.style) {
+        const safe = sanitizeStyleString(attribs.style);
+        if (safe) attribs.style = safe;
+        else delete attribs.style;
+      }
+      for (const key of Object.keys(attribs)) {
+        if (key.toLowerCase().startsWith('on') || key.toLowerCase() === 'srcdoc') {
+          delete attribs[key];
+        }
+      }
+      // 살아남은(신뢰 호스트) iframe에 보수적 속성 강제 — client와 동기화
+      return {
+        tagName,
+        attribs: {
+          ...attribs,
+          referrerpolicy: 'strict-origin-when-cross-origin',
+          loading: 'lazy',
+        },
+      };
+    },
+    a: (tagName, attribs) => {
+      // 링크는 항상 새 탭 + noopener (target=_self는 명시적으로 유지)
+      if (attribs.style) {
+        const safe = sanitizeStyleString(attribs.style);
+        if (safe) attribs.style = safe;
+        else delete attribs.style;
+      }
+      return {
+        tagName,
+        attribs: {
+          ...attribs,
+          target: attribs.target === '_self' ? '_self' : '_blank',
+          rel: 'noopener noreferrer',
+        },
+      };
+    },
+  },
+};
+
+export function sanitizeHtmlContent(html: string): string {
+  return sanitizeHtml(html, SANITIZE_OPTIONS);
+}
 
 export interface TiptapNode {
   type: string;
@@ -18,31 +284,34 @@ export interface TiptapDocument {
   content?: TiptapNode[];
 }
 
-// ✅ 콘텐츠를 HTML로 변환 — Tiptap JSON 및 CKEditor HTML 모두 지원
+// ✅ 콘텐츠를 HTML로 변환 — Tiptap JSON 및 CKEditor HTML 모두 지원.
+//   모든 반환 HTML은 sanitize-html을 통과해 서버 측에서 XSS를 1차 차단한다.
 export function renderTiptapToHTML(json: string | TiptapDocument): string {
   try {
-    // If it's already an HTML string (CKEditor), return it as-is
+    // If it's already an HTML string (CKEditor), sanitize and return
     if (typeof json === 'string') {
       const trimmed = json.trimStart();
       if (trimmed.startsWith('<') || trimmed === '') {
-        return json;
+        return sanitizeHtmlContent(json);
       }
       // Try to parse as Tiptap JSON
       const doc = JSON.parse(json) as TiptapDocument;
       if (!doc || doc.type !== 'doc') {
-        return json; // Unknown format — return as-is
+        return sanitizeHtmlContent(json); // Unknown format — sanitize raw input
       }
-      return renderNodes(doc.content || []);
+      return sanitizeHtmlContent(renderNodes(doc.content || []));
     }
     // TiptapDocument object
     const doc = json as TiptapDocument;
     if (!doc || doc.type !== 'doc') {
       return '<p>잘못된 문서 형식입니다.</p>';
     }
-    return renderNodes(doc.content || []);
+    return sanitizeHtmlContent(renderNodes(doc.content || []));
   } catch {
-    // JSON parse failed — content is likely HTML
-    return typeof json === 'string' ? json : '<p>문서를 렌더링할 수 없습니다.</p>';
+    // JSON parse failed — content is likely HTML; sanitize before returning
+    return typeof json === 'string'
+      ? sanitizeHtmlContent(json)
+      : '<p>문서를 렌더링할 수 없습니다.</p>';
   }
 }
 
@@ -96,20 +365,28 @@ function renderNode(node: TiptapNode): string {
             result = `<code class="inline-code">${result}</code>`;
             break;
           case 'link': {
-            const href = mark.attrs?.href || '#';
+            const rawHref = mark.attrs?.href || '#';
+            // javascript:/vbscript:/data: URI XSS 차단 — 안전한 스킴만 허용
+            const safeHref = /^(https?:|mailto:|\/|#)/i.test(String(rawHref))
+              ? String(rawHref)
+              : '#';
             const rawTarget = mark.attrs?.target || '_blank';
             const safeTarget = rawTarget === '_self' ? '_self' : '_blank';
-            result = `<a href="${escapeHtml(href)}" target="${safeTarget}" rel="noopener noreferrer">${result}</a>`;
+            result = `<a href="${escapeHtml(safeHref)}" target="${safeTarget}" rel="noopener noreferrer">${result}</a>`;
             break;
           }
-          case 'highlight':
-            // ✅ null 체크 및 기본값 적용
-            let bgColor = mark.attrs?.color;
-            if (bgColor === null || bgColor === undefined || bgColor === '') {
-              bgColor = '#ffff00'; // 기본 노란색
-            }
-            result = `<mark style="background-color: ${escapeHtml(bgColor)}; padding: 2px 4px; border-radius: 2px;">${result}</mark>`;
+          case 'highlight': {
+            // CSS 인젝션 방지 — 허용된 색상 포맷만 통과
+            const rawColor = mark.attrs?.color;
+            const isSafeColor =
+              rawColor &&
+              /^(#[0-9a-fA-F]{3,8}|rgb\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)|rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*[\d.]+\s*\)|hsl\(\s*\d+\s*,\s*\d+%?\s*,\s*\d+%?\s*\)|[a-zA-Z]{2,20})$/.test(
+                String(rawColor)
+              );
+            const bgColor = isSafeColor ? String(rawColor) : '#ffff00';
+            result = `<mark style="background-color: ${bgColor}; padding: 2px 4px; border-radius: 2px;">${result}</mark>`;
             break;
+          }
           case 'superscript':
             result = `<sup>${result}</sup>`;
             break;
@@ -148,12 +425,15 @@ function renderNode(node: TiptapNode): string {
     case 'horizontalRule':
       return '<hr style="border: 0; border-top: 1px solid #d1d5db; margin: 24px 0;">';
 
-    case 'image':
-      const src = attrs.src || '';
+    case 'image': {
+      const rawSrc = attrs.src || '';
+      // javascript:/vbscript:/data: URI 차단 — link 처리와 일관 (data:image는 SVG 위험 때문에 허용 안 함)
+      const safeSrc = /^(https?:|\/)/i.test(String(rawSrc)) ? String(rawSrc) : '';
       const alt = attrs.alt || '';
       const title = attrs.title || '';
       const titleAttr = title ? ` title="${escapeHtml(title)}"` : '';
-      return `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}"${titleAttr} style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); margin: 16px auto; display: block; border: 1px solid #e5e7eb;">`;
+      return `<img src="${escapeHtml(safeSrc)}" alt="${escapeHtml(alt)}"${titleAttr} style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); margin: 16px auto; display: block; border: 1px solid #e5e7eb;">`;
+    }
 
     default:
       // 알 수 없는 노드 타입의 경우 콘텐츠만 렌더링

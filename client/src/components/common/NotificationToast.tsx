@@ -18,7 +18,7 @@ export const NotificationToast: React.FC = () => {
           initial={{ opacity: 0, y: -20, x: 0 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -20 }}
-          className="fixed top-4 right-4 z-50 max-w-sm bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 p-4 flex items-start gap-3"
+          className="fixed top-20 right-4 z-50 max-w-sm bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 p-4 flex items-start gap-3"
         >
           <span className="text-xl flex-shrink-0">🔔</span>
           <div className="flex-1 min-w-0">

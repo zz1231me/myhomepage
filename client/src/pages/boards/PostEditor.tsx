@@ -2,9 +2,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
-import DOMPurify from 'dompurify';
+import hljs from 'highlight.js';
+import 'highlight.js/styles/atom-one-dark.min.css';
 
-import { CKEditorWrapper, CKEditorRef, PostTitleInput } from '../../components/editor';
+import {
+  CKEditorWrapper,
+  CKEditorRef,
+  PostTitleInput,
+  EditorErrorBoundary,
+} from '../../components/editor';
+import { PageContainer } from '../../components/common/PageContainer';
 import UppyFileUpload from '../../components/editor/UppyFileUpload';
 import { fetchPostById, createPost, updatePost } from '../../api/posts';
 import { getBoardTitle } from '../../constants/boardTitles';
@@ -15,6 +22,7 @@ import { getPostTags, savePostTags } from '../../api/tags';
 import { Tag } from '../../types/board.types';
 import { encryptContent } from '../../utils/crypto';
 import { useSiteSettings } from '../../store/siteSettings';
+import { sanitizeHTML } from '../../utils/htmlSanitizer';
 import '../../styles/CKContentView.css';
 
 interface AttachmentInfo {
@@ -51,10 +59,19 @@ const PostEditor = ({ mode }: Props) => {
   // 분할 보기 상태
   const [splitView, setSplitView] = useState(false);
   const [previewHtml, setPreviewHtml] = useState('');
+  const previewRef = useRef<HTMLDivElement>(null);
+
+  // 분할 보기 미리보기 코드 블록 syntax highlight
+  useEffect(() => {
+    previewRef.current?.querySelectorAll<HTMLElement>('pre code').forEach(block => {
+      if (!block.dataset.highlighted) hljs.highlightElement(block);
+    });
+  }, [previewHtml]);
 
   // 비밀글 상태
   const [isSecret, setIsSecret] = useState(false);
   const [secretPassword, setSecretPassword] = useState('');
+  const [originalSecretType, setOriginalSecretType] = useState<'password' | 'users' | null>(null);
 
   // 사이트 설정에서 동적으로 읽는 제한값
   const MAX_TITLE_LENGTH = siteSettings.postTitleMaxLength;
@@ -96,8 +113,19 @@ const PostEditor = ({ mode }: Props) => {
         try {
           const post = await fetchPostById(boardType, id);
           if (isMounted) {
+            // 잠긴 게시글(비밀번호 보호)은 편집 불가
+            if (post.isLocked) {
+              setError(
+                post.isEncrypted
+                  ? '종단간 암호화(E2EE) 게시글은 편집할 수 없습니다. 삭제 후 새로 작성해 주세요.'
+                  : '비밀번호로 보호된 게시글은 작성자 본인만 편집할 수 있습니다.'
+              );
+              return;
+            }
             setTitle(post.title);
-            setInitialContent(post.content || '');
+            // 편집은 원본(rawContent)을 로드 — 서버 렌더본(content)은 data-oembed-url 등이
+            // 제거돼 동영상 위젯 복원이 안 되고 서식이 변형됨. rawContent로 라운드트립 정합 보장.
+            setInitialContent(post.rawContent || post.content || '');
             setEditorKey(prev => prev + 1);
             if (typeof post.version === 'number') setPostVersion(post.version);
 
@@ -110,12 +138,13 @@ const PostEditor = ({ mode }: Props) => {
             // 비밀글 설정 로드
             if (post.isSecret) {
               setIsSecret(true);
+              setOriginalSecretType((post.secretType as 'password' | 'users') || null);
             }
 
             // 태그 로드
             try {
               const tags = await getPostTags(boardType, id);
-              setSelectedTags(tags);
+              if (isMounted) setSelectedTags(tags);
             } catch {
               // ignore tag load failure
             }
@@ -165,6 +194,7 @@ const PostEditor = ({ mode }: Props) => {
   const [draftNotice, setDraftNotice] = useState<{
     title: string;
     content?: string;
+    boardType?: string;
     savedAt: number;
   } | null>(null);
   useEffect(() => {
@@ -172,8 +202,16 @@ const PostEditor = ({ mode }: Props) => {
     const saved = localStorage.getItem('post_draft');
     if (saved) {
       try {
-        const draft = JSON.parse(saved) as { title: string; content?: string; savedAt: number };
+        const draft = JSON.parse(saved) as {
+          title: string;
+          content?: string;
+          boardType?: string;
+          savedAt: number;
+        };
         const ageMinutes = (Date.now() - draft.savedAt) / 60000;
+        // 다른 게시판의 임시저장은 복원하지 않음
+        // draft.boardType이 없는(구버전 저장본) 경우에도 현재 boardType과 다르면 복원 차단
+        if (draft.boardType !== boardType) return;
         if (ageMinutes < DRAFT_EXPIRY_MINUTES && (draft.title || draft.content)) {
           setDraftNotice(draft);
         }
@@ -181,7 +219,7 @@ const PostEditor = ({ mode }: Props) => {
         /* 임시저장 로드 실패 무시 */
       }
     }
-  }, [mode, DRAFT_EXPIRY_MINUTES]);
+  }, [mode, boardType, DRAFT_EXPIRY_MINUTES]);
 
   const handleRestoreDraft = () => {
     if (draftNotice) {
@@ -218,13 +256,14 @@ const PostEditor = ({ mode }: Props) => {
       return;
     }
 
-    // CKEditor returns HTML; strip tags to check if there's actual text content
+    // CKEditor returns HTML; check for text or embedded media
     const contentStr = typeof content === 'string' ? content : JSON.stringify(content);
     const textContent = contentStr
       .replace(/<[^>]+>/g, '')
       .replace(/&nbsp;/g, ' ')
       .trim();
-    if (!textContent) {
+    const hasMedia = /<img|<video|<audio|<iframe/i.test(contentStr);
+    if (!textContent && !hasMedia) {
       setError('내용을 입력해주세요.');
       return;
     }
@@ -248,12 +287,15 @@ const PostEditor = ({ mode }: Props) => {
     // 비밀글 유효성 검사
     if (isSecret) {
       const trimmedPw = secretPassword.trim();
-      if (mode === 'create' && !trimmedPw) {
-        setError('비밀글 비밀번호를 입력해주세요.');
-        return;
-      }
+      // 공백 전용 입력은 모든 모드에서 먼저 차단
       if (secretPassword && !trimmedPw) {
         setError('비밀글 비밀번호에 공백만 입력할 수 없습니다.');
+        return;
+      }
+      // 비밀글 새로 설정(create 또는 기존에 비밀글 아닌 경우) 시 비밀번호 필수
+      // 기존 비밀글(password/users 타입) 수정 시에는 비밀번호 미입력 허용 (서버가 기존 값 유지)
+      if (!trimmedPw && originalSecretType === null) {
+        setError('비밀글 비밀번호를 입력해주세요.');
         return;
       }
       if (trimmedPw && trimmedPw.length < SECRET_PW_MIN_LENGTH) {
@@ -274,14 +316,32 @@ const PostEditor = ({ mode }: Props) => {
       isEncrypted = true;
     }
 
+    // 비밀글 타입: 비밀번호가 입력된 경우 password 타입, 기존 users 타입이고 비밀번호 미입력이면 유지
     const secretFields = isSecret
-      ? {
-          isSecret: true,
-          secretType: 'password' as const,
-          secretPassword: secretPassword.trim() || undefined,
-          secretUserIds: undefined,
-          ...(isEncrypted && { isEncrypted: true, secretSalt: encryptedSalt }),
-        }
+      ? isEncrypted
+        ? {
+            isSecret: true,
+            secretType: 'password' as const,
+            secretPassword: secretPassword.trim() || undefined,
+            secretUserIds: undefined,
+            isEncrypted: true,
+            secretSalt: encryptedSalt,
+          }
+        : originalSecretType === 'users' && !secretPassword.trim()
+          ? {
+              isSecret: true,
+              secretType: 'users' as const,
+              secretPassword: undefined,
+              secretUserIds: undefined, // 서버에서 기존 값 유지
+              isEncrypted: false,
+            }
+          : {
+              isSecret: true,
+              secretType: 'password' as const,
+              secretPassword: secretPassword.trim() || undefined,
+              secretUserIds: undefined,
+              isEncrypted: false,
+            }
       : { isSecret: false };
 
     try {
@@ -307,6 +367,7 @@ const PostEditor = ({ mode }: Props) => {
           logger.warn('태그 저장에 실패했습니다. 게시글은 저장되었습니다.', tagErr);
         }
         logger.success('게시글 수정 완료');
+        localStorage.removeItem('post_draft'); // ✅ 수정 완료 시 임시저장 삭제
         window.dispatchEvent(new Event('post-updated'));
         navigate(`/dashboard/posts/${boardType}/${id}`);
       } else if (mode === 'create') {
@@ -331,7 +392,12 @@ const PostEditor = ({ mode }: Props) => {
         }
         logger.success('게시글 작성 완료');
         localStorage.removeItem('post_draft'); // ✅ 작성 완료 시 임시저장 삭제
-        navigate(`/dashboard/posts/${boardType}`);
+        // 작성한 글의 상세 페이지로 바로 이동 (일반 커뮤니티 패턴) — id가 없을 때만 목록 폴백
+        if (createdId) {
+          navigate(`/dashboard/posts/${boardType}/${createdId}`);
+        } else {
+          navigate(`/dashboard/posts/${boardType}`);
+        }
       }
     } catch (err: unknown) {
       logger.error('저장 실패', err);
@@ -382,107 +448,120 @@ const PostEditor = ({ mode }: Props) => {
   const submitButtonText = isEditMode ? '수정하기' : '작성하기';
 
   return (
-    <div className="page-container">
-      <div className="content-wrapper">
-        <header className="mb-6">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate(-1)}
-              className="w-10 h-10 flex items-center justify-center text-primary-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-              aria-label="뒤로 가기"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M10 19l-7-7m0 0l7-7m-7 7h18"
-                />
-              </svg>
-            </button>
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                {getBoardTitle(boardType || '')} - {isEditMode ? '게시글 수정' : '새 게시글'}
-              </h1>
-            </div>
-          </div>
-        </header>
-
-        <div className="card">
-          <form onSubmit={handleSubmit} className="p-6 space-y-6">
-            {/* ✅ 임시저장 복원 알림 */}
-            {draftNotice && (
-              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 px-4 py-3 rounded-lg flex items-center justify-between gap-3 text-sm">
-                <span>
-                  임시저장된 글이 있습니다
-                  {draftNotice.title ? (
-                    <>
-                      : <strong>"{draftNotice.title}"</strong>
-                    </>
-                  ) : null}
-                </span>
-                <div className="flex gap-2 flex-shrink-0">
-                  <button
-                    type="button"
-                    onClick={handleRestoreDraft}
-                    className="px-3 py-1 bg-amber-600 text-white rounded text-xs hover:bg-amber-700 transition-colors"
-                  >
-                    복원
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleDismissDraft}
-                    className="px-3 py-1 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded text-xs hover:bg-slate-300 transition-colors"
-                  >
-                    무시
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
-                {error}
-              </div>
-            )}
-
-            <PostTitleInput value={title} onChange={setTitle} maxLength={MAX_TITLE_LENGTH} />
-
-            {/* 태그 선택 */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                태그
-              </label>
-              <TagSelector
-                selectedTags={selectedTags}
-                onChange={setSelectedTags}
-                boardId={boardType}
+    <PageContainer>
+      <header className="mb-6">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate(-1)}
+            className="w-10 h-10 flex items-center justify-center text-primary-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+            aria-label="뒤로 가기"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M10 19l-7-7m0 0l7-7m-7 7h18"
               />
-            </div>
+            </svg>
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+              {getBoardTitle(boardType || '')} - {isEditMode ? '게시글 수정' : '새 게시글'}
+            </h1>
+          </div>
+        </div>
+      </header>
 
-            {/* 분할 보기 토글 버튼 */}
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => setSplitView(v => !v)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                  splitView
-                    ? 'bg-primary-600 text-white border-primary-600'
-                    : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:bg-slate-50'
-                }`}
-                title="분할 보기 (미리보기)"
-              >
-                {splitView ? '📝 편집 전용' : '⚡ 분할 보기'}
-              </button>
+      <div className="card">
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* ✅ 임시저장 복원 알림 */}
+          {draftNotice && (
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 px-4 py-3 rounded-lg flex items-center justify-between gap-3 text-sm">
+              <span>
+                임시저장된 글이 있습니다
+                {draftNotice.title ? (
+                  <>
+                    : <strong>"{draftNotice.title}"</strong>
+                  </>
+                ) : null}
+              </span>
+              <div className="flex gap-2 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={handleRestoreDraft}
+                  className="px-3 py-1 bg-amber-600 text-white rounded text-xs hover:bg-amber-700 transition-colors"
+                >
+                  복원
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDismissDraft}
+                  className="px-3 py-1 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded text-xs hover:bg-slate-300 transition-colors"
+                >
+                  무시
+                </button>
+              </div>
             </div>
+          )}
 
-            {splitView ? (
-              <PanelGroup
-                orientation="horizontal"
-                className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden"
-                style={{ height: '600px' }}
-              >
-                <Panel defaultSize={50} minSize={30}>
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
+              {error}
+            </div>
+          )}
+
+          <PostTitleInput value={title} onChange={setTitle} maxLength={MAX_TITLE_LENGTH} />
+
+          {/* 태그 선택 */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+              태그
+            </label>
+            <TagSelector
+              selectedTags={selectedTags}
+              onChange={setSelectedTags}
+              boardId={boardType}
+            />
+          </div>
+
+          {/* 분할 보기 토글 버튼 */}
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => setSplitView(v => !v)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                splitView
+                  ? 'bg-primary-600 text-white border-primary-600'
+                  : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:bg-slate-50'
+              }`}
+              title="분할 보기 (미리보기)"
+            >
+              {splitView ? '📝 편집 전용' : '⚡ 분할 보기'}
+            </button>
+          </div>
+
+          {splitView ? (
+            <PanelGroup
+              orientation="horizontal"
+              className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden"
+              style={{ height: '600px' }}
+            >
+              <Panel defaultSize={50} minSize={30}>
+                <EditorErrorBoundary
+                  key={editorKey}
+                  editorRef={editorRef}
+                  onImageUpload={handleImageUpload}
+                  initialContent={initialContent}
+                  placeholder={
+                    boardType
+                      ? `${getBoardTitle(boardType)}의 내용을 작성해주세요...`
+                      : '내용을 작성해주세요...'
+                  }
+                  onChange={html => {
+                    if (splitView) setPreviewHtml(sanitizeHTML(html));
+                  }}
+                >
                   <CKEditorWrapper
                     key={editorKey}
                     editorRef={editorRef}
@@ -493,23 +572,42 @@ const PostEditor = ({ mode }: Props) => {
                         ? `${getBoardTitle(boardType)}의 내용을 작성해주세요...`
                         : '내용을 작성해주세요...'
                     }
-                    onChange={html => setPreviewHtml(DOMPurify.sanitize(html))}
+                    onChange={html => {
+                      // 분할 보기일 때만 sanitize/setState — 비활성 시 큰 글 입력에서 매 키마다
+                      // DOMPurify를 호출하는 비용을 회피 (미리보기가 보이지 않아 불필요)
+                      if (splitView) setPreviewHtml(sanitizeHTML(html));
+                    }}
                   />
-                </Panel>
-                <PanelResizeHandle className="w-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-primary-400 transition-colors cursor-col-resize" />
-                <Panel defaultSize={50} minSize={30}>
-                  <div className="h-full overflow-y-auto p-6">
-                    <h1 className="text-xl font-bold mb-4 text-slate-900 dark:text-slate-100">
-                      {title}
-                    </h1>
-                    <div
-                      className="ck-content-view"
-                      dangerouslySetInnerHTML={{ __html: previewHtml }}
-                    />
-                  </div>
-                </Panel>
-              </PanelGroup>
-            ) : (
+                </EditorErrorBoundary>
+              </Panel>
+              <PanelResizeHandle className="w-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-primary-400 transition-colors cursor-col-resize" />
+              <Panel defaultSize={50} minSize={30}>
+                <div className="h-full overflow-y-auto p-6">
+                  <h1 className="text-xl font-bold mb-4 text-slate-900 dark:text-slate-100">
+                    {title}
+                  </h1>
+                  {/* previewHtml은 sanitizeHTML()로 정화 완료 */}
+                  <div
+                    ref={previewRef}
+                    className="ck-content-view"
+                    dangerouslySetInnerHTML={{ __html: previewHtml }}
+                  />
+                </div>
+              </Panel>
+            </PanelGroup>
+          ) : (
+            <EditorErrorBoundary
+              key={editorKey}
+              editorRef={editorRef}
+              onImageUpload={handleImageUpload}
+              initialContent={initialContent}
+              placeholder={
+                boardType
+                  ? `${getBoardTitle(boardType)}의 내용을 작성해주세요...`
+                  : '내용을 작성해주세요...'
+              }
+              onChange={html => setPreviewHtml(sanitizeHTML(html))}
+            >
               <CKEditorWrapper
                 key={editorKey}
                 editorRef={editorRef}
@@ -520,100 +618,111 @@ const PostEditor = ({ mode }: Props) => {
                     ? `${getBoardTitle(boardType)}의 내용을 작성해주세요...`
                     : '내용을 작성해주세요...'
                 }
-                onChange={html => setPreviewHtml(DOMPurify.sanitize(html))}
+                onChange={html => setPreviewHtml(sanitizeHTML(html))}
               />
-            )}
+            </EditorErrorBoundary>
+          )}
 
-            <UppyFileUpload
-              files={files}
-              existingFiles={existingAttachments}
-              onNewFilesAdd={handleNewFilesAdd}
-              onNewFileRemove={handleNewFileRemove}
-              onExistingFileRemove={handleExistingFileRemove}
-              maxFiles={MAX_FILES}
-              maxFileSize={MAX_FILE_SIZE}
-              isEditMode={isEditMode}
-            />
+          <UppyFileUpload
+            files={files}
+            existingFiles={existingAttachments}
+            onNewFilesAdd={handleNewFilesAdd}
+            onNewFileRemove={handleNewFileRemove}
+            onExistingFileRemove={handleExistingFileRemove}
+            maxFiles={MAX_FILES}
+            maxFileSize={MAX_FILE_SIZE}
+            isEditMode={isEditMode}
+          />
 
-            {/* 비밀글 설정 */}
-            <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 space-y-4">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={isSecret}
-                  onChange={e => {
-                    setIsSecret(e.target.checked);
-                    if (!e.target.checked) {
-                      setSecretPassword('');
+          {/* 비밀글 설정 */}
+          <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 space-y-4">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isSecret}
+                onChange={e => {
+                  setIsSecret(e.target.checked);
+                  if (!e.target.checked) {
+                    setSecretPassword('');
+                  }
+                }}
+                className="w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+              />
+              <span className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                🔒 비밀글
+              </span>
+            </label>
+
+            {isSecret && (
+              <div className="pl-7 space-y-3">
+                <div className="space-y-1">
+                  <input
+                    type="password"
+                    value={secretPassword}
+                    onChange={e => setSecretPassword(e.target.value)}
+                    placeholder={
+                      mode === 'edit'
+                        ? `변경하려면 새 비밀번호 입력 (최소 ${SECRET_PW_MIN_LENGTH}자), 유지 시 빈칸`
+                        : `비밀번호 (최소 ${SECRET_PW_MIN_LENGTH}자)`
                     }
-                  }}
-                  className="w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
-                />
-                <span className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                  🔒 비밀글
-                </span>
-              </label>
-
-              {isSecret && (
-                <div className="pl-7 space-y-3">
-                  <div className="space-y-1">
-                    <input
-                      type="password"
-                      value={secretPassword}
-                      onChange={e => setSecretPassword(e.target.value)}
-                      placeholder={
-                        mode === 'edit'
-                          ? '변경하려면 새 비밀번호 입력 (최소 4자), 유지 시 빈칸'
-                          : '비밀번호 (최소 4자)'
-                      }
-                      minLength={4}
-                      className="input-field w-full max-w-xs"
-                      autoComplete="new-password"
-                    />
-                    {mode === 'edit' && (
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        비워두면 기존 비밀번호가 유지됩니다.
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
-                    <span className="text-base">🔐</span>
-                    <div>
-                      <p className="text-xs font-medium text-green-700 dark:text-green-300">
-                        E2EE 종단간 암호화
-                      </p>
-                      <p className="text-xs text-green-600 dark:text-green-400">
-                        비밀번호로 콘텐츠를 암호화하여 서버에서도 내용을 알 수 없습니다
-                      </p>
-                    </div>
+                    minLength={SECRET_PW_MIN_LENGTH}
+                    className="input-field w-full max-w-xs"
+                    autoComplete="new-password"
+                  />
+                  {mode === 'edit' && (
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      비워두면 기존 비밀번호가 유지됩니다.
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+                  <span className="text-base">🔐</span>
+                  <div>
+                    <p className="text-xs font-medium text-green-700 dark:text-green-300">
+                      E2EE 종단간 암호화
+                    </p>
+                    <p className="text-xs text-green-600 dark:text-green-400">
+                      비밀번호로 콘텐츠를 암호화하여 서버에서도 내용을 알 수 없습니다
+                    </p>
                   </div>
                 </div>
-              )}
-            </div>
-
-            <div className="flex justify-end items-center pt-6 border-t border-slate-200 dark:border-slate-700">
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => navigate(-1)}
-                  disabled={loading}
-                  className="btn-secondary"
-                >
-                  취소
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading || !title?.trim()}
-                  className="btn-primary disabled:opacity-50"
-                >
-                  {loading ? '처리 중...' : submitButtonText}
-                </button>
               </div>
+            )}
+          </div>
+
+          <div className="flex justify-end items-center pt-6 border-t border-slate-200 dark:border-slate-700">
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => navigate(-1)}
+                disabled={loading}
+                className="btn-secondary"
+              >
+                취소
+              </button>
+              <button
+                type="submit"
+                disabled={loading || !title?.trim()}
+                aria-busy={loading}
+                className="btn-primary disabled:opacity-50 inline-flex items-center gap-2"
+              >
+                {loading && (
+                  <span
+                    aria-hidden="true"
+                    className="w-4 h-4 inline-block rounded-full border-2 border-white border-t-transparent animate-spin"
+                  />
+                )}
+                {loading
+                  ? files && files.length > 0
+                    ? '파일 업로드 중...'
+                    : '저장 중...'
+                  : submitButtonText}
+              </button>
             </div>
-          </form>
-        </div>
+          </div>
+        </form>
       </div>
-    </div>
+    </PageContainer>
   );
 };
 

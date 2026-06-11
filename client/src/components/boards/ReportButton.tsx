@@ -1,5 +1,5 @@
 // client/src/components/boards/ReportButton.tsx - 신고 버튼 + 모달
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createReport, ReportReason, ReportTargetType, REASON_LABELS } from '../../api/reports';
 
 interface ReportButtonProps {
@@ -35,6 +35,9 @@ export function ReportButton({ targetType, targetId, className = '' }: ReportBut
     }
   };
 
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
   const handleClose = () => {
     setIsOpen(false);
     setTimeout(() => {
@@ -45,9 +48,29 @@ export function ReportButton({ targetType, targetId, className = '' }: ReportBut
     }, 300);
   };
 
+  // 접근성: ESC로 닫기 + 첫 포커스를 닫기 버튼으로 + 닫힐 때 트리거로 포커스 복원
+  useEffect(() => {
+    if (!isOpen) return;
+    const trigger = triggerRef.current; // 정리 시점에 안전하게 참조하도록 캡처
+    const t = setTimeout(() => closeBtnRef.current?.focus(), 0);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        handleClose();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener('keydown', onKey);
+      trigger?.focus();
+    };
+  }, [isOpen]);
+
   return (
     <>
       <button
+        ref={triggerRef}
         onClick={() => setIsOpen(true)}
         aria-label="신고하기"
         className={`flex items-center gap-1 text-xs text-slate-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 transition-colors ${className}`}
@@ -97,6 +120,7 @@ export function ReportButton({ targetType, targetId, className = '' }: ReportBut
                 </h2>
               </div>
               <button
+                ref={closeBtnRef}
                 onClick={handleClose}
                 aria-label="닫기"
                 className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
@@ -194,7 +218,10 @@ export function ReportButton({ targetType, targetId, className = '' }: ReportBut
                   </div>
 
                   {error && (
-                    <p className="mb-4 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
+                    <p
+                      role="alert"
+                      className="mb-4 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg"
+                    >
                       {error}
                     </p>
                   )}

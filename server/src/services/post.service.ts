@@ -6,16 +6,22 @@ import { BoardManager } from '../models/BoardManager';
 import { Tag } from '../models/Tag';
 import { WikiPage } from '../models/WikiPage';
 import { Event } from '../models/Event';
+import EventPermission from '../models/EventPermission';
 import { Memo } from '../models/Memo';
-import { ROLES, MAX_FILE_COUNT } from '../config/constants';
+import { ROLES } from '../config/constants';
 import {
   getPostTitleMaxLength,
   getPostContentMaxLength,
   getPostSecretPasswordMinLength,
   getGlobalSearchLimit,
   getBcryptRounds,
+  getSettings,
 } from '../utils/settingsCache';
 import { BoardAccess } from '../models/BoardAccess';
+import { Comment } from '../models/Comment';
+import { PostLike } from '../models/PostLike';
+import { PostTag } from '../models/PostTag';
+import { PostRead } from '../models/PostRead';
 import { BaseService } from './base.service';
 import { AppError } from '../middlewares/error.middleware';
 import { extractTextFromTiptap } from '../utils/tiptapRenderer';
@@ -50,6 +56,7 @@ export interface CreatePostParams {
 
 export interface UpdatePostParams {
   postId: string;
+  expectedBoardType?: string;
   title: string;
   content: string;
   userId: string;
@@ -215,6 +222,7 @@ export class PostService extends BaseService {
     const posts = await Post.findAll({
       where: {
         boardType: { [Op.in]: accessibleBoardTypes },
+        status: 'published', // 초안/보관 게시글 검색 결과 제외
         [Op.and]: [
           {
             [Op.or]: [{ isSecret: false }, { isSecret: true, UserId: userId }],
@@ -296,26 +304,34 @@ export class PostService extends BaseService {
       };
     });
 
-    // 이벤트 검색
-    const events = await Event.findAll({
-      where: {
-        [Op.or]: [
-          { title: { [Op.like]: `%${escapedSearchTerm}%` } },
-          { body: { [Op.like]: `%${escapedSearchTerm}%` } },
-        ],
-      },
-      include: [
-        {
-          model: User,
-          as: 'user',
-          attributes: ['id', 'name'],
-          required: false,
-        },
-      ],
-      attributes: ['id', 'title', 'body', 'start', 'end', 'createdAt'],
-      order: [['start', 'DESC']],
-      limit: getGlobalSearchLimit(),
-    });
+    // 이벤트 검색 — admin은 항상 허용, 일반 역할은 EventPermission.canRead 확인
+    let canReadEvents = userRole === ROLES.ADMIN;
+    if (!canReadEvents) {
+      const ep = await EventPermission.findOne({ where: { roleId: userRole } });
+      canReadEvents = ep ? ep.canRead : false; // 권한 레코드 없으면 기본 차단
+    }
+
+    const events = canReadEvents
+      ? await Event.findAll({
+          where: {
+            [Op.or]: [
+              { title: { [Op.like]: `%${escapedSearchTerm}%` } },
+              { body: { [Op.like]: `%${escapedSearchTerm}%` } },
+            ],
+          },
+          include: [
+            {
+              model: User,
+              as: 'user',
+              attributes: ['id', 'name'],
+              required: false,
+            },
+          ],
+          attributes: ['id', 'title', 'body', 'start', 'end', 'createdAt'],
+          order: [['start', 'DESC']],
+          limit: getGlobalSearchLimit(),
+        })
+      : [];
 
     const eventResults = events.map(event => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -390,6 +406,7 @@ export class PostService extends BaseService {
 
     const whereCondition: WhereOptions<PostInstance> & { [key: symbol]: unknown } = {
       boardType,
+      status: 'published', // 초안/보관 게시글은 목록에서 제외
       ...(andConditions.length > 0 ? { [Op.and]: andConditions } : {}),
     };
 
@@ -446,7 +463,9 @@ export class PostService extends BaseService {
           'secretType',
           'isPinned',
           [
-            literal(`(SELECT COUNT(*) FROM comments AS c WHERE c.PostId = Post.id)`),
+            literal(
+              `(SELECT COUNT(*) FROM comments AS c WHERE c.PostId = Post.id AND c.deletedAt IS NULL)`
+            ),
             'commentCount',
           ],
           [
@@ -480,7 +499,8 @@ export class PostService extends BaseService {
         commentCount: parseInt(postData.commentCount, 10) || 0,
         likeCount: parseInt(postData.likeCount, 10) || 0,
         isSecret: postData.isSecret || false,
-        secretType: postData.secretType || null,
+        // 본인 비밀글이 아니면 secretType도 마스킹 (password/users 타입 노출 방지)
+        secretType: isOwnSecret ? postData.secretType || null : null,
         isPinned: postData.isPinned || false,
         isRead: userId ? Boolean(postData.isRead) : undefined,
         tags: postData.tags || [],
@@ -502,10 +522,13 @@ export class PostService extends BaseService {
   }
 
   // ✅ 게시글 상세 조회 (requestUserId: 비밀글 접근 체크용, skipViewCount: 수정/삭제 시 조회수 증가 방지)
+  // expectedBoardType 제공 시 board 교차 검증 — 조회수 증가 전에 수행해 다른 게시판 URL로 viewCount 인플레이션 방지
   async getPostById(
     id: string,
     requestUserId?: string,
-    skipViewCount = false
+    skipViewCount = false,
+    requestUserRole?: string,
+    expectedBoardType?: string
   ): Promise<
     | { isLocked: false; post: InstanceType<typeof Post>; postData: any; attachments: any[] }
     | LockedPostMeta
@@ -522,6 +545,11 @@ export class PostService extends BaseService {
     });
 
     if (!post) return null;
+
+    // ✅ boardType 교차 검증: 조회수 증가/비밀글 처리 전에 확인 (viewCount 인플레이션 방지)
+    if (expectedBoardType !== undefined && post.boardType !== expectedBoardType) {
+      return null;
+    }
 
     // 비밀글 접근 체크 (requestUserId 제공 시)
     if (requestUserId !== undefined && post.isSecret) {
@@ -547,8 +575,10 @@ export class PostService extends BaseService {
         }
 
         if (!isOwner && post.secretType === 'users') {
+          // 관리자/매니저는 users 비밀글에도 접근 가능
+          const isPrivileged = requestUserRole === ROLES.ADMIN || requestUserRole === ROLES.MANAGER;
           const allowedIds = post.secretUserIds || [];
-          if (!allowedIds.includes(requestUserId)) {
+          if (!isPrivileged && !allowedIds.includes(requestUserId)) {
             throw new AppError(403, '이 비밀글에 접근할 권한이 없습니다.');
           }
         }
@@ -557,8 +587,9 @@ export class PostService extends BaseService {
 
     // ✅ 조회수 증가 (수정/삭제 시 skipViewCount=true 로 우회)
     // increment는 원자적으로 실행되며, 이후 reload로 최신 값을 반영
+    // silent: true — 조회수 증가가 updatedAt을 건드리지 않도록 (조회만 해도 '수정됨' 표시되는 버그 방지)
     if (!skipViewCount) {
-      await Post.increment('viewCount', { by: 1, where: { id: post.id } });
+      await Post.increment('viewCount', { by: 1, where: { id: post.id }, silent: true });
       await post.reload();
     }
 
@@ -574,12 +605,16 @@ export class PostService extends BaseService {
   }
 
   // ✅ 비밀글 비밀번호 검증 후 전체 데이터 반환
-  async verifySecretPost(id: string, password: string) {
+  async verifySecretPost(id: string, password: string, boardType?: string) {
     const post = await Post.findByPk(id, {
       include: [{ model: User, as: 'user', attributes: ['id', 'name', 'avatar'] }],
     });
 
     if (!post) throw new AppError(404, '게시글을 찾을 수 없습니다.');
+    // boardType 교차 검증: 조회수 증가 전에 확인 (잘못된 게시판 접근 시 조회수 증가 방지)
+    if (boardType && post.boardType !== boardType) {
+      throw new AppError(404, '게시글을 찾을 수 없습니다.');
+    }
     if (!post.isSecret || post.secretType !== 'password') {
       throw new AppError(400, '비밀번호가 설정된 게시글이 아닙니다.');
     }
@@ -590,7 +625,8 @@ export class PostService extends BaseService {
     const isMatch = await bcrypt.compare(password, post.secretPassword);
     if (!isMatch) throw new AppError(401, '비밀번호가 올바르지 않습니다.');
 
-    await Post.increment('viewCount', { by: 1, where: { id: post.id } });
+    // silent: true — 조회수 증가가 updatedAt을 건드리지 않도록 ('수정됨' 오표시 방지)
+    await Post.increment('viewCount', { by: 1, where: { id: post.id }, silent: true });
     await post.reload();
 
     const attachments = this.formatAttachments(post.attachments);
@@ -636,6 +672,26 @@ export class PostService extends BaseService {
         mimetype: file.mimetype,
         path: file.path,
       }));
+    }
+
+    // 비밀글 secretType 검증
+    if (isSecret && secretType !== 'password' && secretType !== 'users') {
+      throw new AppError(400, '비밀글 유형(password/users)을 올바르게 지정해주세요.');
+    }
+
+    // users 타입 비밀글은 허용 사용자 목록이 반드시 있어야 함
+    if (isSecret && secretType === 'users') {
+      const validIds = Array.isArray(secretUserIds)
+        ? secretUserIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+        : [];
+      if (validIds.length === 0) {
+        throw new AppError(400, '허용 사용자를 한 명 이상 지정해주세요.');
+      }
+    }
+
+    // E2EE 암호화는 비밀번호 비밀글에서만 유효 (users 타입에서는 서버가 공개키를 모름)
+    if (isEncrypted && secretType !== 'password') {
+      throw new AppError(400, 'E2EE 암호화는 비밀번호 보호 게시글에서만 사용할 수 있습니다.');
     }
 
     // 비밀글 비밀번호 검증 및 해시
@@ -696,6 +752,7 @@ export class PostService extends BaseService {
   async updatePost(params: UpdatePostParams) {
     const {
       postId,
+      expectedBoardType,
       title,
       content,
       userId,
@@ -713,17 +770,24 @@ export class PostService extends BaseService {
       version,
     } = params;
 
-    const post = await Post.findByPk(postId);
-    if (!post) throw new AppError(404, '게시글을 찾을 수 없습니다.');
+    // 권한 체크용 초기 조회 (잠금 없음)
+    const postForPerm = await Post.findByPk(postId);
+    if (!postForPerm) throw new AppError(404, '게시글을 찾을 수 없습니다.');
 
-    const isOwner = userId === post.UserId;
-    const board = await Board.findByPk(post.boardType);
+    // URL의 boardType과 실제 게시글의 boardType이 일치하는지 검증
+    // (다른 게시판 게시글을 무단으로 수정하는 공격 방지)
+    if (expectedBoardType && postForPerm.boardType !== expectedBoardType) {
+      throw new AppError(404, '게시글을 찾을 수 없습니다.');
+    }
+
+    const isOwner = userId === postForPerm.UserId;
+    const board = await Board.findByPk(postForPerm.boardType);
 
     if (!board) {
       throw new AppError(404, '게시판을 찾을 수 없습니다.');
     }
 
-    // 권한 확인을 낙관적 잠금보다 먼저 수행 (권한 없는 접근은 409 전에 차단)
+    // 권한 확인 (트랜잭션 전에 차단)
     if (board.isPersonal) {
       if (!isOwner) throw new AppError(403, '개인공간의 게시글은 작성자만 수정할 수 있습니다.');
     } else {
@@ -731,20 +795,12 @@ export class PostService extends BaseService {
       const isPrivileged = userRole === ROLES.ADMIN || userRole === ROLES.MANAGER;
       if (!isOwner && !isPrivileged) {
         const isBoardManager = await BoardManager.findOne({
-          where: { boardId: post.boardType, userId },
+          where: { boardId: postForPerm.boardType, userId },
         });
         if (!isBoardManager) {
           throw new AppError(403, '게시글 수정 권한이 없습니다.');
         }
       }
-    }
-
-    // 낙관적 잠금: version 미전송 시 0으로 간주 (수정된 글은 반드시 version 포함 필요)
-    if (post.version !== (version ?? 0)) {
-      throw new AppError(
-        409,
-        '다른 사용자가 이미 이 게시글을 수정했습니다. 페이지를 새로고침 후 다시 시도해주세요.'
-      );
     }
 
     if (!title || !content || title.trim().length === 0 || content.trim().length === 0) {
@@ -758,7 +814,7 @@ export class PostService extends BaseService {
     }
 
     // 첨부파일 처리 — 삭제할 파일 목록 계산 (실제 삭제는 트랜잭션 성공 후)
-    let existingFiles: Attachment[] = this.parseAttachments(post.attachments);
+    let existingFiles: Attachment[] = this.parseAttachments(postForPerm.attachments);
     const filesToDelete: Attachment[] = [];
 
     if (deletedFileNames) {
@@ -795,11 +851,33 @@ export class PostService extends BaseService {
 
       finalFiles = [...finalFiles, ...newFiles];
 
-      if (finalFiles.length > MAX_FILE_COUNT) {
-        const excessFiles = finalFiles.slice(MAX_FILE_COUNT);
+      const maxFileCount = getSettings().maxFileCount;
+      if (finalFiles.length > maxFileCount) {
+        const excessFiles = finalFiles.slice(maxFileCount);
         excessFiles.forEach(file => filesToDelete.push(file));
-        finalFiles = finalFiles.slice(0, MAX_FILE_COUNT);
+        finalFiles = finalFiles.slice(0, maxFileCount);
       }
+    }
+
+    // 비밀글 secretType 검증
+    if (
+      isSecret &&
+      secretType !== undefined &&
+      secretType !== 'password' &&
+      secretType !== 'users'
+    ) {
+      throw new AppError(400, '비밀글 유형(password/users)을 올바르게 지정해주세요.');
+    }
+
+    // users 타입 비밀글: 명시적으로 빈 배열이 전달된 경우에만 거부
+    // undefined는 "기존 허용 목록 유지" 의미이므로 허용
+    if (
+      isSecret &&
+      secretType === 'users' &&
+      Array.isArray(secretUserIds) &&
+      secretUserIds.length === 0
+    ) {
+      throw new AppError(400, '허용 사용자를 한 명 이상 지정해주세요.');
     }
 
     // 비밀글 비밀번호 해시 (트랜잭션 전)
@@ -816,43 +894,71 @@ export class PostService extends BaseService {
 
     // DB 저장을 트랜잭션으로 처리
     const updatedPost = await sequelize.transaction(async t => {
-      post.title = title.trim();
-      post.content = content;
-      post.attachments = finalFiles.length > 0 ? finalFiles : null;
+      // LOCK.UPDATE로 재조회 — 낙관적 잠금 TOCTOU 방지
+      const lockedPost = await Post.findByPk(postId, { transaction: t, lock: t.LOCK.UPDATE });
+      if (!lockedPost) throw new AppError(404, '게시글을 찾을 수 없습니다.');
+
+      // 권한 체크 이후 게시판이 이동된 경우 처리: 잠금 후 boardType이 달라졌으면 거부
+      if (lockedPost.boardType !== postForPerm.boardType) {
+        throw new AppError(
+          409,
+          '게시글이 다른 게시판으로 이동되었습니다. 페이지를 새로고침 후 다시 시도해주세요.'
+        );
+      }
+
+      // 버전 체크 (잠금 내부에서 수행)
+      // version은 선택적(opt-in 낙관적 잠금) — 제공되면 충돌을 감지하고, 생략하면
+      // last-write-wins로 동작한다(클라이언트 에디터는 항상 version을 전송해 충돌을 감지함).
+      if (version !== undefined && lockedPost.version !== version) {
+        throw new AppError(
+          409,
+          '다른 사용자가 이미 이 게시글을 수정했습니다. 페이지를 새로고침 후 다시 시도해주세요.'
+        );
+      }
+
+      lockedPost.title = title.trim();
+      lockedPost.content = content;
+      lockedPost.attachments = finalFiles.length > 0 ? finalFiles : null;
 
       // 비밀글 설정 업데이트
       if (isSecret !== undefined) {
-        post.isSecret = isSecret;
+        lockedPost.isSecret = isSecret;
         if (!isSecret) {
-          post.secretType = null;
-          post.secretPassword = null;
-          post.secretUserIds = null;
-          post.isEncrypted = false;
-          post.secretSalt = null;
+          lockedPost.secretType = null;
+          lockedPost.secretPassword = null;
+          lockedPost.secretUserIds = null;
+          lockedPost.isEncrypted = false;
+          lockedPost.secretSalt = null;
         } else {
-          post.secretType = secretType || null;
+          lockedPost.secretType = secretType || null;
           if (secretType === 'password') {
             if (newHashedPassword) {
-              post.secretPassword = newHashedPassword;
+              lockedPost.secretPassword = newHashedPassword;
+              // 새 비밀번호 설정 시에만 E2EE 플래그 업데이트
+              // 기존 비밀번호 유지 시에는 isEncrypted/secretSalt를 그대로 보존
+              lockedPost.isEncrypted = isEncrypted || false;
+              lockedPost.secretSalt = isEncrypted && secretSalt ? secretSalt : null;
+            } else if (!lockedPost.secretPassword) {
+              // 기존 비밀번호도 없고 새 비밀번호도 없으면 잠금 상태가 되어 접근 불가
+              throw new AppError(400, '비밀글 비밀번호를 입력해주세요.');
             }
-            post.secretUserIds = null;
-            // E2EE 암호화 플래그 업데이트 (새 비밀번호로 재암호화 시에만)
-            if (isEncrypted !== undefined) {
-              post.isEncrypted = isEncrypted;
-              post.secretSalt = isEncrypted && secretSalt ? secretSalt : null;
-            }
+            // 기존 비밀번호 유지 시: isEncrypted/secretSalt 변경하지 않음
+            lockedPost.secretUserIds = null;
           } else if (secretType === 'users') {
-            post.secretUserIds = secretUserIds || null;
-            post.secretPassword = null;
-            post.isEncrypted = false;
-            post.secretSalt = null;
+            // secretUserIds가 undefined이면 기존 허용 목록 유지 (서버 보존)
+            if (secretUserIds !== undefined) {
+              lockedPost.secretUserIds = secretUserIds || null;
+            }
+            lockedPost.secretPassword = null;
+            lockedPost.isEncrypted = false;
+            lockedPost.secretSalt = null;
           }
         }
       }
 
       // 낙관적 잠금: 버전 증가
-      post.version = (post.version ?? 0) + 1;
-      await post.save({ validate: false, transaction: t });
+      lockedPost.version = (lockedPost.version ?? 0) + 1;
+      await lockedPost.save({ transaction: t });
 
       const saved = await Post.findByPk(postId, {
         include: [{ model: User, as: 'user', attributes: ['id', 'name', 'avatar'] }],
@@ -873,12 +979,29 @@ export class PostService extends BaseService {
   }
 
   // ✅ 게시글 삭제
-  async deletePost(postId: string, userId: string, userRole?: string): Promise<void> {
+  async deletePost(
+    postId: string,
+    userId: string,
+    userRole?: string,
+    expectedBoardType?: string
+  ): Promise<void> {
     const post = await Post.findByPk(postId);
     if (!post) throw new AppError(404, '게시글을 찾을 수 없습니다.');
 
-    // 서비스 레이어 권한 검증: 소유자, 관리자/매니저, 또는 해당 게시판 담당자만 삭제 가능
+    // URL의 boardType과 실제 게시글의 boardType이 일치하는지 검증
+    if (expectedBoardType && post.boardType !== expectedBoardType) {
+      throw new AppError(404, '게시글을 찾을 수 없습니다.');
+    }
+
     const isOwner = post.UserId === userId;
+
+    // 개인공간 게시글은 작성자만 삭제 가능 (updatePost와 동일 규칙)
+    const board = await Board.findByPk(post.boardType);
+    if (board?.isPersonal && !isOwner) {
+      throw new AppError(403, '개인공간의 게시글은 작성자만 삭제할 수 있습니다.');
+    }
+
+    // 서비스 레이어 권한 검증: 소유자, 관리자/매니저, 또는 해당 게시판 담당자만 삭제 가능
     const isPrivileged = userRole === ROLES.ADMIN || userRole === ROLES.MANAGER;
     if (!isOwner && !isPrivileged) {
       const isBoardManager = await BoardManager.findOne({
@@ -892,7 +1015,17 @@ export class PostService extends BaseService {
     const attachmentsArray = this.parseAttachments(post.attachments);
 
     // DB 레코드를 먼저 삭제한 뒤 파일 삭제 (DB 실패 시 파일은 유지됨)
-    await post.destroy();
+    // ✅ 게시글은 paranoid(soft-delete)이므로 destroy 시 자식이 cascade되지 않는다.
+    //    자식 정리를 하나의 트랜잭션으로 묶어 orphan(댓글/리액션/조회기록/태그) 누적을 방지.
+    await sequelize.transaction(async t => {
+      // 댓글도 paranoid → soft-delete (감사 추적 유지하되 '살아있는' 쿼리에서 제외)
+      await Comment.destroy({ where: { PostId: post.id }, transaction: t });
+      // 파생 데이터는 hard-delete (복구 가치 없음)
+      await PostLike.destroy({ where: { PostId: post.id }, transaction: t });
+      await PostRead.destroy({ where: { PostId: post.id }, transaction: t });
+      await PostTag.destroy({ where: { PostId: post.id }, transaction: t });
+      await post.destroy({ transaction: t });
+    });
 
     for (const att of attachmentsArray) {
       try {
@@ -909,23 +1042,29 @@ export class PostService extends BaseService {
     userId: string,
     userRole: string
   ): Promise<{ isPinned: boolean }> {
-    const post = await Post.findByPk(postId);
-    if (!post) throw new AppError(404, '게시글을 찾을 수 없습니다.');
+    // 권한 사전 체크 (잠금 없이) — 트랜잭션 전에 403 조기 반환
+    const postForPerm = await Post.findByPk(postId);
+    if (!postForPerm) throw new AppError(404, '게시글을 찾을 수 없습니다.');
 
-    // admin은 무조건 허용
-    if (userRole !== ROLES.ADMIN) {
-      // manager 또는 일반 유저는 해당 게시판 담당자 여부 확인
+    if (userRole !== ROLES.ADMIN && userRole !== ROLES.MANAGER) {
       const isManager = await BoardManager.findOne({
-        where: { boardId: post.boardType, userId },
+        where: { boardId: postForPerm.boardType, userId },
       });
       if (!isManager) {
         throw new AppError(403, '이 게시판의 담당자만 고정 권한이 있습니다.');
       }
     }
 
-    post.isPinned = !post.isPinned;
-    await post.save();
-    return { isPinned: post.isPinned };
+    // ✅ LOCK.UPDATE로 read-modify-write 원자화 — 동시 요청 시 이중 토글 방지
+    const updated = await sequelize.transaction(async t => {
+      const post = await Post.findByPk(postId, { transaction: t, lock: t.LOCK.UPDATE });
+      if (!post) throw new AppError(404, '게시글을 찾을 수 없습니다.');
+      post.isPinned = !post.isPinned;
+      await post.save({ transaction: t });
+      return post;
+    });
+
+    return { isPinned: updated.isPinned };
   }
 }
 

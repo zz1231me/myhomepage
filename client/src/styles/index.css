@@ -101,6 +101,9 @@
   --radius-2xl: 1.5rem;
   --radius-3xl: 2rem;
 
+  /* ── Durations extras ── */
+  --duration-250: 250ms;
+
   /* ── Spacing extras ── */
   --spacing-13: 3.25rem;
   --spacing-15: 3.75rem;
@@ -286,8 +289,16 @@ body {
     @apply min-h-full bg-slate-50 dark:bg-slate-900;
   }
 
+  /* 와이드 콘텐츠 래퍼 — 목록·관리·상세·에디터 (단일 토큰 --content-width) */
   .content-wrapper {
-    @apply max-w-7xl mx-auto px-4 py-6 sm:px-6;
+    max-width: var(--content-width);
+    @apply mx-auto px-4 py-6 sm:px-6;
+  }
+
+  /* 읽기/폼 콘텐츠 래퍼 — 위키 문서·프로필 (--content-width-reading) */
+  .content-wrapper-reading {
+    max-width: var(--content-width-reading);
+    @apply mx-auto px-4 py-6 sm:px-6;
   }
 
   /* ── 버튼 ──────────────────────────────── */

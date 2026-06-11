@@ -1,8 +1,9 @@
 // client/src/pages/Dashboard.tsx
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useNavigate, useLocation, Outlet, Link } from 'react-router-dom';
 import { useAuth } from '../store/auth';
 import { useSiteSettings } from '../store/siteSettings';
+import { useUIOverlays } from '../store/uiOverlays';
 import { DashboardSidebar } from '../components/Dashboard/DashboardSidebar';
 import { UserDropdown } from '../components/Dashboard/UserDropdown';
 import { GlobalSearch } from '../components/Dashboard/GlobalSearch';
@@ -15,31 +16,39 @@ function Dashboard() {
   const { settings } = useSiteSettings();
   const navigate = useNavigate();
   const location = useLocation();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [commandOpen, setCommandOpen] = useState(false);
 
+  // 사이드바/dropdown 통합 store — 한 번에 하나의 dropdown만 열리고
+  // 사이드바 토글 시 다른 dropdown을 자동으로 닫는다 (모바일 레이어 충돌 해소).
+  const sidebarOpen = useUIOverlays(s => s.sidebarOpen);
+  const toggleSidebar = useUIOverlays(s => s.toggleSidebar);
+  const closeSidebar = useUIOverlays(s => s.closeSidebar);
+  const isCommandOpen = useUIOverlays(s => s.activeDropdown === 'commandPalette');
+  const openCommand = useUIOverlays(s => s.openDropdown);
+  const closeCommand = useUIOverlays(s => s.closeDropdown);
+
+  // ⚠️ ⌘K는 GlobalSearch(콘텐츠 검색)가 점유.
+  //    네비게이션 팔레트는 VSCode 컨벤션과 동일하게 ⌘⇧P / Ctrl+Shift+P로 분리.
   useHotkeys(
-    'ctrl+k, meta+k',
+    'ctrl+shift+p, meta+shift+p',
     e => {
       e.preventDefault();
-      setCommandOpen(true);
+      openCommand('commandPalette');
     },
     { enableOnFormTags: false }
   );
 
-  useEffect(() => {
-    if (location.pathname === '/dashboard') {
-      navigate('/dashboard/calendar', { replace: true });
-    }
-  }, [location.pathname, navigate]);
+  // ⚠️ /dashboard → /dashboard/calendar 리다이렉트는 App.tsx의 <Route index>가 이미 처리.
+  //    여기서 또 navigate하면 마운트 직후 두 번 라우팅되어 깜빡임 발생.
 
   useEffect(() => {
     if (!isAuthenticated) navigate('/', { replace: true });
   }, [isAuthenticated, navigate]);
 
+  // 페이지 이동 시 모든 overlay 닫기 (모바일에서 메뉴 클릭 후 사이드바/dropdown 잔존 방지)
+  const closeAll = useUIOverlays(s => s.closeAll);
   useEffect(() => {
-    setSidebarOpen(false);
-  }, [location.pathname]);
+    closeAll();
+  }, [location.pathname, closeAll]);
 
   return (
     <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
@@ -48,18 +57,27 @@ function Dashboard() {
         className="h-14 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800
                          flex items-center px-3 sm:px-5 z-50 flex-shrink-0"
       >
-        <div className="w-full flex items-center justify-between gap-3 max-w-screen-2xl mx-auto">
+        <div className="w-full flex items-center justify-between gap-3">
           {/* 왼쪽 — 햄버거 + 로고 */}
           <div className="flex items-center gap-2 flex-shrink-0">
             {/* 모바일 메뉴 버튼 */}
             <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
+              onClick={() => toggleSidebar()}
               className="p-2 text-slate-500 dark:text-slate-400
                          hover:bg-slate-100 dark:hover:bg-slate-800
                          rounded-lg transition-colors lg:hidden"
-              aria-label="메뉴 열기"
+              aria-label={sidebarOpen ? '메뉴 닫기' : '메뉴 열기'}
+              aria-expanded={sidebarOpen}
+              aria-controls="dashboard-sidebar"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg
+                aria-hidden="true"
+                focusable="false"
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -87,6 +105,8 @@ function Dashboard() {
                                 flex items-center justify-center flex-shrink-0 shadow-sm shadow-primary-500/30"
                 >
                   <svg
+                    aria-hidden="true"
+                    focusable="false"
                     className="w-4 h-4 text-white"
                     fill="none"
                     stroke="currentColor"
@@ -120,7 +140,7 @@ function Dashboard() {
 
       {/* 바디 */}
       <div className="flex flex-1 min-h-0">
-        <DashboardSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <DashboardSidebar isOpen={sidebarOpen} onClose={closeSidebar} />
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden bg-slate-50 dark:bg-slate-900">
           <Outlet />
@@ -131,11 +151,18 @@ function Dashboard() {
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-slate-900/40 dark:bg-slate-950/60 backdrop-blur-sm z-30 transition-opacity lg:hidden"
-          onClick={() => setSidebarOpen(false)}
+          onClick={closeSidebar}
+          aria-hidden="true"
         />
       )}
 
-      <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
+      <CommandPalette
+        open={isCommandOpen}
+        onOpenChange={open => {
+          if (open) openCommand('commandPalette');
+          else closeCommand('commandPalette');
+        }}
+      />
     </div>
   );
 }

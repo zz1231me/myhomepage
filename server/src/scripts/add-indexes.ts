@@ -137,20 +137,6 @@ export async function addDatabaseIndexes(): Promise<void> {
         description: '게시글 좋아요 집계',
       },
 
-      // ── PostReaction ──────────────────────────────────
-      {
-        table: 'post_reactions',
-        name: 'idx_post_reactions_post',
-        fields: ['PostId', 'emoji'],
-        description: '리액션 집계',
-      },
-      {
-        table: 'post_reactions',
-        name: 'idx_post_reactions_user',
-        fields: ['UserId'],
-        description: '사용자 리액션',
-      },
-
       // ── PostRead ──────────────────────────────────────
       {
         table: 'post_reads',
@@ -215,6 +201,21 @@ export async function addDatabaseIndexes(): Promise<void> {
         name: 'idx_memos_user_pinned',
         fields: ['UserId', 'isPinned', 'order'],
         description: '사용자 메모 목록',
+      },
+
+      // ── Tags ─────────────────────────────────────────
+      {
+        table: 'Tags',
+        name: 'idx_tags_name_board_unique',
+        fields: ['name', 'boardId'],
+        unique: true,
+        description: '동일 게시판 내 태그명 중복 방지',
+      },
+      {
+        table: 'Tags',
+        name: 'idx_tags_board',
+        fields: ['boardId'],
+        description: '게시판별 태그 조회',
       },
 
       // ── Reports ──────────────────────────────────────

@@ -1,9 +1,14 @@
 import { BaseService } from './base.service';
 import { Role, RoleInstance } from '../models/Role';
 import { BoardAccess } from '../models/BoardAccess';
+import Board from '../models/Board';
 import EventPermission from '../models/EventPermission';
+import { User } from '../models/User';
 import { AppError } from '../middlewares/error.middleware';
 import { sequelize } from '../config/sequelize';
+import { UniqueConstraintError, Op } from 'sequelize';
+
+const PROTECTED_ROLES = ['admin', 'manager', 'guest'] as const;
 
 export class RoleService extends BaseService {
   async getAllRoles(): Promise<RoleInstance[]> {
@@ -19,9 +24,9 @@ export class RoleService extends BaseService {
     name: string;
     description?: string;
   }): Promise<RoleInstance> {
-    const existing = await Role.findByPk(data.id);
-    if (existing) {
-      throw new AppError(409, '이미 존재하는 역할입니다.');
+    // 시스템 보호 역할 ID 사용 차단
+    if ((PROTECTED_ROLES as readonly string[]).includes(data.id.trim())) {
+      throw new AppError(400, `'${data.id}' 역할은 시스템 보호 역할로 생성할 수 없습니다.`);
     }
 
     try {
@@ -29,7 +34,10 @@ export class RoleService extends BaseService {
         ...data,
         isActive: true,
       });
-    } catch (_error) {
+    } catch (err) {
+      if (err instanceof UniqueConstraintError) {
+        throw new AppError(409, '이미 존재하는 역할입니다.');
+      }
       throw new AppError(500, '역할 생성 실패');
     }
   }
@@ -41,6 +49,15 @@ export class RoleService extends BaseService {
     const role = await Role.findByPk(id);
     if (!role) {
       throw new AppError(404, '역할을 찾을 수 없습니다.');
+    }
+
+    if ((PROTECTED_ROLES as readonly string[]).includes(id)) {
+      if (data.isActive === false) {
+        throw new AppError(400, `'${id}' 역할은 시스템 보호 역할로 비활성화할 수 없습니다.`);
+      }
+      if (data.name !== undefined) {
+        throw new AppError(400, `'${id}' 역할은 시스템 보호 역할로 이름을 변경할 수 없습니다.`);
+      }
     }
 
     try {
@@ -56,19 +73,42 @@ export class RoleService extends BaseService {
   }
 
   async deleteRole(id: string): Promise<void> {
-    const role = await Role.findByPk(id);
-    if (!role) {
-      throw new AppError(404, '역할을 찾을 수 없습니다.');
+    if ((PROTECTED_ROLES as readonly string[]).includes(id)) {
+      throw new AppError(400, `'${id}' 역할은 시스템 보호 역할로 삭제할 수 없습니다.`);
     }
 
-    const t = await sequelize.transaction();
     try {
-      await BoardAccess.destroy({ where: { roleId: id }, transaction: t });
-      await EventPermission.destroy({ where: { roleId: id }, transaction: t });
-      await role.destroy({ transaction: t });
-      await t.commit();
-    } catch (_error) {
-      await t.rollback();
+      await sequelize.transaction(async t => {
+        // findByPk를 트랜잭션 내 LOCK.UPDATE로 이동 — 동시 삭제 요청의 TOCTOU 방지
+        const role = await Role.findByPk(id, { transaction: t, lock: t.LOCK.UPDATE });
+        if (!role) {
+          throw new AppError(404, '역할을 찾을 수 없습니다.');
+        }
+
+        // ✅ guest 역할이 비활성화 상태면 마이그레이션 대상 사용자가 로그인 불가가 되므로 차단
+        //   (admin이 'guest'를 비활성화한 뒤 다른 역할을 삭제하면 사용자 셀프 락아웃 발생)
+        const guestRole = await Role.findByPk('guest', {
+          transaction: t,
+          lock: t.LOCK.UPDATE,
+          attributes: ['id', 'isActive'],
+        });
+        if (!guestRole || !guestRole.isActive) {
+          throw new AppError(
+            400,
+            'guest 역할이 비활성 상태입니다. 먼저 guest 역할을 활성화한 뒤 다시 삭제하세요.'
+          );
+        }
+
+        // 해당 역할 유저를 guest로 마이그레이션 + tokenVersion 증가 (기존 JWT 즉시 무효화)
+        // literal() 대신 dialect-aware increment 사용 (MySQL/PG/SQLite 공통)
+        await User.increment('tokenVersion', { where: { roleId: id }, by: 1, transaction: t });
+        await User.update({ roleId: 'guest' }, { where: { roleId: id }, transaction: t });
+        await BoardAccess.destroy({ where: { roleId: id }, transaction: t });
+        await EventPermission.destroy({ where: { roleId: id }, transaction: t });
+        await role.destroy({ transaction: t });
+      });
+    } catch (error) {
+      if (error instanceof AppError) throw error;
       throw new AppError(500, '역할 삭제 실패');
     }
   }
@@ -99,26 +139,52 @@ export class RoleService extends BaseService {
       canDelete?: boolean;
     }>
   ): Promise<void> {
-    const t = await sequelize.transaction();
     try {
-      await BoardAccess.destroy({ where: { boardId }, transaction: t });
+      await sequelize.transaction(async t => {
+        // ✅ boardId/roleId 존재 검증을 트랜잭션 내부로 이동 + LOCK.UPDATE 적용.
+        //    트랜잭션 밖에서 검증하면 다른 admin이 동시에 게시판/역할을 삭제할 때
+        //    FK 위반 또는 orphan BoardAccess 가능.
+        const board = await Board.findByPk(boardId, {
+          attributes: ['id'],
+          transaction: t,
+          lock: t.LOCK.UPDATE,
+        });
+        if (!board) {
+          throw new AppError(404, `게시판 '${boardId}'을(를) 찾을 수 없습니다.`);
+        }
 
-      for (const perm of permissions) {
-        await BoardAccess.create(
-          {
-            boardId,
-            roleId: perm.roleId,
-            canRead: perm.canRead ?? true,
-            canWrite: perm.canWrite ?? false,
-            canDelete: perm.canDelete ?? false,
-          },
-          { transaction: t }
-        );
-      }
+        if (permissions.length > 0) {
+          const roleIds = [...new Set(permissions.map(p => p.roleId))];
+          const existingRoles = await Role.findAll({
+            where: { id: { [Op.in]: roleIds } },
+            attributes: ['id'],
+            transaction: t,
+            lock: t.LOCK.UPDATE,
+          });
+          const existingIds = new Set(existingRoles.map(r => r.id));
+          const invalid = roleIds.find(rid => !existingIds.has(rid));
+          if (invalid) {
+            throw new AppError(400, `역할 '${invalid}'을(를) 찾을 수 없습니다.`);
+          }
+        }
 
-      await t.commit();
-    } catch (_error) {
-      await t.rollback();
+        await BoardAccess.destroy({ where: { boardId }, transaction: t });
+
+        if (permissions.length > 0) {
+          await BoardAccess.bulkCreate(
+            permissions.map(perm => ({
+              boardId,
+              roleId: perm.roleId,
+              canRead: perm.canRead ?? true,
+              canWrite: perm.canWrite ?? false,
+              canDelete: perm.canDelete ?? false,
+            })),
+            { transaction: t }
+          );
+        }
+      });
+    } catch (error) {
+      if (error instanceof AppError) throw error;
       throw new AppError(500, '권한 설정 실패');
     }
   }

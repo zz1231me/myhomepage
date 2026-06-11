@@ -129,6 +129,9 @@ export const SETTINGS_DEFAULTS = {
   globalSearchLimit: 50,
   allowGuestComment: false,
   minPasswordLength: 8,
+  requireUppercase: true,
+  requireLowercase: true,
+  requireNumberOrSpecial: true,
   commentMaxDepth: 3,
   commentMaxCount: 1000,
   avatarSizePx: 200,
@@ -140,6 +143,11 @@ export const SETTINGS_DEFAULTS = {
   rateLimitDownloadMax: 100,
   autoSaveIntervalSeconds: 30,
   draftExpiryMinutes: 60,
+  // ── 신규 ────────────────────────────────────────────────────────────────
+  memoMaxPerUser: 200,
+  commentContentMaxLength: 1000,
+  eventBodyMaxLength: 10000,
+  eventLocationMaxLength: 500,
   // 허용 확장자 (배열 형태)
   allowedImageExtensions: DEFAULT_ALLOWED_EXTENSIONS.IMAGE,
   allowedDocumentExtensions: DEFAULT_ALLOWED_EXTENSIONS.DOCUMENT,
@@ -165,7 +173,7 @@ export async function loadSettingsCache(): Promise<void> {
         maxAvatarSizeMb: settings.maxAvatarSizeMb ?? DEFAULTS.maxAvatarSizeMb,
         maxArchiveSizeMb: settings.maxArchiveSizeMb ?? DEFAULTS.maxArchiveSizeMb,
         maxImageCount: settings.maxImageCount ?? DEFAULTS.maxImageCount,
-        bcryptRounds: settings.bcryptRounds ?? DEFAULTS.bcryptRounds,
+        bcryptRounds: Math.min(Math.max(settings.bcryptRounds ?? DEFAULTS.bcryptRounds, 10), 14),
         defaultPageSize: settings.defaultPageSize ?? DEFAULTS.defaultPageSize,
         securityLogRetentionDays:
           settings.securityLogRetentionDays ?? DEFAULTS.securityLogRetentionDays,
@@ -179,6 +187,9 @@ export async function loadSettingsCache(): Promise<void> {
         globalSearchLimit: settings.globalSearchLimit ?? DEFAULTS.globalSearchLimit,
         allowGuestComment: settings.allowGuestComment ?? DEFAULTS.allowGuestComment,
         minPasswordLength: settings.minPasswordLength ?? DEFAULTS.minPasswordLength,
+        requireUppercase: settings.requireUppercase ?? DEFAULTS.requireUppercase,
+        requireLowercase: settings.requireLowercase ?? DEFAULTS.requireLowercase,
+        requireNumberOrSpecial: settings.requireNumberOrSpecial ?? DEFAULTS.requireNumberOrSpecial,
         commentMaxDepth: settings.commentMaxDepth ?? DEFAULTS.commentMaxDepth,
         commentMaxCount: settings.commentMaxCount ?? DEFAULTS.commentMaxCount,
         avatarSizePx: settings.avatarSizePx ?? DEFAULTS.avatarSizePx,
@@ -192,6 +203,12 @@ export async function loadSettingsCache(): Promise<void> {
         autoSaveIntervalSeconds:
           settings.autoSaveIntervalSeconds ?? DEFAULTS.autoSaveIntervalSeconds,
         draftExpiryMinutes: settings.draftExpiryMinutes ?? DEFAULTS.draftExpiryMinutes,
+        // ── 신규 ────────────────────────────────────────────────────────
+        memoMaxPerUser: settings.memoMaxPerUser ?? DEFAULTS.memoMaxPerUser,
+        commentContentMaxLength:
+          settings.commentContentMaxLength ?? DEFAULTS.commentContentMaxLength,
+        eventBodyMaxLength: settings.eventBodyMaxLength ?? DEFAULTS.eventBodyMaxLength,
+        eventLocationMaxLength: settings.eventLocationMaxLength ?? DEFAULTS.eventLocationMaxLength,
         // 허용 확장자 — TEXT(JSON) 파싱
         allowedImageExtensions: parseJsonArray(
           settings.allowedImageExtensions,
@@ -244,15 +261,28 @@ export function getPostSecretPasswordMinLength(): number {
 }
 
 export function getGlobalSearchLimit(): number {
-  return cachedSettings?.globalSearchLimit ?? 50;
+  return Math.min(Math.max(cachedSettings?.globalSearchLimit ?? 50, 1), 500);
 }
 
 export function getMinPasswordLength(): number {
-  return cachedSettings?.minPasswordLength ?? 8;
+  return Math.min(Math.max(cachedSettings?.minPasswordLength ?? 8, 6), 72);
+}
+
+export function getPasswordComplexityRules(): {
+  requireUppercase: boolean;
+  requireLowercase: boolean;
+  requireNumberOrSpecial: boolean;
+} {
+  return {
+    requireUppercase: cachedSettings?.requireUppercase ?? DEFAULTS.requireUppercase,
+    requireLowercase: cachedSettings?.requireLowercase ?? DEFAULTS.requireLowercase,
+    requireNumberOrSpecial:
+      cachedSettings?.requireNumberOrSpecial ?? DEFAULTS.requireNumberOrSpecial,
+  };
 }
 
 export function getBcryptRounds(): number {
-  return Math.max(cachedSettings?.bcryptRounds ?? DEFAULTS.bcryptRounds, 10);
+  return Math.min(Math.max(cachedSettings?.bcryptRounds ?? DEFAULTS.bcryptRounds, 10), 14);
 }
 
 /** 파일 크기 제한 (바이트 단위) */
@@ -300,8 +330,14 @@ export function getAllAllowedExtensions(): string[] {
 /** 댓글 설정 */
 export function getCommentSettings(): { maxDepth: number; maxCount: number } {
   return {
-    maxDepth: cachedSettings?.commentMaxDepth ?? DEFAULTS.commentMaxDepth,
-    maxCount: cachedSettings?.commentMaxCount ?? DEFAULTS.commentMaxCount,
+    maxDepth: Math.min(
+      Math.max(cachedSettings?.commentMaxDepth ?? DEFAULTS.commentMaxDepth, 1),
+      10
+    ),
+    maxCount: Math.min(
+      Math.max(cachedSettings?.commentMaxCount ?? DEFAULTS.commentMaxCount, 1),
+      10000
+    ),
   };
 }
 
@@ -331,14 +367,4 @@ export function getRateLimitSettings(): {
     uploadMax: cachedSettings?.rateLimitUploadMax ?? DEFAULTS.rateLimitUploadMax,
     downloadMax: cachedSettings?.rateLimitDownloadMax ?? DEFAULTS.rateLimitDownloadMax,
   };
-}
-
-/** PostEditor 자동저장 주기 (초) */
-export function getAutoSaveIntervalSeconds(): number {
-  return cachedSettings?.autoSaveIntervalSeconds ?? DEFAULTS.autoSaveIntervalSeconds;
-}
-
-/** PostEditor 임시저장 유효시간 (분) */
-export function getDraftExpiryMinutes(): number {
-  return cachedSettings?.draftExpiryMinutes ?? DEFAULTS.draftExpiryMinutes;
 }

@@ -1,6 +1,6 @@
 // server/src/validators/auth.validator.ts - 인증 관련 유효성 검사 통합 클래스
 
-import { getMinPasswordLength } from '../utils/settingsCache';
+import { getMinPasswordLength, getPasswordComplexityRules } from '../utils/settingsCache';
 
 export class AuthValidator {
   // 자가 회원가입용 — 영문/숫자/언더스코어, 4~20자
@@ -41,7 +41,7 @@ export class AuthValidator {
   /**
    * 비밀번호 유효성 검사
    * @param password 검사할 비밀번호
-   * @param requireComplexity true이면 소문자 + 숫자 조합 필수
+   * @param requireComplexity true이면 대문자 + 소문자 + 숫자/특수문자 조합 필수
    */
   static validatePassword(
     password: string,
@@ -55,12 +55,17 @@ export class AuthValidator {
       return { valid: false, error: `비밀번호는 최소 ${minLength}자 이상이어야 합니다.` };
     }
     if (requireComplexity) {
-      const hasLower = /[a-z]/.test(password);
-      const hasNumber = /[0-9]/.test(password);
-      if (!hasLower || !hasNumber) {
+      const rules = getPasswordComplexityRules();
+      if (rules.requireUppercase && !/[A-Z]/.test(password)) {
+        return { valid: false, error: '비밀번호는 영문 대문자를 포함해야 합니다.' };
+      }
+      if (rules.requireLowercase && !/[a-z]/.test(password)) {
+        return { valid: false, error: '비밀번호는 영문 소문자를 포함해야 합니다.' };
+      }
+      if (rules.requireNumberOrSpecial && !/[0-9!@#$%^&*]/.test(password)) {
         return {
           valid: false,
-          error: '비밀번호는 영문 소문자와 숫자를 포함해야 합니다.',
+          error: '비밀번호는 숫자 또는 특수문자(!@#$%^&*)를 포함해야 합니다.',
         };
       }
     }

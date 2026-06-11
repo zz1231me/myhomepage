@@ -1,9 +1,10 @@
 import { Tag } from '../models/Tag';
 import { PostTag } from '../models/PostTag';
+import { Post } from '../models/Post';
 import { BaseService } from './base.service';
 import { AppError } from '../middlewares/error.middleware';
 import { sequelize } from '../config/sequelize';
-import { UniqueConstraintError, WhereOptions } from 'sequelize';
+import { UniqueConstraintError, WhereOptions, Op } from 'sequelize';
 
 export class TagService extends BaseService {
   // boardId 지정 시 해당 게시판 태그만, null이면 전체 공용 태그만, undefined면 전체
@@ -20,8 +21,7 @@ export class TagService extends BaseService {
   }): Promise<Tag> {
     const name = data.name.toLowerCase().trim();
     const boardId = data.boardId ?? null;
-    const existing = await Tag.findOne({ where: { name, boardId } });
-    if (existing) throw new AppError(409, `태그 '${name}'이 이미 존재합니다.`);
+    // ✅ TOCTOU 방지: findOne 사전 체크 제거, UniqueConstraintError만 의존
     try {
       return await Tag.create({
         name,
@@ -44,7 +44,14 @@ export class TagService extends BaseService {
     const tag = await Tag.findByPk(id);
     if (!tag) throw new AppError(404, '태그를 찾을 수 없습니다.');
     const updateData = { ...data, ...(data.name ? { name: data.name.toLowerCase().trim() } : {}) };
-    await tag.update(updateData);
+    try {
+      await tag.update(updateData);
+    } catch (err) {
+      if (err instanceof UniqueConstraintError) {
+        throw new AppError(409, '이미 존재하는 태그 이름입니다.');
+      }
+      throw err;
+    }
     return tag;
   }
 
@@ -58,11 +65,32 @@ export class TagService extends BaseService {
   }
 
   async addTagsToPost(postId: string, tagIds: number[]): Promise<void> {
+    // 중복 ID 제거 (UniqueConstraintError 방지)
+    const uniqueTagIds = [...new Set(tagIds)];
     await sequelize.transaction(async t => {
+      // 게시글 boardType 확인
+      const post = await Post.findByPk(postId, { attributes: ['boardType'], transaction: t });
+      if (!post) throw new AppError(404, '게시글을 찾을 수 없습니다.');
+
       await PostTag.destroy({ where: { PostId: postId }, transaction: t });
-      if (tagIds.length > 0) {
+      if (uniqueTagIds.length > 0) {
+        const existingTags = await Tag.findAll({
+          where: { id: { [Op.in]: uniqueTagIds } },
+          attributes: ['id', 'boardId'],
+          transaction: t,
+        });
+        if (existingTags.length !== uniqueTagIds.length) {
+          throw new AppError(400, '존재하지 않는 태그 ID가 포함되어 있습니다.');
+        }
+        // ✅ 태그의 boardId가 게시글 boardType과 일치하거나 전역 태그(boardId=null)인지 검증
+        const invalidTag = existingTags.find(
+          tag => tag.boardId !== null && tag.boardId !== post.boardType
+        );
+        if (invalidTag) {
+          throw new AppError(400, '해당 게시판에서 사용할 수 없는 태그가 포함되어 있습니다.');
+        }
         await PostTag.bulkCreate(
-          tagIds.map(TagId => ({ PostId: postId, TagId })),
+          uniqueTagIds.map(TagId => ({ PostId: postId, TagId })),
           { transaction: t }
         );
       }
@@ -74,26 +102,6 @@ export class TagService extends BaseService {
     if (postTags.length === 0) return [];
     const tagIds = postTags.map(pt => pt.TagId as number);
     return Tag.findAll({ where: { id: tagIds } });
-  }
-
-  async getTagsForPosts(postIds: string[]): Promise<Record<string, Tag[]>> {
-    if (postIds.length === 0) return {};
-    const postTags = await PostTag.findAll({ where: { PostId: postIds } });
-    if (postTags.length === 0) return {};
-    const tagIds = [...new Set(postTags.map(pt => pt.TagId as number))];
-    const tags = await Tag.findAll({ where: { id: tagIds } });
-    const tagMap = new Map(tags.map(t => [t.id, t]));
-    const result: Record<string, Tag[]> = {};
-    postIds.forEach(id => {
-      result[id] = [];
-    });
-    postTags.forEach(pt => {
-      const tag = tagMap.get(pt.TagId as number);
-      if (tag && result[pt.PostId as string]) {
-        result[pt.PostId as string].push(tag);
-      }
-    });
-    return result;
   }
 }
 

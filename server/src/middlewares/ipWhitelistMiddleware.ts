@@ -6,12 +6,12 @@ import { logWarning } from '../utils/logger';
 import { sendForbidden } from '../utils/response';
 import { getIpRuleCache, matchesIpRule } from '../services/ipRule.service';
 
-/** 요청 IP 추출 및 정규화 */
+/** 요청 IP 추출 및 정규화
+ *  ⚠️ 반드시 `req.ip`만 사용 — Express의 `trust proxy` 설정을 거친 검증된 값.
+ *      `X-Forwarded-For` 헤더를 직접 파싱하면 클라이언트가 헤더를 위조해 IP를 스푸핑할 수 있음.
+ */
 function extractClientIp(req: Request): string {
-  let raw = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
-  if (Array.isArray(raw)) raw = raw[0];
-  if (typeof raw === 'string' && raw.includes(',')) raw = raw.split(',')[0].trim();
-  // IPv6-mapped IPv4 정규화
+  const raw = req.ip || req.socket.remoteAddress || '';
   return raw.startsWith('::ffff:') ? raw.slice(7) : raw;
 }
 

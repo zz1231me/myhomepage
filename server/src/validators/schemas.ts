@@ -16,7 +16,6 @@ import {
 export const loginSchema = z.object({
   id: z.string().min(1, '아이디는 필수입니다.').max(30),
   password: z.string().min(1, '비밀번호는 필수입니다.').max(100),
-  totpToken: z.string().optional(),
 });
 
 export const registerSchema = z.object({
@@ -67,13 +66,18 @@ export const createPostSchema = z.object({
 
 // ─── 페이지네이션 쿼리 ─────────────────────────────────────
 
+// page에도 상한이 필요하다. 미설정 시 page=999999999 같은 거대 offset이 그대로 통과해
+// 큰 DB scan/페이지네이션 부하를 유발한다.
+const PAGINATION_MAX_PAGE = 1000;
+
 export const paginationQuerySchema = z.object({
   page: z
     .string()
     .optional()
     .transform(v => {
       const n = parseInt(v ?? '1', 10);
-      return isNaN(n) || n < 1 ? PAGINATION.DEFAULT_PAGE : n;
+      if (isNaN(n) || n < 1) return PAGINATION.DEFAULT_PAGE;
+      return Math.min(n, PAGINATION_MAX_PAGE);
     }),
   limit: z
     .string()

@@ -64,12 +64,22 @@ export const useUserManagement = () => {
     const lower = 'abcdefghijklmnopqrstuvwxyz';
     const digits = '0123456789';
     const pool = upper + lower + digits;
-    const rand = (s: string) => s[Math.floor(Math.random() * s.length)];
+
+    // crypto.getRandomValues 기반 rejection sampling — 모듈러 편향 방지
+    const cryptoRand = (s: string) => {
+      const threshold = 256 - (256 % s.length); // 편향 없는 최대값
+      const buf = new Uint8Array(1);
+      do {
+        crypto.getRandomValues(buf);
+      } while (buf[0] >= threshold);
+      return s[buf[0] % s.length];
+    };
+
     const pw =
-      rand(upper) +
-      rand(lower) +
-      rand(digits) +
-      Array.from({ length: 5 }, () => rand(pool)).join('');
+      cryptoRand(upper) +
+      cryptoRand(lower) +
+      cryptoRand(digits) +
+      Array.from({ length: 5 }, () => cryptoRand(pool)).join('');
     await api.post(`/admin/users/${id}/reset-password`, { newPassword: pw });
     return pw;
   };

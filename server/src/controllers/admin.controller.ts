@@ -6,12 +6,25 @@ import { userService } from '../services/user.service';
 import { boardService } from '../services/board.service';
 import { roleService } from '../services/role.service';
 import { eventService } from '../services/event.service';
+import { Op } from 'sequelize';
 import { Role } from '../models/Role';
 import { User } from '../models/User';
 import { SecurityLog } from '../models/SecurityLog';
 import { sendSuccess, sendError } from '../utils/response';
 import { logError } from '../utils/logger';
-import { invalidateCache } from '../utils/cache';
+import {
+  invalidateCache,
+  invalidateUserCache as invalidateUserResponseCache,
+} from '../utils/cache';
+import { invalidateUserCache } from '../middlewares/auth.middleware';
+
+// 사용자 상태 변경 시 인증 미들웨어 캐시 + HTTP 응답 캐시(boards 등) 둘 다 무효화한다.
+// auth.middleware.invalidateUserCache만 호출하면 cacheMiddleware('boards', 300)에 저장된
+// /api/boards/accessible 사용자별 응답이 최대 5분간 stale 상태로 남는다.
+const invalidateAllUserCaches = (userId: string): void => {
+  invalidateUserCache(userId);
+  invalidateUserResponseCache(userId);
+};
 import { AuthValidator } from '../validators/auth.validator';
 import { FlatRequest as Request, type AuthRequest } from '../types/auth-request';
 import { auditLogService } from '../services/auditLog.service';
@@ -54,7 +67,7 @@ const logAudit = (
 // ===== 사용자 관리 =====
 export const getDeletedUsers = async (_req: Request, res: Response): Promise<void> => {
   try {
-    const users = await userService.getDeletedUsers();
+    const users = await userService.getDeletedUsers(1000);
     sendSuccess(res, users);
   } catch (error) {
     logError('삭제된 사용자 조회 실패', error);
@@ -64,7 +77,7 @@ export const getDeletedUsers = async (_req: Request, res: Response): Promise<voi
 
 export const getAllUsers = async (_req: Request, res: Response): Promise<void> => {
   try {
-    const users = await userService.getAllUsers(true);
+    const users = await userService.getAllUsers(true, 1000);
     sendSuccess(res, users);
   } catch (error) {
     logError('사용자 조회 실패', error);
@@ -118,7 +131,13 @@ export const rejectUser = async (req: Request, res: Response): Promise<void> => 
 export const deactivateUser = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
+    const adminId = (req as AuthRequest).user?.id;
+    if (userId === adminId) {
+      sendError(res, 400, '자기 자신을 비활성화할 수 없습니다.');
+      return;
+    }
     await userService.deactivateUser(userId);
+    invalidateAllUserCaches(userId);
     logAudit(req, 'deactivate_user', {
       targetType: 'user',
       targetId: userId,
@@ -135,6 +154,7 @@ export const restoreUser = async (req: Request, res: Response): Promise<void> =>
   try {
     const { userId } = req.params;
     await userService.restoreUser(userId);
+    invalidateAllUserCaches(userId);
     logAudit(req, 'restore_user', { targetType: 'user', targetId: userId });
     sendSuccess(res, null, '회원이 복구되었습니다.');
   } catch (error: unknown) {
@@ -211,7 +231,23 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       }
     }
 
+    // ✅ name 길이/빈값 검증
+    if (updateData.name !== undefined) {
+      const trimmedName = String(updateData.name).trim();
+      if (!trimmedName || trimmedName.length < 1 || trimmedName.length > 50) {
+        sendError(res, 400, '이름은 1자 이상 50자 이하로 입력해주세요.');
+        return;
+      }
+      updateData.name = trimmedName;
+    }
+
+    // ✅ email lowercase 정규화
+    if (updateData.email !== undefined && updateData.email !== null) {
+      updateData.email = String(updateData.email).toLowerCase().trim();
+    }
+
     await userService.updateUser(id, updateData);
+    invalidateAllUserCaches(id);
     logAudit(req, 'update_user', {
       targetType: 'user',
       targetId: id,
@@ -249,6 +285,18 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
   try {
     const { id } = req.params;
     const { newPassword } = req.body;
+    const adminId = (req as unknown as AuthRequest).user?.id;
+
+    // 자기 자신의 비밀번호를 초기화하면 즉시 세션이 무효화되어 로그아웃됨
+    // deactivateUser/deleteUser와 일관되게 self-action 차단 (클라이언트도 차단하지만 server-side 방어)
+    if (adminId && adminId === id) {
+      sendError(
+        res,
+        400,
+        '자기 자신의 비밀번호는 초기화할 수 없습니다. 프로필에서 비밀번호 변경을 이용해주세요.'
+      );
+      return;
+    }
 
     if (!newPassword || typeof newPassword !== 'string') {
       sendError(res, 400, '새 비밀번호를 입력해주세요.');
@@ -261,6 +309,7 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
     }
 
     await userService.resetPassword(id, newPassword.trim());
+    invalidateAllUserCaches(id);
     logAudit(req, 'reset_password', {
       targetType: 'user',
       targetId: id,
@@ -289,8 +338,8 @@ export const createBoard = async (req: Request, res: Response): Promise<void> =>
   try {
     const { id, name, description, order } = req.body;
 
-    if (!id || typeof id !== 'string' || !id.trim()) {
-      sendError(res, 400, '게시판 ID는 필수입니다.');
+    if (!id || typeof id !== 'string' || !/^[a-zA-Z0-9_-]{2,50}$/.test(id.trim())) {
+      sendError(res, 400, '게시판 ID는 2~50자의 영문/숫자/-/_ 만 허용됩니다.');
       return;
     }
     if (!name || typeof name !== 'string' || !name.trim()) {
@@ -301,12 +350,28 @@ export const createBoard = async (req: Request, res: Response): Promise<void> =>
       sendError(res, 400, '게시판 이름은 100자를 초과할 수 없습니다.');
       return;
     }
+    if (description !== undefined && typeof description === 'string' && description.length > 500) {
+      sendError(res, 400, '게시판 설명은 500자를 초과할 수 없습니다.');
+      return;
+    }
 
     await boardService.createBoard({ id: id.trim(), name: name.trim(), description, order });
+    invalidateCache('boards'); // 사이드바/접근 가능 게시판 목록 즉시 반영
+    logAudit(req, 'create_board', {
+      targetType: 'board',
+      targetId: id.trim(),
+      targetName: name.trim(),
+    });
     sendSuccess(res, null, '게시판 생성 완료', 201);
   } catch (error: unknown) {
+    const appErr = toAppError(error);
+    // 중복 ID(409)·예약 ID(400) 등 클라이언트 오류는 해당 상태코드로 전달 (500 오인 방지)
+    if (appErr?.statusCode && appErr.statusCode < 500) {
+      sendError(res, appErr.statusCode, appErr.message);
+      return;
+    }
     logError('게시판 생성 실패', error);
-    sendError(res, 500, toAppError(error)?.message ?? '게시판 생성 실패');
+    sendError(res, 500, appErr?.message ?? '게시판 생성 실패');
   }
 };
 
@@ -314,7 +379,24 @@ export const updateBoard = async (req: Request, res: Response): Promise<void> =>
   try {
     const { id } = req.params;
     const { name, description, order, isActive } = req.body;
-    await boardService.updateBoard(id, { name, description, order, isActive });
+
+    if (name !== undefined) {
+      if (typeof name !== 'string' || !name.trim()) {
+        sendError(res, 400, '게시판 이름은 빈 값으로 변경할 수 없습니다.');
+        return;
+      }
+      if (name.trim().length > 100) {
+        sendError(res, 400, '게시판 이름은 100자를 초과할 수 없습니다.');
+        return;
+      }
+    }
+    if (description !== undefined && typeof description === 'string' && description.length > 500) {
+      sendError(res, 400, '게시판 설명은 500자를 초과할 수 없습니다.');
+      return;
+    }
+
+    await boardService.updateBoard(id, { name: name?.trim(), description, order, isActive });
+    invalidateCache('boards'); // 이름/활성/순서 변경 즉시 반영
     logAudit(req, 'update_board', {
       targetType: 'board',
       targetId: id,
@@ -322,8 +404,13 @@ export const updateBoard = async (req: Request, res: Response): Promise<void> =>
     });
     sendSuccess(res, null, '게시판 수정 완료');
   } catch (error: unknown) {
+    const appErr = toAppError(error);
+    if (appErr?.statusCode && appErr.statusCode < 500) {
+      sendError(res, appErr.statusCode, appErr.message);
+      return;
+    }
     logError('게시판 수정 실패', error);
-    sendError(res, 500, toAppError(error)?.message ?? '게시판 수정 실패');
+    sendError(res, 500, appErr?.message ?? '게시판 수정 실패');
   }
 };
 
@@ -331,11 +418,17 @@ export const deleteBoard = async (req: Request, res: Response): Promise<void> =>
   try {
     const { id } = req.params;
     await boardService.deleteBoard(id);
+    invalidateCache('boards'); // 삭제된 게시판이 사이드바에 잔존하지 않도록
     logAudit(req, 'delete_board', { targetType: 'board', targetId: id });
     sendSuccess(res, null, '게시판 삭제 완료');
   } catch (error: unknown) {
+    const appErr = toAppError(error);
+    if (appErr?.statusCode && appErr.statusCode < 500) {
+      sendError(res, appErr.statusCode, appErr.message);
+      return;
+    }
     logError('게시판 삭제 실패', error);
-    sendError(res, 500, toAppError(error)?.message ?? '게시판 삭제 실패');
+    sendError(res, 500, appErr?.message ?? '게시판 삭제 실패');
   }
 };
 
@@ -351,9 +444,22 @@ export const getAllRoles = async (_req: Request, res: Response): Promise<void> =
 };
 
 export const createRole = async (req: Request, res: Response): Promise<void> => {
+  const { id, name, description } = req.body;
+  if (!id || typeof id !== 'string' || !/^[a-zA-Z0-9_-]{2,50}$/.test(id.trim())) {
+    sendError(res, 400, '역할 ID는 2~50자의 영문/숫자/-/_ 만 허용됩니다.');
+    return;
+  }
+  if (!name || !String(name).trim()) {
+    sendError(res, 400, '역할 이름은 필수입니다.');
+    return;
+  }
   try {
-    const { id, name, description } = req.body;
-    await roleService.createRole({ id, name, description });
+    await roleService.createRole({ id: id.trim(), name: String(name).trim(), description });
+    logAudit(req, 'create_role', {
+      targetType: 'role',
+      targetId: id.trim(),
+      targetName: String(name).trim(),
+    });
     sendSuccess(res, null, '역할 생성 완료', 201);
   } catch (error: unknown) {
     const appErr = toAppError(error);
@@ -366,7 +472,23 @@ export const updateRole = async (req: Request, res: Response): Promise<void> => 
   try {
     const { id } = req.params;
     const { name, description, isActive } = req.body;
+    if (name !== undefined) {
+      const trimmed = String(name).trim();
+      if (!trimmed || trimmed.length > 50) {
+        sendError(res, 400, '역할 이름은 1~50자 이내로 입력해주세요.');
+        return;
+      }
+    }
+    if (description !== undefined && String(description).length > 500) {
+      sendError(res, 400, '역할 설명은 500자 이내로 입력해주세요.');
+      return;
+    }
     await roleService.updateRole(id, { name, description, isActive });
+    logAudit(req, 'update_role', {
+      targetType: 'role',
+      targetId: id,
+      afterValue: { name, description, isActive },
+    });
     sendSuccess(res, null, '역할 수정 완료');
   } catch (error: unknown) {
     const appErr = toAppError(error);
@@ -379,6 +501,7 @@ export const deleteRole = async (req: Request, res: Response): Promise<void> => 
   try {
     const { id } = req.params;
     await roleService.deleteRole(id);
+    logAudit(req, 'delete_role', { targetType: 'role', targetId: id });
     sendSuccess(res, null, '역할 삭제 완료');
   } catch (error: unknown) {
     const appErr = toAppError(error);
@@ -403,7 +526,13 @@ export const setBoardAccessPermissions = async (req: Request, res: Response): Pr
   try {
     const { boardId } = req.params;
     const { permissions } = req.body;
+    if (!Array.isArray(permissions)) {
+      sendError(res, 400, 'permissions는 배열이어야 합니다.');
+      return;
+    }
     await roleService.setBoardAccessPermissions(boardId, permissions);
+    // invalidateCache('boards')는 boards:userId:url 형태의 사용자별 캐시까지 모두 매치하여 무효화한다.
+    // 서버 측 권한 enforcement는 boardService.checkPermission이 매 요청 DB를 조회하므로 즉시 반영.
     invalidateCache('boards');
     logAudit(req, 'update_permission', {
       targetType: 'board',
@@ -444,7 +573,49 @@ export const deleteEventAsAdmin = async (req: Request, res: Response): Promise<v
 export const updateEventAsAdmin = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const event = await eventService.updateEvent(id, req.body);
+    // ✅ allowlist: UserId·id 등 민감 필드 덮어쓰기 방지
+    const {
+      title,
+      start,
+      end,
+      body,
+      location,
+      color,
+      backgroundColor,
+      dragBackgroundColor,
+      borderColor,
+      isAllday,
+      recurrenceType,
+      recurrenceInterval,
+      recurrenceEndDate,
+      calendarId,
+    } = req.body as Record<string, unknown>;
+    if (body && String(body).length > 10000) {
+      sendError(res, 400, '내용은 10,000자를 초과할 수 없습니다.');
+      return;
+    }
+    if (location && String(location).length > 500) {
+      sendError(res, 400, '장소는 500자를 초과할 수 없습니다.');
+      return;
+    }
+
+    const event = await eventService.updateEvent(id, {
+      title,
+      start,
+      end,
+      body,
+      location,
+      color,
+      backgroundColor,
+      dragBackgroundColor,
+      borderColor,
+      isAllday,
+      recurrenceType,
+      recurrenceInterval,
+      recurrenceEndDate,
+      calendarId,
+    } as Parameters<typeof eventService.updateEvent>[1]);
+    logAudit(req, 'update_event', { targetType: 'event', targetId: id });
     sendSuccess(res, event, '이벤트 수정 완료');
   } catch (error: unknown) {
     const appErr = toAppError(error);
@@ -471,7 +642,32 @@ export const setEventPermissions = async (req: Request, res: Response): Promise<
       sendError(res, 400, '권한 배열이 필요합니다.');
       return;
     }
-    await eventService.setEventPermissions(permissions);
+    // roleId 존재 검증 (존재하지 않는 role에 권한을 부여하면 조용히 실패)
+    const roleIds = (permissions as Array<{ roleId?: unknown }>)
+      .map(p => p.roleId)
+      .filter((id): id is string => typeof id === 'string');
+    const uniqueRoleIds = [...new Set(roleIds)];
+    if (uniqueRoleIds.length > 0) {
+      const existingRoles = await Role.findAll({
+        where: { id: { [Op.in]: uniqueRoleIds } },
+        attributes: ['id'],
+      });
+      if (existingRoles.length !== uniqueRoleIds.length) {
+        sendError(res, 400, '존재하지 않는 역할 ID가 포함되어 있습니다.');
+        return;
+      }
+    }
+    // 중복 roleId 제거 후 서비스에 전달
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const uniquePermissions = (permissions as any[]).filter(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (p: any, idx: number, arr: any[]) => arr.findIndex((q: any) => q.roleId === p.roleId) === idx
+    );
+    await eventService.setEventPermissions(uniquePermissions);
+    logAudit(req, 'update_permission', {
+      targetType: 'event',
+      afterValue: { permissions },
+    });
     sendSuccess(res, null, '이벤트 권한 설정 완료');
   } catch (error) {
     logError('이벤트 권한 설정 실패', error);
@@ -484,9 +680,17 @@ export const setEventPermissions = async (req: Request, res: Response): Promise<
 export const getWikiPermissions = async (_req: Request, res: Response): Promise<void> => {
   try {
     const settings = await SiteSettings.findOne();
-    const roles: string[] = settings?.wikiEditRoles
-      ? (JSON.parse(settings.wikiEditRoles) as string[])
-      : ['admin', 'manager'];
+    let roles: string[] = ['admin', 'manager'];
+    if (settings?.wikiEditRoles) {
+      try {
+        const parsed = JSON.parse(settings.wikiEditRoles);
+        if (Array.isArray(parsed) && parsed.every(r => typeof r === 'string')) {
+          roles = parsed;
+        }
+      } catch {
+        // 파싱 실패 시 기본값 유지
+      }
+    }
     sendSuccess(res, { roles });
   } catch (error) {
     logError('위키 권한 조회 실패', error);
@@ -501,13 +705,26 @@ export const setWikiPermissions = async (req: Request, res: Response): Promise<v
       sendError(res, 400, '역할 배열(문자열)이 필요합니다.');
       return;
     }
-    const settings = await SiteSettings.findOne();
-    if (!settings) {
-      sendError(res, 500, '사이트 설정을 찾을 수 없습니다.');
-      return;
+    // 중복 역할 제거 (중복 시 existingRoles.length !== roles.length 오탐 방지)
+    const uniqueRoles = [...new Set(roles as string[])];
+    // ✅ roles가 실제 DB에 존재하는지 검증 (존재하지 않는 roleId는 위키 접근을 영구 차단)
+    if (uniqueRoles.length > 0) {
+      const existingRoles = await Role.findAll({
+        where: { id: { [Op.in]: uniqueRoles } },
+        attributes: ['id'],
+      });
+      if (existingRoles.length !== uniqueRoles.length) {
+        sendError(res, 400, '존재하지 않는 역할 ID가 포함되어 있습니다.');
+        return;
+      }
     }
-    settings.wikiEditRoles = JSON.stringify(roles);
+    const [settings] = await SiteSettings.findOrCreate({ where: {} });
+    settings.wikiEditRoles = JSON.stringify(uniqueRoles);
     await settings.save();
+    logAudit(req, 'update_permission', {
+      targetType: 'setting',
+      afterValue: { wikiEditRoles: uniqueRoles },
+    });
     sendSuccess(res, { roles }, '위키 편집 권한 설정 완료');
   } catch (error) {
     logError('위키 권한 설정 실패', error);
@@ -534,6 +751,15 @@ function xlsxHeaderCell(value: string, rgb: string): XLSX.CellObject {
   };
 }
 
+// CSV/XLSX injection 방지: =, +, -, @, TAB, CR 로 시작하는 셀 값은 앞에 `'`를 붙여
+// Excel/Sheets가 수식으로 해석하지 못하도록 한다.
+function sanitizeCellValue(value: unknown): string {
+  if (value === null || value === undefined) return '-';
+  const s = String(value);
+  if (s.length === 0) return s;
+  return /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+}
+
 function buildXlsxSheet(
   columns: SheetColumn[],
   rows: Record<string, string>[],
@@ -547,7 +773,10 @@ function buildXlsxSheet(
 
   rows.forEach((row, ri) => {
     columns.forEach(({ key }, ci) => {
-      ws[XLSX.utils.encode_cell({ r: ri + 1, c: ci })] = { v: row[key] ?? '-', t: 's' };
+      ws[XLSX.utils.encode_cell({ r: ri + 1, c: ci })] = {
+        v: sanitizeCellValue(row[key]),
+        t: 's',
+      };
     });
   });
 
@@ -579,6 +808,7 @@ export const exportUsersExcel = async (_req: AuthRequest, res: Response): Promis
       where: { isDeleted: false },
       attributes: ['id', 'name', 'email', 'roleId', 'isActive', 'lastLoginAt', 'createdAt'],
       order: [['createdAt', 'DESC']],
+      limit: 10000,
     });
 
     const columns: SheetColumn[] = [

@@ -55,10 +55,10 @@ const BoardManagerManagement = () => {
         const data = unwrap<UserOption[]>(res);
         setUsers(data);
       } catch {
-        // ignore
+        toast.error('사용자 목록을 불러오지 못했습니다.');
       }
     };
-    load();
+    void load();
   }, []);
 
   const filteredUsers = users.filter(u => {

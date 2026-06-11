@@ -37,11 +37,21 @@ export class WikiService extends BaseService {
     },
     authorId: string
   ): Promise<WikiPage> {
-    const existing = await WikiPage.findOne({ where: { slug: data.slug } });
-    if (existing) throw new AppError(409, `슬러그 '${data.slug}'가 이미 사용 중입니다.`);
-
     try {
       return await sequelize.transaction(async t => {
+        // parentId가 들어오면 존재하는 페이지인지 확인 (모델에 FK 없음 — 고아 페이지 방지)
+        // LOCK.UPDATE로 부모 행을 잠가, 동시에 부모가 삭제되어 고아가 생기는 레이스 방지
+        if (data.parentId !== undefined && data.parentId !== null) {
+          const parent = await WikiPage.findByPk(data.parentId, {
+            attributes: ['id'],
+            transaction: t,
+            lock: t.LOCK.UPDATE,
+          });
+          if (!parent) {
+            throw new AppError(400, '부모 위키 페이지를 찾을 수 없습니다.');
+          }
+        }
+
         const page = await WikiPage.create(
           {
             slug: data.slug,
@@ -102,7 +112,7 @@ export class WikiService extends BaseService {
         // 간접 순환 참조 방지: 새 parentId의 상위 체인을 따라가며 현재 페이지가 나오는지 확인
         const visited = new Set<number>();
         let currentId: number | null = Number(data.parentId);
-        while (currentId !== null) {
+        while (currentId !== null && visited.size < 100) {
           if (visited.has(currentId)) break; // 이미 순환이 있는 기존 데이터 방어
           if (currentId === Number(page.id)) {
             throw new AppError(
@@ -139,13 +149,16 @@ export class WikiService extends BaseService {
     });
   }
 
-  async getPageHistory(slug: string): Promise<WikiRevision[]> {
+  async getPageHistory(slug: string, privileged = false): Promise<WikiRevision[]> {
     const page = await WikiPage.findOne({ where: { slug } });
-    if (!page) throw new AppError(404, '위키 페이지를 찾을 수 없습니다.');
+    if (!page || (!page.isPublished && !privileged)) {
+      throw new AppError(404, '위키 페이지를 찾을 수 없습니다.');
+    }
 
     return WikiRevision.findAll({
       where: { wikiPageId: page.id },
       order: [['createdAt', 'DESC']],
+      limit: 100,
       include: [
         {
           model: User,
@@ -158,15 +171,23 @@ export class WikiService extends BaseService {
   }
 
   async deletePage(slug: string): Promise<void> {
-    const page = await WikiPage.findOne({ where: { slug } });
-    if (!page) throw new AppError(404, '위키 페이지를 찾을 수 없습니다.');
-    const children = await WikiPage.count({ where: { parentId: page.id } });
-    if (children > 0)
-      throw new AppError(
-        400,
-        '하위 페이지가 있어 삭제할 수 없습니다. 하위 페이지를 먼저 삭제하세요.'
-      );
-    await page.destroy();
+    await sequelize.transaction(async t => {
+      const page = await WikiPage.findOne({
+        where: { slug },
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
+      if (!page) throw new AppError(404, '위키 페이지를 찾을 수 없습니다.');
+
+      const children = await WikiPage.count({ where: { parentId: page.id }, transaction: t });
+      if (children > 0)
+        throw new AppError(
+          400,
+          '하위 페이지가 있어 삭제할 수 없습니다. 하위 페이지를 먼저 삭제하세요.'
+        );
+
+      await page.destroy({ transaction: t });
+    });
   }
 }
 

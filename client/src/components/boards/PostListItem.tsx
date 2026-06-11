@@ -61,11 +61,13 @@ export const PostListItem: React.FC<PostListItemProps> = ({
 
             {/* 비밀글 아이콘 */}
             {post.isSecret && (
-              <LockIcon className="w-4 h-4 text-slate-400 dark:text-slate-500 flex-shrink-0" />
+              <span className="flex-shrink-0" title="비밀글" aria-label="비밀글">
+                <LockIcon className="w-4 h-4 text-slate-400 dark:text-slate-500" />
+              </span>
             )}
 
             {/* 읽지 않은 표시 */}
-            {!post.isRead && (
+            {post.isRead === false && (
               <span className="relative flex-shrink-0" title="읽지 않음" aria-label="읽지 않음">
                 <span className="w-2 h-2 bg-primary-500 rounded-full block" />
                 <span className="absolute inset-0 w-2 h-2 bg-primary-400 rounded-full animate-ping opacity-75" />
@@ -74,6 +76,7 @@ export const PostListItem: React.FC<PostListItemProps> = ({
 
             {/* 제목 */}
             <h3
+              title={post.title}
               className={`
               text-base text-slate-900 dark:text-slate-100 truncate min-w-0 flex-1
               group-hover:text-primary-700 dark:group-hover:text-primary-400
@@ -165,7 +168,10 @@ export const PostListItem: React.FC<PostListItemProps> = ({
               }}
               size="xs"
             />
-            <span className="text-sm text-slate-600 dark:text-slate-400 truncate max-w-[4rem] font-medium">
+            <span
+              title={post.author}
+              className="text-sm text-slate-600 dark:text-slate-400 truncate max-w-[4rem] font-medium"
+            >
               {post.author}
             </span>
           </div>

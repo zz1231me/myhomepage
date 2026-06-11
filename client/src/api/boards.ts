@@ -1,5 +1,6 @@
 // src/api/boards.ts
 import api from './axios';
+import { unwrap } from './utils';
 
 // ❌ 기존: 관리자 전용 API (일반 사용자 사용 금지)
 export const fetchBoardAccess = (boardType: string) => {
@@ -20,3 +21,11 @@ export const fetchUserAccessibleBoards = () => {
 export const checkUserBoardAccess = (boardType: string) => {
   return api.get(`/boards/check/${boardType}`);
 };
+
+// ✅ 게시판 내 관리(담당자) — 관리 가능 여부 조회
+export const checkBoardManageCapability = (boardType: string): Promise<{ canManage: boolean }> =>
+  api.get(`/boards/${boardType}/can-manage`).then(unwrap);
+
+// ✅ 게시판 기본정보(이름/설명) 수정 — 담당자/관리자
+export const updateBoardInfo = (boardType: string, data: { name?: string; description?: string }) =>
+  api.put(`/boards/${boardType}/info`, data).then(unwrap);

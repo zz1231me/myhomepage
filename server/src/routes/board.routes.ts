@@ -6,6 +6,8 @@ import {
   createPersonalFolder,
   createAllUserPersonalFolders,
   setupDummyData, // ✅ 더미 데이터 설정 API 추가
+  updateBoardInfo,
+  getBoardManageCapability,
 } from '../controllers/board.controller';
 import { authenticate } from '../middlewares/auth.middleware';
 import { isAdmin } from '../middlewares/isAdmin';
@@ -93,6 +95,10 @@ router.get(
  *         description: 접근 권한 없음
  */
 router.get('/check/:boardType', auth, asyncHandler(wrapAuthHandler(checkUserBoardAccess)));
+
+// 게시판 내 관리(담당자) — 관리 가능 여부 조회 + 기본정보(이름/설명) 수정
+router.get('/:boardType/can-manage', auth, asyncHandler(wrapAuthHandler(getBoardManageCapability)));
+router.put('/:boardType/info', auth, asyncHandler(wrapAuthHandler(updateBoardInfo)));
 
 /**
  * @swagger

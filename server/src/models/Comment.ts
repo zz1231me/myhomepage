@@ -103,7 +103,7 @@ CommentModel.init(
       type: DataTypes.TEXT,
       allowNull: false,
       validate: {
-        len: [1, 5000],
+        len: [1, 1000],
       },
     },
     author: {
@@ -216,16 +216,17 @@ CommentModel.init(
     hooks: {
       // ✅ 댓글 생성 시 author 필드 자동 설정
       beforeCreate: async comment => {
-        // 계층 구조 설정
-        if (comment.parentId) {
+        // 계층 구조 설정 — 서비스에서 이미 depth/path를 계산해 전달한 경우 재계산 건너뜀
+        // (트랜잭션 내 LOCK.UPDATE로 잠근 부모를 훅이 트랜잭션 없이 재조회하는 TOCTOU 방지)
+        if (comment.parentId && comment.depth === undefined) {
           const parent = await CommentModel.findByPk(comment.parentId);
           if (parent) {
             comment.depth = parent.depth + 1;
             comment.path = parent.path ? `${parent.path}.${parent.id}` : String(parent.id);
           }
-        } else {
-          comment.depth = 0;
-          comment.path = '';
+        } else if (!comment.parentId) {
+          comment.depth = comment.depth ?? 0;
+          comment.path = comment.path ?? '';
         }
 
         // ✅ author 필드가 없으면 UserId로부터 사용자명 가져오기

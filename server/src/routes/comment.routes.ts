@@ -1,32 +1,19 @@
 // src/routes/comment.routes.ts - 권한 기반 댓글 라우팅
 import express, { RequestHandler } from 'express';
 import { authenticate } from '../middlewares/auth.middleware';
-import { checkReadAccess, checkWriteAccess } from '../middlewares/boardAccess.middleware';
+import {
+  checkReadAccess,
+  checkWriteAccess,
+  checkDeleteAccess,
+} from '../middlewares/boardAccess.middleware';
 import {
   createComment,
   getCommentsByPost,
   updateComment,
   deleteComment,
 } from '../controllers/comment.controller';
-import asyncHandler from 'express-async-handler';
-import { toggleCommentReaction, getCommentReactions } from '../controllers/reaction.controller';
-import { AuthRequest } from '../types/auth-request';
 
 const router = express.Router();
-
-// ✅ 댓글 리액션 라우트를 parameterized 라우트(:boardType/:postId) 보다 먼저 등록
-// 순서가 반대면 /reactions/:commentId 가 /:boardType/:postId 에 가로채임
-router.post(
-  '/reactions/:commentId',
-  authenticate as RequestHandler,
-  asyncHandler((req, res) => toggleCommentReaction(req as AuthRequest, res))
-);
-
-router.get(
-  '/reactions/:commentId',
-  authenticate as RequestHandler,
-  asyncHandler((req, res) => getCommentReactions(req as AuthRequest, res))
-);
 
 /**
  * @swagger
@@ -198,7 +185,7 @@ router.put(
 router.delete(
   '/:boardType/:commentId',
   authenticate as RequestHandler,
-  checkWriteAccess as RequestHandler,
+  checkDeleteAccess as RequestHandler,
   deleteComment as RequestHandler
 );
 

@@ -5,6 +5,7 @@ import { getEvents, createEvent, updateEvent, deleteEvent } from '../../../../ap
 import { CalendarEvent, EventFormData } from '../types';
 import { categoryColors } from '../constants';
 import { dateUtils } from '../utils';
+import { toast } from '../../../../utils/toast';
 
 interface UseCalendarEventsProps {
   userId?: string;
@@ -84,7 +85,8 @@ export const useCalendarEvents = ({
     } catch (error) {
       if (requestId !== loadRequestIdRef.current) return;
       if (import.meta.env.DEV) console.error('❌ 이벤트 로드 실패:', error);
-      setEvents([]);
+      toast.error('일정을 불러오는 데 실패했습니다. 잠시 후 다시 시도해 주세요.');
+      // 기존 이벤트 유지 — 네트워크 오류 시 빈 캘린더 방지
     } finally {
       if (requestId === loadRequestIdRef.current) {
         setLoading(false);
@@ -103,7 +105,7 @@ export const useCalendarEvents = ({
           calendarId: 'default',
           title: formData.title,
           body: formData.body,
-          isAllday: true,
+          isAllday: formData.isAllday ?? true,
           start: startDate.toISOString(),
           end: endDate.toISOString(),
           category: formData.category,
@@ -125,21 +127,23 @@ export const useCalendarEvents = ({
   );
 
   const handleUpdateEvent = useCallback(
-    async (eventId: number, formData: EventFormData) => {
+    async (eventId: number, formData: EventFormData, existingEvent?: CalendarEvent) => {
       try {
         const startDate = new Date(formData.start + 'T00:00:00Z');
         const endDate = new Date(dateUtils.addDay(formData.end) + 'T00:00:00Z');
 
+        // ✅ 기존 이벤트의 isReadOnly 보존 — 모달 편집 시 false로 덮어쓰면
+        //   admin이 시간만 조정해도 read-only 플래그가 해제되는 버그 발생.
         const eventData = {
           calendarId: 'default',
           title: formData.title,
           body: formData.body,
-          isAllday: true,
+          isAllday: formData.isAllday ?? existingEvent?.isAllday ?? true,
           start: startDate.toISOString(),
           end: endDate.toISOString(),
           category: formData.category,
           location: formData.location,
-          isReadOnly: false,
+          isReadOnly: existingEvent?.isReadOnly ?? false,
           color: formData.color,
           backgroundColor: formData.backgroundColor,
           borderColor: formData.color,

@@ -47,14 +47,15 @@ export const cacheMiddleware = (keyPrefix: string, ttl?: number) => {
     // 원본 res.json 메서드 저장
     const originalJson = res.json.bind(res);
 
-    // res.json 오버라이드
+    // res.json 오버라이드 — 2xx 응답만 캐시 (에러 응답 캐시 오염 방지)
     res.json = function (data: any) {
-      // ttl이 undefined면 기본값(300초) 사용
-      const cacheTTL = ttl ?? 300;
-      cache.set(cacheKey, data, cacheTTL);
-      logInfo(
-        `Cached: ${keyPrefix}:${req.originalUrl}${userId ? ` (user: ${userId})` : ''} (TTL: ${cacheTTL}s)`
-      );
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        const cacheTTL = ttl ?? 300;
+        cache.set(cacheKey, data, cacheTTL);
+        logInfo(
+          `Cached: ${keyPrefix}:${req.originalUrl}${userId ? ` (user: ${userId})` : ''} (TTL: ${cacheTTL}s)`
+        );
+      }
       return originalJson(data);
     };
 

@@ -112,6 +112,17 @@ class PostModel
   declare public user?: NonAttribute<UserInstance>;
   declare public board?: NonAttribute<Board>;
 
+  public override toJSON(): Partial<PostInstance> {
+    const values = { ...this.get() } as any;
+    // secretPassword는 항상 제거; secretSalt는 E2EE 게시글에서만 노출 (컨트롤러에서 추가 필터링됨)
+    const { secretPassword: _sp, secretSalt: _ss, ...safeValues } = values;
+    // E2EE 게시글이면 secretSalt를 다시 포함 (클라이언트가 복호화에 필요)
+    if (values.isEncrypted) {
+      return { ...safeValues, secretSalt: _ss };
+    }
+    return safeValues;
+  }
+
   // ✅ JSON 콘텐츠 파싱 헬퍼 메서드
   public getContentAsJSON(): TiptapContent | null {
     try {
@@ -354,12 +365,6 @@ PostModel.init(
       pinned: {
         where: { isPinned: true },
       },
-      notices: {
-        where: { isNotice: true },
-      },
-      byBoard: (boardType: string) => ({
-        where: { boardType },
-      }),
     },
     hooks: {
       beforeCreate: async post => {

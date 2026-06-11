@@ -5,6 +5,7 @@ import axios from '../../api/axios';
 import { formatDate } from '../../utils/date';
 import { useAuthStore } from '../../store/auth';
 import { useSearchHistory } from '../../hooks/useSearchHistory';
+import { useUIOverlays } from '../../store/uiOverlays';
 
 type ResultType = 'post' | 'wiki' | 'event' | 'memo';
 
@@ -27,6 +28,8 @@ interface SearchResult {
 const TYPE_ICONS: Record<ResultType, React.ReactNode> = {
   post: (
     <svg
+      aria-hidden="true"
+      focusable="false"
       className="w-4 h-4 text-primary-600 dark:text-primary-400"
       fill="none"
       stroke="currentColor"
@@ -42,6 +45,8 @@ const TYPE_ICONS: Record<ResultType, React.ReactNode> = {
   ),
   wiki: (
     <svg
+      aria-hidden="true"
+      focusable="false"
       className="w-4 h-4 text-emerald-600 dark:text-emerald-400"
       fill="none"
       stroke="currentColor"
@@ -57,6 +62,8 @@ const TYPE_ICONS: Record<ResultType, React.ReactNode> = {
   ),
   event: (
     <svg
+      aria-hidden="true"
+      focusable="false"
       className="w-4 h-4 text-orange-600 dark:text-orange-400"
       fill="none"
       stroke="currentColor"
@@ -72,6 +79,8 @@ const TYPE_ICONS: Record<ResultType, React.ReactNode> = {
   ),
   memo: (
     <svg
+      aria-hidden="true"
+      focusable="false"
       className="w-4 h-4 text-yellow-600 dark:text-yellow-400"
       fill="none"
       stroke="currentColor"
@@ -117,7 +126,17 @@ const TYPE_LABELS: Record<ResultType, string> = {
 };
 
 export function GlobalSearch() {
-  const [isOpen, setIsOpen] = useState(false);
+  // 통합 overlay store — NotificationBell/UserDropdown과 자동 배타,
+  // 모바일 사이드바 열림 시 자동 close
+  const isOpen = useUIOverlays(s => s.activeDropdown === 'search');
+  // setIsOpen은 useCallback dep을 비워 안정 ref 유지. 함수형 호출 시 prev는 store 최신값.
+  const setIsOpen = useCallback((value: boolean | ((prev: boolean) => boolean)) => {
+    const state = useUIOverlays.getState();
+    const currentOpen = state.activeDropdown === 'search';
+    const next = typeof value === 'function' ? value(currentOpen) : value;
+    if (next) state.openDropdown('search');
+    else state.closeDropdown('search');
+  }, []);
   const [searchTerm, setSearchTerm] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -147,17 +166,52 @@ export function GlobalSearch() {
     };
     document.addEventListener('keydown', handleGlobalKey);
     return () => document.removeEventListener('keydown', handleGlobalKey);
-  }, [isOpen]);
+  }, [isOpen, setIsOpen]);
 
-  const handleClickOutside = useCallback((event: MouseEvent) => {
-    if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
-      setIsOpen(false);
-    }
-  }, []);
+  const handleClickOutside = useCallback(
+    (event: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    },
+    [setIsOpen]
+  );
 
-  const handleKeyDown = useCallback((event: KeyboardEvent) => {
-    if (event.key === 'Escape') setIsOpen(false);
-  }, []);
+  // ⌨️ 키보드 내비게이션 — 검색 결과 ↑↓로 이동, Enter 선택, ESC 닫기
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const activeIndexRef = useRef(-1);
+  useEffect(() => {
+    activeIndexRef.current = activeIndex;
+  }, [activeIndex]);
+
+  // 키보드 핸들러는 최신 filteredResults를 사용해야 하므로 ref 패턴 사용
+  const filteredResultsRef = useRef<SearchResult[]>([]);
+
+  const handleResultClickRef = useRef<((r: SearchResult) => void) | null>(null);
+
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+        return;
+      }
+      const list = filteredResultsRef.current;
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setActiveIndex(prev => (list.length === 0 ? -1 : Math.min(list.length - 1, prev + 1)));
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setActiveIndex(prev => Math.max(0, prev - 1));
+      } else if (event.key === 'Enter') {
+        const idx = activeIndexRef.current;
+        if (idx >= 0 && idx < list.length && handleResultClickRef.current) {
+          event.preventDefault();
+          handleResultClickRef.current(list[idx]);
+        }
+      }
+    },
+    [setIsOpen]
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -285,6 +339,22 @@ export function GlobalSearch() {
     [activeFilter, results]
   );
 
+  // 키보드 핸들러용 ref 동기화 + 결과 변경 시 선택 인덱스 리셋
+  useEffect(() => {
+    filteredResultsRef.current = filteredResults;
+    setActiveIndex(filteredResults.length > 0 ? 0 : -1);
+  }, [filteredResults]);
+
+  useEffect(() => {
+    handleResultClickRef.current = (result: SearchResult) => {
+      addSearch(searchTerm);
+      navigate(getResultUrl(result));
+      setIsOpen(false);
+      setSearchTerm('');
+      setResults([]);
+    };
+  }, [searchTerm, addSearch, navigate, setIsOpen]);
+
   // 타입별로 그룹화
   const groupedResults = useMemo(
     () =>
@@ -316,13 +386,14 @@ export function GlobalSearch() {
           <button
             onClick={handleOpen}
             aria-label="전체 검색 열기 (⌘K)"
-            style={{ outline: 'none', border: 'none' }}
             className="w-full flex items-center gap-3 px-4 py-2.5
                        bg-slate-50/80 dark:bg-slate-800/50
                        hover:bg-slate-100 dark:hover:bg-slate-700/50
                        rounded-xl transition-all duration-200"
           >
             <svg
+              aria-hidden="true"
+              focusable="false"
               className="w-5 h-5 text-slate-400 flex-shrink-0"
               fill="none"
               stroke="currentColor"
@@ -358,6 +429,8 @@ export function GlobalSearch() {
             <div className="relative p-4">
               <div className="flex items-center gap-3">
                 <svg
+                  aria-hidden="true"
+                  focusable="false"
                   className="w-5 h-5 text-primary-500 flex-shrink-0"
                   fill="none"
                   stroke="currentColor"
@@ -377,8 +450,7 @@ export function GlobalSearch() {
                   onChange={e => setSearchTerm(e.target.value)}
                   placeholder="전체검색... (2자 이상)"
                   aria-label="검색어 입력"
-                  style={{ outline: 'none', border: 'none', boxShadow: 'none' }}
-                  className="flex-1 bg-transparent text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                  className="flex-1 bg-transparent border-0 outline-none shadow-none text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-0"
                   autoComplete="off"
                 />
                 {searchTerm && (
@@ -390,10 +462,11 @@ export function GlobalSearch() {
                       inputRef.current?.focus();
                     }}
                     aria-label="검색어 지우기"
-                    style={{ outline: 'none', border: 'none' }}
                     className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors flex-shrink-0"
                   >
                     <svg
+                      aria-hidden="true"
+                      focusable="false"
                       className="w-4 h-4 text-slate-400"
                       fill="none"
                       stroke="currentColor"
@@ -416,7 +489,6 @@ export function GlobalSearch() {
                     setActiveFilter(null);
                   }}
                   aria-label="검색 닫기"
-                  style={{ outline: 'none', border: 'none' }}
                   className="px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors flex-shrink-0"
                 >
                   ESC
@@ -426,6 +498,8 @@ export function GlobalSearch() {
               {searchTerm.length > 0 && searchTerm.length < 2 && (
                 <p className="mt-3 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
                   <svg
+                    aria-hidden="true"
+                    focusable="false"
                     className="w-3.5 h-3.5"
                     fill="none"
                     stroke="currentColor"
@@ -457,7 +531,6 @@ export function GlobalSearch() {
               <div className="px-4 py-2.5 flex items-center gap-2 flex-wrap border-b border-slate-100 dark:border-slate-700/50">
                 <button
                   onClick={() => setActiveFilter(null)}
-                  style={{ outline: 'none', border: 'none' }}
                   className={`px-2.5 py-1 text-xs font-medium rounded-full transition-all ${
                     activeFilter === null
                       ? 'bg-slate-700 dark:bg-slate-200 text-white dark:text-slate-900'
@@ -489,7 +562,6 @@ export function GlobalSearch() {
                       <button
                         key={type}
                         onClick={() => setActiveFilter(isActive ? null : type)}
-                        style={{ outline: 'none', border: 'none' }}
                         className={`px-2.5 py-1 text-xs font-medium rounded-full transition-all ${colorMap[type]}`}
                       >
                         {TYPE_LABELS[type]} {count}
@@ -521,7 +593,6 @@ export function GlobalSearch() {
                     </span>
                     <button
                       onClick={clearAll}
-                      style={{ outline: 'none', border: 'none' }}
                       className="text-xs text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
                     >
                       전체 삭제
@@ -534,6 +605,8 @@ export function GlobalSearch() {
                         className="flex items-center gap-2 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors group"
                       >
                         <svg
+                          aria-hidden="true"
+                          focusable="false"
                           className="w-4 h-4 text-slate-300 dark:text-slate-600 flex-shrink-0"
                           fill="none"
                           stroke="currentColor"
@@ -548,7 +621,6 @@ export function GlobalSearch() {
                         </svg>
                         <button
                           onClick={() => handleHistoryClick(query)}
-                          style={{ outline: 'none', border: 'none' }}
                           className="flex-1 text-left text-sm text-slate-700 dark:text-slate-300 truncate"
                         >
                           {query}
@@ -556,10 +628,11 @@ export function GlobalSearch() {
                         <button
                           onClick={() => removeSearch(query)}
                           aria-label={`'${query}' 검색 기록 삭제`}
-                          style={{ outline: 'none', border: 'none' }}
                           className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-200 dark:hover:bg-slate-600 rounded transition-all flex-shrink-0"
                         >
                           <svg
+                            aria-hidden="true"
+                            focusable="false"
                             className="w-3 h-3 text-slate-400"
                             fill="none"
                             stroke="currentColor"
@@ -595,6 +668,8 @@ export function GlobalSearch() {
                 <div className="p-12 text-center">
                   <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-red-50 dark:bg-red-900/20 flex items-center justify-center">
                     <svg
+                      aria-hidden="true"
+                      focusable="false"
                       className="w-6 h-6 text-red-500"
                       fill="none"
                       stroke="currentColor"
@@ -617,6 +692,8 @@ export function GlobalSearch() {
                 <div className="p-12 text-center">
                   <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
                     <svg
+                      aria-hidden="true"
+                      focusable="false"
                       className="w-6 h-6 text-slate-400"
                       fill="none"
                       stroke="currentColor"
@@ -674,7 +751,6 @@ export function GlobalSearch() {
                               onClick={() => handleResultClick(result)}
                               role="option"
                               aria-selected={false}
-                              style={{ outline: 'none', border: 'none' }}
                               className="w-full px-4 py-3 hover:bg-gradient-to-r hover:from-slate-50 hover:to-transparent dark:hover:from-slate-700/30 dark:hover:to-transparent transition-all text-left group"
                             >
                               <div className="flex items-start gap-3">
@@ -697,6 +773,8 @@ export function GlobalSearch() {
                                       <>
                                         <span className="flex items-center gap-1.5">
                                           <svg
+                                            aria-hidden="true"
+                                            focusable="false"
                                             className="w-3.5 h-3.5"
                                             fill="none"
                                             stroke="currentColor"
@@ -720,6 +798,8 @@ export function GlobalSearch() {
                                       <>
                                         <span className="flex items-center gap-1.5">
                                           <svg
+                                            aria-hidden="true"
+                                            focusable="false"
                                             className="w-3.5 h-3.5"
                                             fill="none"
                                             stroke="currentColor"
@@ -741,6 +821,8 @@ export function GlobalSearch() {
                                     )}
                                     <span className="flex items-center gap-1.5">
                                       <svg
+                                        aria-hidden="true"
+                                        focusable="false"
                                         className="w-3.5 h-3.5"
                                         fill="none"
                                         stroke="currentColor"
@@ -760,6 +842,8 @@ export function GlobalSearch() {
                                 {/* 화살표 */}
                                 <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-all transform group-hover:translate-x-0.5">
                                   <svg
+                                    aria-hidden="true"
+                                    focusable="false"
                                     className="w-5 h-5 text-primary-500"
                                     fill="none"
                                     stroke="currentColor"

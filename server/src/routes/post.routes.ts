@@ -12,7 +12,6 @@ import {
   togglePin,
 } from '../controllers/post.controller';
 import { toggleLike, getLikeStatus } from '../controllers/like.controller';
-import { toggleReaction, getReactions } from '../controllers/reaction.controller';
 import { markAsRead } from '../controllers/postRead.controller';
 import { addPostTags, getPostTags } from '../controllers/tag.controller';
 import { authenticate } from '../middlewares/auth.middleware';
@@ -24,7 +23,7 @@ import {
 import { AuthRequest } from '../types/auth-request';
 import { uploadFiles } from '../middlewares/upload/file';
 import { validateUploadedFile } from '../middlewares/upload/validator';
-import { secretPostLimiter } from '../middlewares/rate-limit.middleware';
+import { secretPostLimiter, apiLimiter, uploadLimiter } from '../middlewares/rate-limit.middleware';
 
 const router = Router();
 
@@ -36,6 +35,7 @@ const router = Router();
  */
 router.get(
   '/search/global',
+  apiLimiter as RequestHandler,
   authenticate as RequestHandler,
   asyncHandler((req, res) => globalSearch(req as AuthRequest, res))
 );
@@ -90,6 +90,7 @@ router.post(
   '/:boardType',
   authenticate as RequestHandler,
   checkWriteAccess as RequestHandler,
+  uploadLimiter as RequestHandler,
   uploadFiles.array('files', 5),
   validateUploadedFile as RequestHandler, // ✅ 파일 검증 및 권한 보안 적용
   asyncHandler((req, res) => createPost(req as AuthRequest, res))
@@ -105,6 +106,7 @@ router.put(
   '/:boardType/:id',
   authenticate as RequestHandler,
   checkWriteAccess as RequestHandler,
+  uploadLimiter as RequestHandler,
   uploadFiles.array('files', 5),
   validateUploadedFile as RequestHandler, // ✅ 파일 검증 및 권한 보안 적용
   asyncHandler((req, res) => updatePost(req as AuthRequest, res))
@@ -132,23 +134,10 @@ router.get(
 );
 router.post(
   '/:boardType/:id/like',
+  apiLimiter as RequestHandler,
   authenticate as RequestHandler,
   checkReadAccess as RequestHandler,
   asyncHandler((req, res) => toggleLike(req as AuthRequest, res))
-);
-
-// 반응 (이모지)
-router.get(
-  '/:boardType/:id/reactions',
-  authenticate as RequestHandler,
-  checkReadAccess as RequestHandler,
-  asyncHandler((req, res) => getReactions(req as AuthRequest, res))
-);
-router.post(
-  '/:boardType/:id/reactions',
-  authenticate as RequestHandler,
-  checkReadAccess as RequestHandler,
-  asyncHandler((req, res) => toggleReaction(req as AuthRequest, res))
 );
 
 // 읽음 처리
@@ -159,11 +148,11 @@ router.post(
   asyncHandler((req, res) => markAsRead(req as AuthRequest, res))
 );
 
-// 게시글 고정 (admin 또는 해당 게시판 담당자 — 서비스 레이어에서 권한 체크)
+// 게시글 고정 (쓰기 권한 이상 필요)
 router.patch(
   '/:boardType/:id/pin',
   authenticate as RequestHandler,
-  checkReadAccess as RequestHandler,
+  checkWriteAccess as RequestHandler,
   asyncHandler((req, res) => togglePin(req as AuthRequest, res))
 );
 

@@ -8,7 +8,8 @@ import { AdminFormField, adminInputCls } from '../common/AdminFormField';
 import { toast } from '../../../utils/toast';
 
 export const BoardManagement = () => {
-  const { boards, fetchBoards, addBoard, updateBoard, deleteBoard, loading } = useBoardManagement();
+  const { boards, fetchBoards, addBoard, updateBoard, deleteBoard, loading, dataLoaded } =
+    useBoardManagement();
 
   useEffect(() => {
     fetchBoards();
@@ -70,14 +71,15 @@ export const BoardManagement = () => {
     }
   };
 
-  if (loading) return <LoadingSpinner message="게시판 목록을 불러오는 중..." />;
+  // 최초 로드 시에만 전체 스피너 — 수정/삭제 후 재조회 시 목록이 깜빡이지 않도록
+  if (loading && !dataLoaded) return <LoadingSpinner message="게시판 목록을 불러오는 중..." />;
 
   return (
     <div className="space-y-8">
       <ConfirmationModal
         open={!!confirmDeleteId}
         title="게시판을 삭제하시겠습니까?"
-        message="게시판을 삭제하면 관련 권한 설정도 함께 삭제됩니다."
+        message="게시판을 삭제하면 해당 게시판의 모든 게시글, 댓글, 첨부파일 및 권한 설정이 영구적으로 삭제됩니다."
         confirmLabel="삭제"
         onConfirm={() => confirmDeleteId && handleDeleteBoard(confirmDeleteId)}
         onCancel={() => setConfirmDeleteId(null)}

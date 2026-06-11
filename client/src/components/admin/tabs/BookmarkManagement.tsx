@@ -15,6 +15,7 @@ import { toast } from '../../../utils/toast';
 export function BookmarkManagement() {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dataLoaded, setDataLoaded] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({ name: '', url: '', icon: '' });
   const [editFormData, setEditFormData] = useState<Bookmark | null>(null);
@@ -32,6 +33,7 @@ export function BookmarkManagement() {
       toast.error('북마크를 불러오지 못했습니다.');
     } finally {
       setLoading(false);
+      setDataLoaded(true);
     }
   };
 
@@ -108,7 +110,8 @@ export function BookmarkManagement() {
     }
   };
 
-  if (loading) return <LoadingSpinner message="북마크를 불러오는 중..." />;
+  // 최초 로드 시에만 전체 스피너 — 추가/수정/삭제 후 재조회 시 목록이 깜빡이지 않도록
+  if (loading && !dataLoaded) return <LoadingSpinner message="북마크를 불러오는 중..." />;
 
   return (
     <div className="space-y-8">

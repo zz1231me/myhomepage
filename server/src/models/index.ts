@@ -16,7 +16,6 @@ import { SecurityLog } from './SecurityLog';
 import { PostLike } from './PostLike';
 import { Notification } from './Notification';
 import { PostBookmark } from './PostBookmark';
-import { PostReaction } from './PostReaction';
 import { PostRead } from './PostRead';
 import { Tag } from './Tag';
 import { PostTag } from './PostTag';
@@ -28,7 +27,6 @@ import { LoginHistory } from './LoginHistory';
 import { AuditLog } from './AuditLog';
 import { UserSession } from './UserSession';
 import { Report } from './Report';
-import { CommentReaction } from './CommentReaction';
 import IpRule from './IpRule';
 import { BoardManager } from './BoardManager';
 
@@ -45,7 +43,7 @@ User.hasMany(Comment, { foreignKey: 'UserId', as: 'comments' });
 Comment.belongsTo(User, { foreignKey: 'UserId', as: 'user' });
 
 // User ↔ Event
-User.hasMany(Event, { foreignKey: 'UserId', as: 'events' });
+User.hasMany(Event, { foreignKey: 'UserId', as: 'events', onDelete: 'CASCADE', hooks: true });
 Event.belongsTo(User, { foreignKey: 'UserId', as: 'user' });
 
 // User ↔ Role
@@ -189,8 +187,8 @@ EventPermission.belongsTo(Role, {
 Post.hasMany(PostLike, { foreignKey: 'PostId', as: 'likes', onDelete: 'CASCADE', hooks: true });
 PostLike.belongsTo(Post, { foreignKey: 'PostId', as: 'post' });
 
-// User ↔ PostLike
-User.hasMany(PostLike, { foreignKey: 'UserId', as: 'postLikes' });
+// User ↔ PostLike — User hard-delete 시 행위 기록도 함께 제거 (paranoid가 기본이지만 force-destroy 대비)
+User.hasMany(PostLike, { foreignKey: 'UserId', as: 'postLikes', onDelete: 'CASCADE', hooks: true });
 PostLike.belongsTo(User, { foreignKey: 'UserId', as: 'user' });
 
 // ========================================
@@ -207,7 +205,12 @@ Post.hasMany(PostBookmark, {
 PostBookmark.belongsTo(Post, { foreignKey: 'PostId', as: 'post' });
 
 // User ↔ PostBookmark
-User.hasMany(PostBookmark, { foreignKey: 'UserId', as: 'postBookmarks' });
+User.hasMany(PostBookmark, {
+  foreignKey: 'UserId',
+  as: 'postBookmarks',
+  onDelete: 'CASCADE',
+  hooks: true,
+});
 PostBookmark.belongsTo(User, { foreignKey: 'UserId', as: 'user' });
 
 // ========================================
@@ -215,28 +218,25 @@ PostBookmark.belongsTo(User, { foreignKey: 'UserId', as: 'user' });
 // ========================================
 
 // User ↔ Notification
-User.hasMany(Notification, { foreignKey: 'userId', as: 'notifications' });
-Notification.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-
-// ========================================
-// PostReaction 관련 관계
-// ========================================
-Post.hasMany(PostReaction, {
-  foreignKey: 'PostId',
-  as: 'reactions',
+User.hasMany(Notification, {
+  foreignKey: 'userId',
+  as: 'notifications',
   onDelete: 'CASCADE',
   hooks: true,
 });
-PostReaction.belongsTo(Post, { foreignKey: 'PostId', as: 'post' });
-User.hasMany(PostReaction, { foreignKey: 'UserId', as: 'postReactions' });
-PostReaction.belongsTo(User, { foreignKey: 'UserId', as: 'user' });
+Notification.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
 // ========================================
 // PostRead 관련 관계
 // ========================================
 Post.hasMany(PostRead, { foreignKey: 'PostId', as: 'reads', onDelete: 'CASCADE', hooks: true });
 PostRead.belongsTo(Post, { foreignKey: 'PostId', as: 'post' });
-User.hasMany(PostRead, { foreignKey: 'UserId', as: 'postReads' });
+User.hasMany(PostRead, {
+  foreignKey: 'UserId',
+  as: 'postReads',
+  onDelete: 'CASCADE',
+  hooks: true,
+});
 PostRead.belongsTo(User, { foreignKey: 'UserId', as: 'user' });
 
 // ========================================
@@ -271,19 +271,6 @@ Tag.belongsToMany(Post, {
 // AuditLog — 관리자 작업 감사 로그 (adminId는 앱 레벨만 관리)
 // ========================================
 // adminId/targetId는 문자열로만 저장 — 사용자 삭제 후에도 기록 유지
-
-// ========================================
-// CommentReaction — 댓글 리액션
-// ========================================
-Comment.hasMany(CommentReaction, {
-  foreignKey: 'CommentId',
-  as: 'reactions',
-  onDelete: 'CASCADE',
-  hooks: true,
-});
-CommentReaction.belongsTo(Comment, { foreignKey: 'CommentId', as: 'comment' });
-User.hasMany(CommentReaction, { foreignKey: 'UserId', as: 'commentReactions' });
-CommentReaction.belongsTo(User, { foreignKey: 'UserId', as: 'user' });
 
 // ========================================
 // Report — 콘텐츠 신고
@@ -390,7 +377,6 @@ export {
   PostLike,
   Notification,
   PostBookmark,
-  PostReaction,
   PostRead,
   Tag,
   PostTag,
@@ -402,7 +388,6 @@ export {
   AuditLog,
   UserSession,
   Report,
-  CommentReaction,
   IpRule,
   BoardManager,
 };

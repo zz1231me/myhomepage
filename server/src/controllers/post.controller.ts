@@ -8,6 +8,7 @@ import {
   sendForbidden,
   sendValidationError,
 } from '../utils/response';
+import fs from 'fs/promises';
 import { logInfo, logError, logSuccess } from '../utils/logger';
 import { postService } from '../services/post.service';
 import { securityLogService } from '../services/securityLog.service';
@@ -23,6 +24,8 @@ interface PostLike {
   UserId: string;
   boardType: string;
   viewCount: number;
+  isPinned: boolean;
+  version: number;
   isSecret: boolean;
   secretType: string | null;
   isEncrypted: boolean;
@@ -50,10 +53,13 @@ function formatPostResponse(
     UserId: post.UserId,
     boardType: post.boardType,
     viewCount: post.viewCount || 0,
+    isPinned: post.isPinned || false,
+    version: post.version ?? 0,
     isSecret: post.isSecret || false,
     secretType: post.secretType || null,
     isEncrypted: post.isEncrypted || false,
-    secretSalt: post.secretSalt || null,
+    // secretSalt는 E2EE 게시글에서만 노출 (일반 게시글에서 유출 방지)
+    secretSalt: post.isEncrypted ? post.secretSalt || null : null,
     attachments,
     user,
   };
@@ -94,6 +100,7 @@ export const getPosts = async (req: AuthRequest, res: Response): Promise<void> =
   const tagIds = rawTags
     ? rawTags
         .split(',')
+        .slice(0, 20)
         .map(t => parseInt(t.trim(), 10))
         .filter(n => Number.isFinite(n) && n > 0)
     : undefined;
@@ -111,15 +118,17 @@ export const getPosts = async (req: AuthRequest, res: Response): Promise<void> =
 export const getPostById = async (req: AuthRequest, res: Response): Promise<void> => {
   const { boardType, id } = req.params;
   const userId = req.user?.id;
+  const userRole = req.user?.role;
 
   try {
-    const result = await postService.getPostById(id, userId);
+    // boardType을 서비스에 전달 — 조회수 증가 전에 boardType 검증되어 viewCount 인플레이션 차단
+    const result = await postService.getPostById(id, userId, false, userRole, boardType);
 
     if (!result) {
       return sendNotFound(res, '게시글');
     }
 
-    // 비밀글 잠금 상태
+    // 비밀글 잠금 상태 (서비스에서 이미 boardType 검증 완료, 방어적 재확인)
     if (result.isLocked) {
       if (result.boardType !== boardType) return sendNotFound(res, '게시글');
       sendSuccess(res, {
@@ -140,11 +149,16 @@ export const getPostById = async (req: AuthRequest, res: Response): Promise<void
     if (result.post.boardType !== boardType) return sendNotFound(res, '게시글');
 
     let htmlContent = '';
-    try {
-      htmlContent = renderTiptapToHTML(result.post.content);
-    } catch (error) {
-      logError('JSON → HTML 변환 실패', error, { postId: id });
-      htmlContent = '<p>콘텐츠를 표시할 수 없습니다.</p>';
+    // E2EE 암호화 게시글은 서버가 복호화 불가 — HTML 변환 없이 암호문 그대로 반환
+    if (result.post.isEncrypted) {
+      htmlContent = result.post.content;
+    } else {
+      try {
+        htmlContent = renderTiptapToHTML(result.post.content);
+      } catch (error) {
+        logError('JSON → HTML 변환 실패', error, { postId: id });
+        htmlContent = '<p>콘텐츠를 표시할 수 없습니다.</p>';
+      }
     }
 
     sendSuccess(
@@ -172,12 +186,12 @@ export const verifySecretPost = async (req: AuthRequest, res: Response): Promise
   const ipAddress =
     (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || 'unknown';
 
-  if (!password) {
+  if (typeof password !== 'string' || !password) {
     return sendValidationError(res, 'password', '비밀번호를 입력해주세요.');
   }
 
   try {
-    const result = await postService.verifySecretPost(id, password);
+    const result = await postService.verifySecretPost(id, password, boardType);
 
     // ✅ 비밀글 인증 성공 보안 로그
     securityLogService
@@ -205,7 +219,6 @@ export const verifySecretPost = async (req: AuthRequest, res: Response): Promise
       }
     }
 
-    if (result.post.boardType !== boardType) return sendNotFound(res, '게시글');
     sendSuccess(
       res,
       formatPostResponse(
@@ -260,6 +273,12 @@ export const createPost = async (req: AuthRequest, res: Response): Promise<void>
   const files = req.files as Express.Multer.File[];
   const { id: userId, name: userName } = req.user;
 
+  // 타입 방어: title/content가 문자열이 아니면(배열/객체 주입 등) 서비스의 .trim()에서
+  // 크래시(500)가 나므로 400으로 차단한다.
+  if (typeof title !== 'string' || typeof content !== 'string') {
+    return sendValidationError(res, 'title', '제목과 내용은 문자열이어야 합니다.');
+  }
+
   try {
     const post = await postService.createPost({
       title,
@@ -278,8 +297,28 @@ export const createPost = async (req: AuthRequest, res: Response): Promise<void>
     });
 
     logSuccess('게시글 생성 완료', { userId, postId: post.id, boardType });
-    sendSuccess(res, post, '게시글이 생성되었습니다.', 201);
+    // 응답에서 secretUserIds/secretPassword/secretSalt 등 민감 필드 제외 (최소 정보만 반환)
+    sendSuccess(
+      res,
+      {
+        id: post.id,
+        title: post.title,
+        boardType: post.boardType,
+        isSecret: post.isSecret,
+        secretType: post.secretType,
+        isPinned: post.isPinned,
+        version: post.version ?? 0,
+        createdAt: post.createdAt,
+        updatedAt: post.updatedAt,
+      },
+      '게시글이 생성되었습니다.',
+      201
+    );
   } catch (err) {
+    // DB/서비스 실패 시 업로드된 파일 정리 (고아 파일 방지)
+    if (files && files.length > 0) {
+      await Promise.all(files.map(f => fs.unlink(f.path).catch(() => {})));
+    }
     const appErr = toAppError(err);
     if (appErr?.statusCode === 400) {
       return sendValidationError(res, 'content', appErr.message);
@@ -294,12 +333,18 @@ export const createPost = async (req: AuthRequest, res: Response): Promise<void>
 export const updatePost = async (req: AuthRequest, res: Response): Promise<void> => {
   const body = req.body;
   const files = req.files as Express.Multer.File[];
-  const { id } = req.params;
+  const { boardType, id } = req.params;
   const { id: userId, role: userRole } = req.user;
+
+  // 타입 방어: title/content가 문자열이 아니면 서비스의 .trim()에서 크래시(500) → 400 차단
+  if (typeof body.title !== 'string' || typeof body.content !== 'string') {
+    return sendValidationError(res, 'title', '제목과 내용은 문자열이어야 합니다.');
+  }
 
   try {
     const updatedPost = await postService.updatePost({
       postId: id,
+      expectedBoardType: boardType,
       title: body.title,
       content: body.content,
       userId,
@@ -319,12 +364,34 @@ export const updatePost = async (req: AuthRequest, res: Response): Promise<void>
       secretUserIds: Array.isArray(body.secretUserIds) ? body.secretUserIds : undefined,
       isEncrypted: body.isEncrypted === true || body.isEncrypted === 'true',
       secretSalt: typeof body.secretSalt === 'string' ? body.secretSalt : undefined,
-      version: body.version !== undefined ? Number(body.version) : undefined,
+      version: (() => {
+        if (body.version === undefined) return undefined;
+        const v = Number(body.version);
+        return isNaN(v) ? undefined : v;
+      })(),
     });
 
     logSuccess('게시글 수정 완료', { userId, postId: id });
-    sendSuccess(res, updatedPost, '게시글이 수정되었습니다.');
+    // 응답에서 secretUserIds/secretPassword/secretSalt 등 민감 필드 제외
+    sendSuccess(
+      res,
+      {
+        id: updatedPost.id,
+        title: updatedPost.title,
+        boardType: updatedPost.boardType,
+        isSecret: updatedPost.isSecret,
+        secretType: updatedPost.secretType,
+        isPinned: updatedPost.isPinned,
+        version: updatedPost.version ?? 0,
+        updatedAt: updatedPost.updatedAt,
+      },
+      '게시글이 수정되었습니다.'
+    );
   } catch (err) {
+    // DB/서비스 실패 시 새로 업로드된 파일 정리 (고아 파일 방지)
+    if (files && files.length > 0) {
+      await Promise.all(files.map(f => fs.unlink(f.path).catch(() => {})));
+    }
     const appErr = toAppError(err);
     if (appErr?.statusCode === 404) return sendNotFound(res, '게시글');
     if (appErr?.statusCode === 403) return sendForbidden(res, appErr.message);
@@ -341,11 +408,11 @@ export const updatePost = async (req: AuthRequest, res: Response): Promise<void>
 // ✅ 게시글 삭제
 // 주의: boardAccess 미들웨어(checkDeleteAccess)가 이미 게시판 삭제 권한을 확인함
 export const deletePost = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const { boardType, id } = req.params;
   const { id: userId, role: userRole } = req.user;
 
   try {
-    await postService.deletePost(id, userId, userRole);
+    await postService.deletePost(id, userId, userRole, boardType);
     logSuccess('게시글 삭제 완료', { userId, postId: id });
     sendSuccess(res, null, '게시글이 삭제되었습니다.');
   } catch (err) {

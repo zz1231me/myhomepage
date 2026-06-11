@@ -25,7 +25,6 @@ export const useContentImageHandler = () => {
   const timeoutRef = useRef<TimerRef | null>(null);
   const debounceTimerRef = useRef<TimerRef | null>(null);
   const closeTimerRef = useRef<TimerRef | null>(null);
-  const isInitializedRef = useRef(false);
   const processedImagesRef = useRef<Set<HTMLImageElement>>(new Set());
   const isMountedRef = useRef(true);
 
@@ -183,9 +182,24 @@ export const useContentImageHandler = () => {
       // CSS 클래스 즉시 적용 (인라인 스타일 제거 — CSS 클래스가 모든 스타일 처리)
       img.classList.add('content-image-clickable');
 
+      // 키보드 접근성 설정
+      img.setAttribute('role', 'button');
+      img.setAttribute('tabindex', '0');
+      if (!img.getAttribute('aria-label')) {
+        img.setAttribute('aria-label', img.alt ? `이미지 확대: ${img.alt}` : '이미지 확대');
+      }
+
       // 이벤트 핸들러 생성
       const clickHandler = createImageClickHandler(img);
       const { showTooltip, hideTooltip, cleanupTooltip } = createTooltipHandlers(img);
+
+      // 키보드 핸들러 (Enter/Space로 클릭 동작 수행)
+      const keydownHandler = (e: KeyboardEvent) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          clickHandler(e as unknown as Event);
+        }
+      };
 
       // 호버 효과 핸들러
       const mouseEnterHandler = (_e: Event) => {
@@ -202,16 +216,20 @@ export const useContentImageHandler = () => {
 
       // 이벤트 리스너 등록
       img.addEventListener('click', clickHandler, { passive: false });
+      img.addEventListener('keydown', keydownHandler);
       img.addEventListener('mouseenter', mouseEnterHandler, { passive: true });
       img.addEventListener('mouseleave', mouseLeaveHandler, { passive: true });
 
       // 전역 클린업 함수 등록
       const globalCleanup = () => {
         img.removeEventListener('click', clickHandler);
+        img.removeEventListener('keydown', keydownHandler);
         img.removeEventListener('mouseenter', mouseEnterHandler);
         img.removeEventListener('mouseleave', mouseLeaveHandler);
         cleanupTooltip();
         img.classList.remove('content-image-clickable', 'content-image-hover');
+        img.removeAttribute('role');
+        img.removeAttribute('tabindex');
         img.removeAttribute('data-image-enhanced');
         processedImagesRef.current.delete(img);
         globalCleanupMap.delete(img);
@@ -233,32 +251,34 @@ export const useContentImageHandler = () => {
       '.content', // 일반 콘텐츠 (폴백)
     ];
 
-    let viewerContainer: Element | null = null;
-
-    // 우선순위대로 컨테이너 찾기
+    // ✅ 본문(.ck-content-view)과 댓글(.ck-content-view text-sm ...) 등 동일 클래스가
+    //    여러 곳에 동시에 존재할 수 있으므로 querySelectorAll로 모든 컨테이너를 수집한다.
+    //    이전엔 첫 번째 컨테이너만 잡혀서 댓글 영역의 이미지에 lightbox가 적용되지 않았다.
+    const containers: Element[] = [];
     for (const selector of contentContainers) {
       try {
-        viewerContainer = document.querySelector(selector);
-        if (viewerContainer) {
-          if (import.meta.env.DEV) console.info(`✅ 콘텐츠 컨테이너 발견: ${selector}`);
-          break;
-        }
+        document.querySelectorAll(selector).forEach(el => containers.push(el));
       } catch (error) {
         if (import.meta.env.DEV) console.warn(`⚠️ 선택자 오류: ${selector}`, error);
       }
     }
 
-    if (!viewerContainer) {
+    if (containers.length === 0) {
+      // 본문/댓글 컨테이너를 찾지 못한 경우는 PostDetail/위키 등이 마운트되지 않은 상태.
+      // document.body 전체를 스캔하면 헤더/사이드바의 모든 이미지에 클릭 핸들러가
+      // 부착되어 의도치 않은 UX(아바타·로고 클릭 시 확대)가 발생하므로 early return.
       if (import.meta.env.DEV)
-        console.info('⚠️ 콘텐츠 컨테이너를 찾을 수 없음. 전체 document에서 이미지 검색');
-      // 폴백: document 전체에서 이미지 검색
-      viewerContainer = document.body;
+        console.info('⚠️ 콘텐츠 컨테이너를 찾을 수 없음 — 이미지 핸들러 부착 생략');
+      return;
     }
 
-    // 새로운 이미지만 선택 (이미지 링크 내부 이미지 제외)
-    const allImages = viewerContainer.querySelectorAll(
-      'img:not([data-image-enhanced])'
-    ) as NodeListOf<HTMLImageElement>;
+    // 모든 컨테이너에서 이미지 수집
+    const allImages: HTMLImageElement[] = [];
+    containers.forEach(container => {
+      container
+        .querySelectorAll<HTMLImageElement>('img:not([data-image-enhanced])')
+        .forEach(img => allImages.push(img));
+    });
 
     // 이미지 링크·에디터 UI 내부 이미지 제외
     // ✅ naturalWidth 체크는 여기서 하지 않음 — 미로드 이미지(naturalWidth=0)도 통과시켜
@@ -286,15 +306,26 @@ export const useContentImageHandler = () => {
       if (img.complete) {
         addHandlerToImage(img);
       } else {
-        img.addEventListener('load', () => addHandlerToImage(img), { once: true });
+        // ✅ 언마운트 시 클린업 가능하도록 핸들러를 globalCleanupMap에 등록
+        const onLoad = () => {
+          globalCleanupMap.delete(img); // load 핸들러 등록 항목 제거
+          addHandlerToImage(img);
+        };
+        img.addEventListener('load', onLoad, { once: true });
+        // 언마운트 시 load 리스너 제거를 위해 임시 클린업 등록
+        globalCleanupMap.set(img, () => {
+          img.removeEventListener('load', onLoad);
+          globalCleanupMap.delete(img);
+        });
       }
     });
   }, [addHandlerToImage]);
 
   // 메인 useEffect
   useEffect(() => {
-    if (isInitializedRef.current) return;
-    isInitializedRef.current = true;
+    // ⚠️ isInitializedRef는 cleanup에서 false로 되돌리므로 Strict Mode의 mount→cleanup→mount
+    //    동기 사이클에서 가드 역할을 하지 못한다. 가드를 제거하고, 각 mount에서
+    //    이전 cleanup이 처리하지 못한 잔여 상태(이미지 enhance flag)를 초기화한 뒤 진입한다.
     isMountedRef.current = true;
     const processedImages = processedImagesRef.current;
 
@@ -349,7 +380,7 @@ export const useContentImageHandler = () => {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['src', 'class'],
+      attributeFilter: ['src'], // ✅ 'class' 제거 — class 변경(hover 등)은 처리 불필요, 불필요한 debounce 방지
     });
 
     // Cleanup 함수
@@ -397,8 +428,6 @@ export const useContentImageHandler = () => {
           cleanup();
         }
       });
-
-      isInitializedRef.current = false;
 
       if (import.meta.env.DEV) console.info('🖼️ useContentImageHandler 클린업 완료');
     };

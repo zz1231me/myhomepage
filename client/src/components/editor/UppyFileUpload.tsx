@@ -55,8 +55,20 @@ const UppyFileUpload: React.FC<UppyFileUploadProps> = ({
 
   useEffect(() => {
     const syncFiles = () => setUppyFiles([...uppy.getFiles()]);
-    const onRestrictionFailed = (_file: UppyFile<Meta, Body> | undefined, err: Error) =>
-      setLocalError(err.message);
+    // Uppy 기본 메시지는 영어이므로 한국어로 통일.
+    // 자체 검증(addFiles)에서 대부분의 경우를 처리하므로 여기는 백업.
+    const onRestrictionFailed = (_file: UppyFile<Meta, Body> | undefined, err: Error) => {
+      const msg = err?.message ?? '';
+      if (msg.includes('exceeds maximum allowed size') || msg.includes('file size')) {
+        setLocalError(
+          `파일 크기가 최대 허용 크기(${(maxFileSize / 1024 / 1024).toFixed(0)}MB)를 초과합니다.`
+        );
+      } else if (msg.includes('maxNumberOfFiles')) {
+        setLocalError(`파일은 최대 ${maxFiles}개까지 업로드할 수 있습니다.`);
+      } else {
+        setLocalError('파일을 추가할 수 없습니다.');
+      }
+    };
 
     uppy.on('file-added', syncFiles);
     uppy.on('file-removed', syncFiles);
@@ -68,7 +80,7 @@ const UppyFileUpload: React.FC<UppyFileUploadProps> = ({
       uppy.off('restriction-failed', onRestrictionFailed);
       uppy.destroy();
     };
-  }, [uppy]);
+  }, [uppy, maxFileSize, maxFiles]);
 
   const addFiles = useCallback(
     (fileList: FileList | null) => {
@@ -77,24 +89,36 @@ const UppyFileUpload: React.FC<UppyFileUploadProps> = ({
 
       const incoming = Array.from(fileList);
 
-      // Block oversized files
-      const oversized = incoming.filter(f => f.size > maxFileSize);
-      if (oversized.length > 0) {
-        setLocalError(
-          `파일 크기는 ${Math.round(maxFileSize / 1024 / 1024)}MB를 초과할 수 없습니다: ${oversized.map(f => f.name).join(', ')}`
-        );
-        return;
+      // oversized/valid 분리 — 일부 파일이 크기 초과여도 나머지 정상 파일은 허용 (fix #78)
+      const oversized: File[] = [];
+      const validBySize: File[] = [];
+      for (const f of incoming) {
+        if (f.size > maxFileSize) oversized.push(f);
+        else validBySize.push(f);
       }
 
-      // Check total count
-      const total = existingFiles.length + files.length + incoming.length;
-      if (total > maxFiles) {
-        setLocalError(`최대 ${maxFiles}개의 파일만 첨부할 수 있습니다.`);
-        return;
+      // 잔여 슬롯까지만 받고 나머지는 거부 (모두 거부하면 UX 나쁨)
+      const remainingSlots = Math.max(0, maxFiles - existingFiles.length - files.length);
+      const accepted = validBySize.slice(0, remainingSlots);
+      const overCount = validBySize.length - accepted.length;
+
+      const errors: string[] = [];
+      if (oversized.length > 0) {
+        errors.push(
+          `파일 크기 ${Math.round(maxFileSize / 1024 / 1024)}MB 초과: ${oversized
+            .map(f => f.name)
+            .join(', ')}`
+        );
       }
+      if (overCount > 0) {
+        errors.push(`최대 ${maxFiles}개 제한으로 ${overCount}개 파일이 추가되지 않았습니다.`);
+      }
+      if (errors.length > 0) setLocalError(errors.join(' / '));
+
+      if (accepted.length === 0) return;
 
       // Register with Uppy for UI tracking
-      incoming.forEach(file => {
+      accepted.forEach(file => {
         try {
           uppy.addFile({ name: file.name, type: file.type, data: file });
         } catch {
@@ -102,7 +126,7 @@ const UppyFileUpload: React.FC<UppyFileUploadProps> = ({
         }
       });
 
-      onNewFilesAdd(incoming);
+      onNewFilesAdd(accepted);
     },
     [uppy, existingFiles.length, files.length, maxFiles, maxFileSize, onNewFilesAdd]
   );

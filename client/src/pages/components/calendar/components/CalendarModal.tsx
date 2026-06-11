@@ -153,6 +153,7 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
               }
             >
               <EventForm
+                key={`${mode}-${selectedEvent?.id ?? 'new'}`}
                 formData={formData}
                 onSubmit={onSubmit}
                 onChange={onFormChange}

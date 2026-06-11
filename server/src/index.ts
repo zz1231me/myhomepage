@@ -27,6 +27,7 @@ import { sendSuccess, sendError } from './utils/response';
 import { swaggerSpec } from './config/swagger';
 
 // ✅ 미들웨어
+import { authenticate } from './middlewares/auth.middleware';
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware';
 import { dynamicRateLimit } from './middlewares/dynamicRateLimit';
 import { maintenanceMiddleware } from './middlewares/maintenance.middleware';
@@ -85,6 +86,7 @@ import { errorLogService } from './services/errorLog.service';
 import { loginHistoryService } from './services/loginHistory.service';
 import { auditLogService } from './services/auditLog.service';
 import { userSessionService } from './services/userSession.service';
+import { getIpRuleCache } from './services/ipRule.service';
 import { loadSettingsCache, getSettings } from './utils/settingsCache';
 
 /**
@@ -122,6 +124,68 @@ async function runLogCleanup(): Promise<void> {
 
 const app = express();
 const PORT = env.PORT;
+
+// ============================================================================
+// ✅ SQLite 마이그레이션 헬퍼 — 모델에 추가된 신규 컬럼을 누락 없이 보강
+// ============================================================================
+// SQLite는 sync({alter:true})가 FK 제약 + backup/drop 패턴으로 실패할 수 있어
+// 운영용 alter는 쓰지 못한다. 대신 모델 정의를 기준으로 누락된 컬럼만
+// ALTER TABLE ADD COLUMN으로 직접 추가한다. 이미 있는 컬럼은 SQLITE_ERROR로 reject되어
+// catch에서 무시. 컬럼 추가만 안전(SQLite는 DROP/RENAME 컬럼 제약 있음).
+async function ensureSiteSettingsColumns() {
+  const { sequelize } = await import('./config/sequelize');
+  const { QueryTypes } = await import('sequelize');
+
+  // 모델 정의의 attributes에서 모든 컬럼 메타(field, type, defaultValue) 추출
+  const { SiteSettings } = await import('./models/SiteSettings');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawAttributes = (SiteSettings as any).rawAttributes as Record<string, any>;
+
+  // 현재 DB의 site_settings 컬럼 목록 조회
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const existingCols = (await sequelize.query('PRAGMA table_info(site_settings);', {
+    type: QueryTypes.SELECT,
+  })) as any[];
+  const existingNames = new Set(existingCols.map(c => String(c.name)));
+
+  // 누락된 컬럼만 ALTER TABLE ADD COLUMN
+  for (const key of Object.keys(rawAttributes)) {
+    const attr = rawAttributes[key];
+    const fieldName: string = attr.field ?? key;
+    if (existingNames.has(fieldName)) continue;
+    if (fieldName === 'id' || fieldName === 'created_at' || fieldName === 'updated_at') continue;
+
+    // 컬럼 타입 결정
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const type = (attr.type as any)?.key ?? 'TEXT';
+    let sqlType = 'TEXT';
+    if (type === 'INTEGER') sqlType = 'INTEGER';
+    else if (type === 'BOOLEAN' || type === 'TINYINT') sqlType = 'INTEGER';
+    else if (type === 'DATE') sqlType = 'DATETIME';
+    else if (type === 'STRING') sqlType = 'TEXT';
+    else if (type === 'TEXT') sqlType = 'TEXT';
+
+    // 기본값
+    let defaultClause = '';
+    const def = attr.defaultValue;
+    if (def !== undefined && def !== null) {
+      if (typeof def === 'boolean') defaultClause = ` DEFAULT ${def ? 1 : 0}`;
+      else if (typeof def === 'number') defaultClause = ` DEFAULT ${def}`;
+      else if (typeof def === 'string') defaultClause = ` DEFAULT ${JSON.stringify(def)}`;
+    }
+
+    const nullClause = attr.allowNull === false ? ' NOT NULL' : '';
+    const sql = `ALTER TABLE site_settings ADD COLUMN \`${fieldName}\` ${sqlType}${nullClause}${defaultClause};`;
+    try {
+      await sequelize.query(sql);
+      logger.info(`➕ site_settings 컬럼 추가: ${fieldName}`);
+    } catch (err) {
+      // 이미 존재하거나 기타 에러는 경고만
+      const errMsg = err instanceof Error ? err.message : String(err);
+      logger.warn(`site_settings 컬럼 추가 실패 (이미 있을 가능성): ${fieldName} - ${errMsg}`);
+    }
+  }
+}
 
 // ============================================================================
 // ✅ 초기 데이터 자동 생성
@@ -259,7 +323,15 @@ app.use(
         imgSrc: ["'self'", 'data:', 'https:', 'blob:'],
         fontSrc: ["'self'", 'data:'],
         connectSrc: ["'self'"],
-        frameSrc: ["'none'"],
+        // 동영상 임베드 신뢰 호스트만 허용 — client/server sanitizer allowlist와 동기화
+        frameSrc: [
+          "'self'",
+          'https://www.youtube.com',
+          'https://youtube.com',
+          'https://www.youtube-nocookie.com',
+          'https://youtube-nocookie.com',
+          'https://player.vimeo.com',
+        ],
         objectSrc: ["'none'"],
         upgradeInsecureRequests: env.NODE_ENV === 'production' ? [] : null,
       },
@@ -385,21 +457,36 @@ if (env.NODE_ENV === 'development') {
 
 // ✅ body 크기 제한을 런타임에 settingsCache에서 읽어 동적으로 적용
 //    관리자가 maxFileSizeMb를 변경해도 재시작 없이 즉시 반영됨 (lazy wrapper 패턴)
+//    매 요청마다 인스턴스를 새로 생성하면 raw-body 등 의존성이 매번 재초기화되어 비용 큼 →
+//    현재 limitMb를 기억하고 변경 시에만 새 미들웨어 인스턴스 생성하는 메모이제이션 적용.
+let _jsonLimitMb = -1;
+let _jsonMiddleware: express.RequestHandler | null = null;
+let _urlLimitMb = -1;
+let _urlMiddleware: express.RequestHandler | null = null;
+
 app.use((req, res, next) => {
   const limitMb = (getSettings().maxFileSizeMb ?? 100) + 10; // 10MB 여유 버퍼
-  return express.json({ limit: `${limitMb}mb`, strict: true, type: 'application/json' })(
-    req,
-    res,
-    next
-  );
+  if (limitMb !== _jsonLimitMb || !_jsonMiddleware) {
+    _jsonLimitMb = limitMb;
+    _jsonMiddleware = express.json({
+      limit: `${limitMb}mb`,
+      strict: true,
+      type: 'application/json',
+    });
+  }
+  return _jsonMiddleware(req, res, next);
 });
 app.use((req, res, next) => {
   const limitMb = (getSettings().maxFileSizeMb ?? 100) + 10;
-  return express.urlencoded({ extended: true, limit: `${limitMb}mb`, parameterLimit: 10000 })(
-    req,
-    res,
-    next
-  );
+  if (limitMb !== _urlLimitMb || !_urlMiddleware) {
+    _urlLimitMb = limitMb;
+    _urlMiddleware = express.urlencoded({
+      extended: true,
+      limit: `${limitMb}mb`,
+      parameterLimit: 10000,
+    });
+  }
+  return _urlMiddleware(req, res, next);
 });
 app.use(cookieParser());
 
@@ -448,19 +535,6 @@ app.use('/api/tags', tagRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/board-managers', boardManagerRoutes);
 
-const fileStaticOptions = {
-  maxAge: env.NODE_ENV === 'production' ? '1y' : 0,
-  etag: true,
-  lastModified: true,
-  index: false,
-  setHeaders: (res: express.Response) => {
-    // ✅ 일반 파일은 무조건 다운로드 (실행 방지)
-    res.set('Content-Disposition', 'attachment');
-    res.set('X-Content-Type-Options', 'nosniff');
-    res.set('X-Download-Options', 'noopen');
-  },
-};
-
 const imageStaticOptions = {
   maxAge: env.NODE_ENV === 'production' ? '1y' : 0,
   etag: true,
@@ -475,12 +549,13 @@ const imageStaticOptions = {
 
 app.use(
   '/uploads/images',
+  authenticate as express.RequestHandler,
   express.static(path.resolve(__dirname, '../uploads/images'), imageStaticOptions)
 );
-app.use(
-  '/uploads/files',
-  express.static(path.resolve(__dirname, '../uploads/files'), fileStaticOptions)
-);
+// ⚠️ 첨부파일(uploads/files)은 정적 서빙하지 않는다.
+//    정적 서빙은 authenticate만 거쳐 게시판 읽기 권한/비밀글 접근 검증을 우회하므로(IDOR),
+//    모든 첨부 다운로드는 인가 로직이 있는 GET /api/uploads/download/:filename 으로만 제공한다.
+//    (fileStaticOptions의 Content-Disposition:attachment 등 보안 헤더는 해당 라우트에서 동일하게 설정됨)
 app.use(
   '/uploads/avatars',
   express.static(path.resolve(__dirname, '../uploads/avatars'), imageStaticOptions)
@@ -683,10 +758,17 @@ const startServer = async () => {
     await initializeDatabase();
 
     logger.info('🔄 테이블 동기화 시작...');
+    // SQLite alter:true는 column 변경 시 backup→drop→rename 패턴이라 FK 제약에서 실패 가능.
+    // 그래서 SQLite는 alter:false로 유지하고, 누락된 컬럼은 아래 ensureSiteSettingsColumns()로 직접 ADD.
     const syncOptions =
       env.DB_TYPE === 'sqlite' ? { alter: false, force: false } : { alter: true, force: false };
     await sequelize.sync(syncOptions);
     logger.info('✅ 테이블 동기화 완료');
+
+    // SQLite 환경에서만: 모델에 추가된 신규 컬럼을 ALTER TABLE ADD COLUMN으로 보강
+    if (env.DB_TYPE === 'sqlite') {
+      await ensureSiteSettingsColumns();
+    }
 
     await initializeDefaultData();
 
@@ -722,6 +804,22 @@ const startServer = async () => {
         '📌 기본 관리자 계정: ID=admin (비밀번호는 환경변수 ADMIN_DEFAULT_PASSWORD 참조)'
       );
       logger.warn('   ⚠️  보안을 위해 admin 비밀번호를 반드시 변경하세요!');
+
+      // 프로덕션에서 관리자 IP 화이트리스트가 비어 있으면 관리자 페이지가 전 IP에 노출됨 → 부팅 시 경고
+      void getIpRuleCache()
+        .then(cache => {
+          const envWhitelist = (process.env.ALLOWED_ADMIN_IPS ?? '')
+            .split(',')
+            .map(s => s.trim())
+            .filter(Boolean);
+          const total = cache.whitelist.length + envWhitelist.length;
+          if (process.env.NODE_ENV === 'production' && total === 0) {
+            logger.error(
+              '🚨 [보안경고] 관리자 IP 화이트리스트가 설정되지 않았습니다 — 관리자 엔드포인트가 모든 IP에 노출됩니다. ALLOWED_ADMIN_IPS 또는 DB 화이트리스트를 설정하세요.'
+            );
+          }
+        })
+        .catch(() => {});
     });
   } catch (error) {
     logger.error('❌ API 서버 시작 실패:', error);

@@ -51,6 +51,7 @@ interface UsePostDetailProps {
 
 export const usePostDetail = ({ boardType, id }: UsePostDetailProps) => {
   const fetchIdRef = useRef(0);
+  const mountedRef = useRef(true);
   const [post, setPost] = useState<Post | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -192,32 +193,45 @@ export const usePostDetail = ({ boardType, id }: UsePostDetailProps) => {
   }, [boardType, id, setPostFromData]);
 
   // 비밀글 비밀번호 검증
+  // - E2EE: 암호문만 가져와 클라이언트에서 복호화 (비밀번호 서버 미전송)
+  // - 일반 비밀글: 서버에서 비밀번호 검증 후 평문 반환
   const handleVerifyPassword = useCallback(
     async (password: string) => {
       if (!boardType || !id) return;
       setVerifying(true);
       setVerifyError(null);
       try {
-        const data = await verifySecretPost(boardType, id, password);
+        if (lockedMeta?.isEncrypted) {
+          // E2EE 경로: 서버에서 비밀번호 bcrypt 검증 + 암호문 수신 → 클라이언트에서 복호화
+          const data = await verifySecretPost(boardType, id, password);
 
-        // E2EE 복호화 처리 — 잠금 해제는 복호화 성공 후에만
-        let decryptedContent: string | undefined;
-        if (data.isEncrypted && data.secretSalt && data.content) {
-          const plaintext = decryptContent(data.content, password, data.secretSalt);
-          if (plaintext !== null) {
-            decryptedContent = plaintext;
-          } else {
-            setVerifyError('복호화에 실패했습니다. 비밀번호를 확인해주세요.');
-            return; // isLocked 상태 유지 → EncryptedPostView 계속 표시
+          if (!data.isEncrypted || !data.secretSalt || !data.rawContent) {
+            setVerifyError('암호화 게시글 데이터가 올바르지 않습니다.');
+            return;
           }
-        }
 
-        setIsLocked(false);
-        setLockedMeta(null);
-        setPostFromData(data, decryptedContent);
+          const plaintext = decryptContent(data.rawContent, password, data.secretSalt);
+          if (plaintext === null) {
+            setVerifyError('비밀번호가 올바르지 않습니다.');
+            return;
+          }
+
+          if (!mountedRef.current) return;
+          setIsLocked(false);
+          setLockedMeta(null);
+          setPostFromData(data, plaintext);
+        } else {
+          // 일반 비밀글 경로: 서버에서 비밀번호 검증
+          const data = await verifySecretPost(boardType, id, password);
+          if (!mountedRef.current) return;
+          setIsLocked(false);
+          setLockedMeta(null);
+          setPostFromData(data);
+        }
 
         try {
           const likeStatus = await getLikeStatus(boardType, id);
+          if (!mountedRef.current) return;
           setLiked(likeStatus.liked);
           setLikeCount(likeStatus.likeCount);
         } catch {
@@ -225,12 +239,17 @@ export const usePostDetail = ({ boardType, id }: UsePostDetailProps) => {
         }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (err: any) {
-        setVerifyError(err.response?.data?.message || '비밀번호가 올바르지 않습니다.');
+        if (!mountedRef.current) return;
+        if (err.response?.status === 401) {
+          setVerifyError('비밀번호가 올바르지 않습니다.');
+        } else {
+          setVerifyError(err.response?.data?.message || '비밀번호 확인 중 오류가 발생했습니다.');
+        }
       } finally {
-        setVerifying(false);
+        if (mountedRef.current) setVerifying(false);
       }
     },
-    [boardType, id, setPostFromData]
+    [boardType, id, lockedMeta, setPostFromData]
   );
 
   // 좋아요 토글
@@ -279,6 +298,13 @@ export const usePostDetail = ({ boardType, id }: UsePostDetailProps) => {
   }, [id, boardType, navigate, canEditOrDelete]);
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     fetchPost();
   }, [fetchPost]);
 
@@ -288,9 +314,17 @@ export const usePostDetail = ({ boardType, id }: UsePostDetailProps) => {
       setIsBoardManager(false);
       return;
     }
+    let cancelled = false;
     checkIsBoardManager(boardType)
-      .then(result => setIsBoardManager(result))
-      .catch(() => setIsBoardManager(false));
+      .then(result => {
+        if (!cancelled) setIsBoardManager(result);
+      })
+      .catch(() => {
+        if (!cancelled) setIsBoardManager(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [boardType, user?.id]);
 
   return {

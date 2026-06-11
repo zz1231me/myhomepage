@@ -4,9 +4,13 @@ import { useNavigate } from 'react-router-dom';
 
 const Unauthorized = () => {
   const navigate = useNavigate();
-  const [countdown, setCountdown] = useState(5);
+  // 사용자가 안내문(관리자 문의)을 읽을 시간을 확보하기 위해 15초로 늘리고,
+  // 명시적으로 자동 이동을 중지할 수 있게 한다 (이전 5초는 정보 읽기 전 사라짐).
+  const [countdown, setCountdown] = useState(15);
+  const [autoRedirect, setAutoRedirect] = useState(true);
 
   useEffect(() => {
+    if (!autoRedirect) return;
     const timer = setInterval(() => {
       setCountdown(prev => {
         if (prev <= 1) {
@@ -19,7 +23,7 @@ const Unauthorized = () => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [navigate]);
+  }, [navigate, autoRedirect]);
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50 dark:bg-slate-900">
@@ -66,31 +70,39 @@ const Unauthorized = () => {
             </p>
 
             {/* ✅ 카운트다운 - 인라인 스타일 */}
-            <div className="mb-10 p-6 bg-gradient-to-r from-primary-50 to-secondary-50 dark:from-slate-700 dark:to-slate-700 rounded-xl border border-primary-200 dark:border-slate-600">
-              <div className="flex items-center justify-center gap-3">
-                <div className="w-12 h-12 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center shadow-md">
-                  <svg
-                    className="w-6 h-6 text-primary-600 dark:text-primary-400"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                </div>
-                <div className="text-left">
-                  <div className="text-3xl font-bold text-primary-600 dark:text-primary-400">
-                    {countdown}초
+            {autoRedirect && (
+              <div className="mb-10 p-6 bg-gradient-to-r from-primary-50 to-secondary-50 dark:from-slate-700 dark:to-slate-700 rounded-xl border border-primary-200 dark:border-slate-600">
+                <div className="flex items-center justify-center gap-3">
+                  <div className="w-12 h-12 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center shadow-md">
+                    <svg
+                      className="w-6 h-6 text-primary-600 dark:text-primary-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
                   </div>
-                  <div className="text-sm text-slate-600 dark:text-slate-400">후 자동 이동</div>
+                  <div className="text-left">
+                    <div className="text-3xl font-bold text-primary-600 dark:text-primary-400">
+                      {countdown}초
+                    </div>
+                    <div className="text-sm text-slate-600 dark:text-slate-400">후 자동 이동</div>
+                  </div>
+                  <button
+                    onClick={() => setAutoRedirect(false)}
+                    className="ml-4 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 transition-colors"
+                  >
+                    자동 이동 중지
+                  </button>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* ✅ 버튼 그룹 */}
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">

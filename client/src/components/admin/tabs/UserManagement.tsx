@@ -1,7 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import api from '../../../api/axios';
 import { formatDateTime } from '../../../utils/date';
 import { User } from '../../../types/admin.types';
 import { useUserManagement } from '../../../hooks/admin/useUserManagement';
+import { useAuth } from '../../../store/auth';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { AdminSection } from '../common/AdminSection';
 import { ConfirmationModal } from '../common/ConfirmationModal';
@@ -17,6 +19,7 @@ import {
 import { UserActivityModal } from './UserActivityModal';
 
 export const UserManagement = () => {
+  const { user: currentUser } = useAuth();
   const {
     users,
     roles,
@@ -48,12 +51,58 @@ export const UserManagement = () => {
   const [activityModal, setActivityModal] = useState<{ userId: string; userName: string } | null>(
     null
   );
+  const [exportingUsers, setExportingUsers] = useState(false);
+
+  const handleExportUsers = useCallback(async () => {
+    setExportingUsers(true);
+    try {
+      const res = await api.get('/admin/export/users', { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data as Blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'users.xlsx';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Excel 내보내기에 실패했습니다.');
+    } finally {
+      setExportingUsers(false);
+    }
+  }, []);
 
   const generateRandomPassword = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    return Array.from({ length: 10 }, () => chars[Math.floor(Math.random() * chars.length)]).join(
-      ''
-    );
+    const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const lower = 'abcdefghijklmnopqrstuvwxyz';
+    const digits = '0123456789';
+    const special = '!@#$%^&*';
+    const pool = upper + lower + digits + special;
+
+    // 모듈러 편향 없는 rejection sampling
+    const cryptoRand = (s: string) => {
+      const threshold = 256 - (256 % s.length);
+      const buf = new Uint8Array(1);
+      do {
+        crypto.getRandomValues(buf);
+      } while (buf[0] >= threshold);
+      return s[buf[0] % s.length];
+    };
+
+    // 각 문자 클래스를 최소 1개씩 보장 — 서버 복잡도 검증(대문자/소문자/숫자·특수) 통과
+    const required = [cryptoRand(upper), cryptoRand(lower), cryptoRand(digits)];
+    const rest = Array.from({ length: 13 }, () => cryptoRand(pool));
+    const all = [...required, ...rest];
+
+    // Fisher-Yates 셔플 (필수 문자가 항상 앞쪽에 오지 않도록)
+    for (let i = all.length - 1; i > 0; i--) {
+      const buf = new Uint8Array(1);
+      const threshold = 256 - (256 % (i + 1));
+      do {
+        crypto.getRandomValues(buf);
+      } while (buf[0] >= threshold);
+      const j = buf[0] % (i + 1);
+      [all[i], all[j]] = [all[j], all[i]];
+    }
+    return all.join('');
   };
 
   const newUserTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -169,6 +218,13 @@ export const UserManagement = () => {
   };
 
   const requestConfirm = (type: string, userId: string, label: string) => {
+    if (
+      (type === 'deactivate' || type === 'resetPassword' || type === 'delete') &&
+      userId === currentUser?.id
+    ) {
+      toast.error('자신의 계정에는 이 작업을 수행할 수 없습니다.');
+      return;
+    }
     setConfirmAction({ type, userId, label });
   };
 
@@ -282,7 +338,7 @@ export const UserManagement = () => {
           </button>
         </div>
         <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
-          비밀번호는 10자리 난수로 자동 생성됩니다. 아이디는 한글·영문·숫자·
+          비밀번호는 16자리 난수로 자동 생성됩니다. 아이디는 한글·영문·숫자·
           <code className="font-mono">. @ - _</code> 사용 가능 (최대 30자, 공백 불가)
         </p>
       </AdminSection>
@@ -368,13 +424,13 @@ export const UserManagement = () => {
         title={`사용자 목록 (${activeUsers.length}명)`}
         actions={
           <div className="flex items-center gap-2">
-            <a
-              href="/api/admin/export/users"
-              className="px-3 py-2 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
-              download
+            <button
+              onClick={handleExportUsers}
+              disabled={exportingUsers}
+              className="px-3 py-2 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 disabled:opacity-50"
             >
-              Excel 내보내기
-            </a>
+              {exportingUsers ? '내보내는 중...' : 'Excel 내보내기'}
+            </button>
             <input
               type="text"
               value={searchQuery}

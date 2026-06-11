@@ -11,6 +11,7 @@ import {
 } from '../utils/response';
 import { logInfo, logError, logSuccess, logWarning } from '../utils/logger';
 import { boardService } from '../services/board.service';
+import { boardManagerService } from '../services/boardManager.service';
 import { sequelize } from '../config/sequelize';
 import { Board } from '../models/Board';
 import { User } from '../models/User';
@@ -112,6 +113,20 @@ export const updateBoard = async (req: AuthRequest, res: Response): Promise<void
     return sendForbidden(res, '관리자만 게시판을 수정할 수 있습니다.');
   }
 
+  if (name !== undefined) {
+    if (typeof name !== 'string' || name.trim().length === 0) {
+      return sendValidationError(res, 'name', '게시판 이름을 입력해주세요.');
+    }
+    if (name.trim().length > 100) {
+      return sendValidationError(res, 'name', '게시판 이름은 100자를 초과할 수 없습니다.');
+    }
+  }
+  if (description !== undefined && description !== null) {
+    if (typeof description === 'string' && description.length > 500) {
+      return sendValidationError(res, 'description', '게시판 설명은 500자를 초과할 수 없습니다.');
+    }
+  }
+
   try {
     const updatedBoard = await boardService.updateBoard(id, { name, description, order, isActive });
 
@@ -121,6 +136,60 @@ export const updateBoard = async (req: AuthRequest, res: Response): Promise<void
     logError('게시판 수정 실패', err, { userId, boardId: id });
     sendError(res, 500, '게시판 수정 실패');
   }
+};
+
+// ✅ 게시판 기본정보(이름/설명) 수정 — admin/manager 또는 해당 게시판 담당자
+//    (게시판 생성/삭제, 활성화/권한 설정은 관리자 전용 — 여기서 처리하지 않음)
+export const updateBoardInfo = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { boardType } = req.params;
+  const { name, description } = req.body;
+  const { id: userId, role: userRole } = req.user;
+
+  const board = await Board.findByPk(boardType);
+  if (!board) return sendNotFound(res, '게시판');
+  if (board.isPersonal) {
+    return sendForbidden(res, '개인공간 게시판은 이 방식으로 수정할 수 없습니다.');
+  }
+
+  const canManage = await boardManagerService.canManage(boardType, userId, userRole);
+  if (!canManage) {
+    return sendForbidden(res, '이 게시판을 관리할 권한이 없습니다.');
+  }
+
+  if (name !== undefined) {
+    if (typeof name !== 'string' || name.trim().length === 0) {
+      return sendValidationError(res, 'name', '게시판 이름을 입력해주세요.');
+    }
+    if (name.trim().length > 100) {
+      return sendValidationError(res, 'name', '게시판 이름은 100자를 초과할 수 없습니다.');
+    }
+  }
+  if (description !== undefined && description !== null) {
+    if (typeof description !== 'string' || description.length > 500) {
+      return sendValidationError(res, 'description', '게시판 설명은 500자를 초과할 수 없습니다.');
+    }
+  }
+
+  try {
+    // 이름/설명만 전달 — order/isActive 등 다른 필드는 변경하지 않음
+    const updated = await boardService.updateBoard(boardType, {
+      ...(name !== undefined && { name: name.trim() }),
+      ...(description !== undefined && { description }),
+    });
+    logSuccess('게시판 정보 수정 (담당자)', { userId, boardId: boardType });
+    sendSuccess(res, updated, '게시판 정보가 수정되었습니다.');
+  } catch (err) {
+    logError('게시판 정보 수정 실패', err, { userId, boardId: boardType });
+    sendError(res, 500, '게시판 정보 수정 중 오류가 발생했습니다.');
+  }
+};
+
+// ✅ 현재 사용자가 해당 게시판을 관리할 수 있는지 (게시판 내 관리 UI 노출 판단용)
+export const getBoardManageCapability = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { boardType } = req.params;
+  const { id: userId, role: userRole } = req.user;
+  const canManage = await boardManagerService.canManage(boardType, userId, userRole);
+  sendSuccess(res, { canManage });
 };
 
 // ✅ 게시판 삭제 (관리자 전용)

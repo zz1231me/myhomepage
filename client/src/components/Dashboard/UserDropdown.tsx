@@ -1,5 +1,5 @@
 // client/src/components/Dashboard/UserDropdown.tsx
-import { useState, useRef, useEffect } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronDown, User, Settings, LogOut } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -8,11 +8,22 @@ import { Avatar } from '../Avatar';
 import { useAuth } from '../../store/auth';
 import { logout as logoutAPI } from '../../api/auth';
 import { getRoleBadgeClass, getRoleName } from '../../utils/roleUtils';
+import { ThemeToggle } from '../ThemeToggle';
+import { useUIOverlays } from '../../store/uiOverlays';
 
 export function UserDropdown() {
   const { getUserName, getUserRole, getUser, clearUser } = useAuth();
   const navigate = useNavigate();
-  const [isOpen, setIsOpen] = useState(false);
+
+  // 통합 overlay store — NotificationBell/GlobalSearch와 자동 배타.
+  // setIsOpen은 안정 ref 유지 (getState로 호출 시점 최신값 사용)
+  const isOpen = useUIOverlays(s => s.activeDropdown === 'userMenu');
+  const setIsOpen = useCallback((value: boolean) => {
+    const state = useUIOverlays.getState();
+    if (value) state.openDropdown('userMenu');
+    else state.closeDropdown('userMenu');
+  }, []);
+
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const userName = getUserName();
@@ -25,7 +36,7 @@ export function UserDropdown() {
     };
     if (isOpen) document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [isOpen]);
+  }, [isOpen, setIsOpen]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -35,7 +46,7 @@ export function UserDropdown() {
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [setIsOpen]);
 
   const handleLogout = async () => {
     try {
@@ -145,6 +156,12 @@ export function UserDropdown() {
                   <span>관리자 패널</span>
                 </button>
               )}
+            </div>
+
+            {/* 테마 전환 */}
+            <div className="px-3 py-2 border-t border-slate-100 dark:border-slate-800">
+              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">테마</p>
+              <ThemeToggle />
             </div>
 
             {/* 로그아웃 */}

@@ -115,6 +115,7 @@ export async function register(id: string, password: string, name: string, email
       'Content-Type': 'application/json',
       'X-Requested-With': 'XMLHttpRequest',
     },
+    credentials: 'include',
     body: JSON.stringify(requestBody),
   });
 
@@ -191,7 +192,8 @@ export async function uploadAvatar(file: File) {
   const res = await api.post('/auth/avatar', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
-  return res.data;
+  // sendSuccess 봉투 언래핑: { success, data: { avatarUrl } } → { avatarUrl }
+  return (res.data.data ?? res.data) as { avatarUrl: string };
 }
 
 // 🗑️ 아바타 삭제 (api 인스턴스 사용 → 토큰 만료 시 자동 갱신 인터셉터 적용)

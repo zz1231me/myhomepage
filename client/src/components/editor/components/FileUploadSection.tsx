@@ -1,5 +1,6 @@
 // client/src/components/editor/FileUploadSection.tsx - 깔끔하게 개선
 import React from 'react';
+import { toast } from '../../../utils/toast';
 // Since these files are now in the same directory, these imports are actually correct
 // But let's verify if there are any other broken imports
 import ExistingFileList from './ExistingFileList';
@@ -39,15 +40,15 @@ const FileUploadSection: React.FC<FileUploadSectionProps> = ({
 
     const oversizedFiles = selectedFiles.filter(file => file.size > maxFileSize);
     if (oversizedFiles.length > 0) {
-      alert(
-        `파일 크기는 ${Math.round(maxFileSize / 1024 / 1024)}MB를 초과할 수 없습니다.\n초과 파일: ${oversizedFiles.map(f => f.name).join(', ')}`
+      toast.error(
+        `파일 크기는 ${Math.round(maxFileSize / 1024 / 1024)}MB를 초과할 수 없습니다 (${oversizedFiles.map(f => f.name).join(', ')})`
       );
       return;
     }
 
     const totalFiles = existingFiles.length + files.length + selectedFiles.length;
     if (totalFiles > maxFiles) {
-      alert(`최대 ${maxFiles}개의 파일만 첨부할 수 있습니다.`);
+      toast.error(`최대 ${maxFiles}개의 파일만 첨부할 수 있습니다.`);
       return;
     }
 

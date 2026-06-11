@@ -1,11 +1,16 @@
 import { Board } from '../models/Board';
 import { BoardAccess } from '../models/BoardAccess';
+import { Post } from '../models/Post';
 import { BaseService } from './base.service';
 import { AppError } from '../middlewares/error.middleware';
 import { sequelize } from '../config/sequelize';
-import { UniqueConstraintError } from 'sequelize';
+import { UniqueConstraintError, Op } from 'sequelize';
+import { PostTag } from '../models/PostTag';
+import { BoardManager } from '../models/BoardManager';
 import { AccessibleBoard, PersonalFolderResult } from '../types/auth-request';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { logInfo, logError, logSuccess } from '../utils/logger';
 import { RESERVED_BOARD_IDS } from '../config/constants';
 
@@ -65,41 +70,42 @@ export class BoardService extends BaseService {
       throw new AppError(400, `'${data.id}'는 시스템에서 예약된 ID입니다. 다른 ID를 사용해주세요.`);
     }
 
-    // ID 중복 체크
-    const existing = await Board.findByPk(data.id);
-    if (existing) {
-      throw new AppError(409, '이미 존재하는 게시판 ID입니다.');
+    try {
+      const board = await sequelize.transaction(async t => {
+        const newBoard = await Board.create(
+          {
+            id: data.id,
+            name: data.name,
+            description: data.description,
+            order: data.order || 0,
+            isActive: true,
+            isPersonal: false,
+          },
+          { transaction: t }
+        );
+
+        // 기본적으로 관리자에게 모든 권한 부여
+        await BoardAccess.create(
+          {
+            boardId: newBoard.id,
+            roleId: 'admin',
+            canRead: true,
+            canWrite: true,
+            canDelete: true,
+          },
+          { transaction: t }
+        );
+
+        return newBoard;
+      });
+
+      return board;
+    } catch (err) {
+      if (err instanceof UniqueConstraintError) {
+        throw new AppError(409, '이미 존재하는 게시판 ID입니다.');
+      }
+      throw err;
     }
-
-    const board = await sequelize.transaction(async t => {
-      const newBoard = await Board.create(
-        {
-          id: data.id,
-          name: data.name,
-          description: data.description,
-          order: data.order || 0,
-          isActive: true,
-          isPersonal: false,
-        },
-        { transaction: t }
-      );
-
-      // 기본적으로 관리자에게 모든 권한 부여
-      await BoardAccess.create(
-        {
-          boardId: newBoard.id,
-          roleId: 'admin',
-          canRead: true,
-          canWrite: true,
-          canDelete: true,
-        },
-        { transaction: t }
-      );
-
-      return newBoard;
-    });
-
-    return board;
   }
 
   // ✅ 게시판 수정
@@ -127,7 +133,60 @@ export class BoardService extends BaseService {
       throw new AppError(403, '개인 폴더는 일반 삭제로 제거할 수 없습니다.');
     }
 
-    await board.destroy();
+    // 게시판 내 게시글 첨부파일 목록을 미리 수집 (DB 삭제 후 파일 정리용)
+    const posts = await Post.findAll({
+      where: { boardType: boardId },
+      attributes: ['id', 'attachments'],
+    });
+    type Attachment = { filename: string; path?: string };
+    const filesToDelete: Attachment[] = [];
+    for (const post of posts) {
+      try {
+        const attachments: Attachment[] =
+          typeof post.attachments === 'string'
+            ? JSON.parse(post.attachments)
+            : Array.isArray(post.attachments)
+              ? (post.attachments as Attachment[])
+              : [];
+        filesToDelete.push(...attachments);
+      } catch {
+        // 파싱 실패 시 해당 게시글 첨부파일만 건너뜀
+      }
+    }
+
+    // 게시글 + 게시판 삭제를 트랜잭션으로 원자적 처리 (중간 실패 시 롤백)
+    // ⚠️ Post는 paranoid이므로 force:true가 없으면 deletedAt만 채워지고 실제 row가 남음 →
+    //    Post.boardType의 FK(onDelete: RESTRICT) 위반으로 board.destroy()가 실패함.
+    //    따라서 게시판 삭제 시에는 게시글을 hard-delete 한다.
+    // PostTag는 through 조인이 constraints:false라 FK cascade가 없음 → 수동 정리(orphan 방지)
+    const postIds = posts.map(p => p.id);
+    await sequelize.transaction(async t => {
+      if (postIds.length > 0) {
+        await PostTag.destroy({ where: { PostId: { [Op.in]: postIds } }, transaction: t });
+      }
+      await Post.destroy({ where: { boardType: boardId }, transaction: t, force: true });
+      await board.destroy({ transaction: t });
+    });
+
+    // 첨부파일 삭제 (DB 삭제 성공 후)
+    const uploadsRoot = path.resolve(process.cwd(), 'uploads');
+    for (const att of filesToDelete) {
+      try {
+        let filePath: string;
+        if (att.path) {
+          filePath = path.isAbsolute(att.path)
+            ? path.resolve(att.path)
+            : path.resolve(process.cwd(), att.path.startsWith('/') ? att.path.slice(1) : att.path);
+        } else {
+          filePath = path.resolve(uploadsRoot, 'files', att.filename);
+        }
+        if (filePath.startsWith(uploadsRoot + path.sep) && fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      } catch (fileErr) {
+        logError(`게시판 삭제 중 첨부파일 삭제 실패: ${att.filename}`, fileErr);
+      }
+    }
   }
 
   // ✅ 개인 폴더 안전한 생성/조회
@@ -186,6 +245,13 @@ export class BoardService extends BaseService {
       ],
     });
 
+    // 1b. 담당자로 지정된 게시판 — 역할 권한이 없어도 사이드바에 노출 + 전체 권한 자동 부여
+    const managedRecords = await BoardManager.findAll({
+      where: { userId },
+      include: [{ model: Board, as: 'board', where: { isPersonal: false }, required: true }],
+    });
+    const generalBoardIds = new Set(generalBoards.filter(a => a.board).map(a => a.board!.id));
+
     // 2. 개인 폴더 처리
     let personalFolderResult: PersonalFolderResult | null = null;
     try {
@@ -216,6 +282,18 @@ export class BoardService extends BaseService {
             canWrite: access.canWrite,
             canDelete: access.canDelete,
           },
+        })),
+      // 담당자 게시판 (역할 기반 목록에 없는 것만, 전체 권한)
+      ...managedRecords
+        .map(rec => (rec as BoardManager & { board?: Board }).board)
+        .filter((b): b is Board => !!b && !generalBoardIds.has(b.id))
+        .map(b => ({
+          id: b.id,
+          name: b.name,
+          description: b.description,
+          order: b.order,
+          isPersonal: false,
+          permissions: { canRead: true, canWrite: true, canDelete: true },
         })),
     ];
 
@@ -248,13 +326,16 @@ export class BoardService extends BaseService {
     action: 'canRead' | 'canWrite' | 'canDelete'
   ): Promise<PermissionCheckResult> {
     const isAdmin = userRole === 'admin';
+    const isManager = userRole === 'manager';
+    const prepass = isAdmin || isManager; // 전역 관리자/매니저
 
-    // Board + BoardAccess 쿼리 병렬 실행 (관리자는 BoardAccess 조회 불필요)
-    const [board, access] = await Promise.all([
+    // Board + BoardAccess + BoardManager 쿼리 병렬 실행 (전역 관리자/매니저는 추가 조회 불필요)
+    const [board, access, managerRecord] = await Promise.all([
       Board.findByPk(boardId),
-      isAdmin
+      prepass
         ? Promise.resolve(null)
         : BoardAccess.findOne({ where: { boardId, roleId: userRole } }),
+      prepass ? Promise.resolve(null) : BoardManager.findOne({ where: { boardId, userId } }),
     ]);
 
     // 0. 존재하지 않는 게시판 체크
@@ -276,13 +357,16 @@ export class BoardService extends BaseService {
       };
     }
 
-    // 2. 비활성 게시판 접근 차단 (관리자 제외)
-    if (board && !board.isPersonal && !board.isActive && !isAdmin) {
+    // 해당 게시판의 담당자(BoardManager)는 자기 게시판에 대해 전체 권한을 자동 보유
+    const isBoardManagerOfThis = managerRecord !== null;
+
+    // 2. 비활성 게시판 접근 차단 (관리자/매니저/해당 게시판 담당자 제외)
+    if (!board.isPersonal && !board.isActive && !prepass && !isBoardManagerOfThis) {
       return { hasAccess: false, reason: '비활성화된 게시판입니다.', board };
     }
 
-    // 3. 관리자는 프리패스
-    if (isAdmin) {
+    // 3. 관리자/매니저/해당 게시판 담당자는 프리패스 (읽기/쓰기/삭제 전체)
+    if (prepass || isBoardManagerOfThis) {
       return { hasAccess: true, board: board || undefined, permissions: allPermissions };
     }
 

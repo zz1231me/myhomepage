@@ -20,8 +20,6 @@ export type Post = {
   isPinned?: boolean;
   isRead?: boolean;
   tags?: Tag[];
-  reactionCounts?: Record<string, number>;
-  myReaction?: string | null;
 };
 
 export type BoardInfo = {
@@ -46,8 +44,6 @@ export type PaginationInfo = {
   hasNextPage: boolean;
   hasPrevPage: boolean;
 };
-
-export type ReactionType = 'like' | 'love' | 'haha' | 'wow' | 'sad' | 'angry';
 
 export type Tag = {
   id: number;

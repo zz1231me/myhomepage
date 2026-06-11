@@ -15,10 +15,12 @@ React + Express + SQLite/MySQL/MariaDB/PostgreSQL 기반의 풀스택 웹 애플
 - [프로젝트 구조](#프로젝트-구조)
 - [환경변수 설정](#환경변수-설정)
 - [데이터베이스 설정](#데이터베이스-설정)
+- [아키텍처](#아키텍처)
 - [API 문서](#api-문서)
 - [Docker 배포](#docker-배포)
 - [보안](#보안)
 - [개발 가이드](#개발-가이드)
+- [트러블슈팅](#트러블슈팅)
 
 ---
 
@@ -58,12 +60,12 @@ React + Express + SQLite/MySQL/MariaDB/PostgreSQL 기반의 풀스택 웹 애플
 - 반복 일정 (일/주/월/연)
 - 권한별 이벤트 생성 제어
 
-### 실시간 기능
-- Socket.io 기반 실시간 알림
-- 멀티유저 협업 이벤트 동기화
+### 알림
+- 폴링 기반 신규 알림 감지 (30초 주기, 마지막 확인 ID 기준)
+- 헤더 알림 벨 + 읽지 않은 개수 표시
 
 ### 전역 검색
-- ⌘K / Ctrl+K 단축키 CommandPalette
+- ⌘K / Ctrl+K 단축키 CommandPalette (게시글·메모 통합 검색, 카테고리 분류)
 
 ### 관리자 기능
 - 사용자 관리 (역할 변경, 계정 활성/비활성)
@@ -91,37 +93,37 @@ React + Express + SQLite/MySQL/MariaDB/PostgreSQL 기반의 풀스택 웹 애플
 
 | 기술 | 버전 | 용도 |
 |------|------|------|
-| React | 18 | UI 라이브러리 |
-| TypeScript | 5 | 타입 안정성 |
-| Vite | 5 | 빌드 도구 (HMR) |
-| Tailwind CSS | 3 | 스타일링 |
-| Zustand | 4 | 전역 상태 관리 |
+| React | 19 | UI 라이브러리 |
+| TypeScript | 6 | 타입 안정성 |
+| Vite | 8 | 빌드 도구 (HMR) |
+| Tailwind CSS | 4 | 스타일링 |
+| Zustand | 5 | 전역 상태 관리 |
 | React Query | 5 | 서버 상태 캐싱 |
-| React Router | 6 | 라우팅 |
-| CKEditor 5 | 44 | WYSIWYG 에디터 |
-| FullCalendar | 6 | 캘린더 |
-| Socket.io Client | 4 | 실시간 통신 |
+| React Router | 7 | 라우팅 |
+| CKEditor 5 | 48 | WYSIWYG 에디터 (`@ckeditor/ckeditor5-react` 11) |
+| FullCalendar | 6 | 캘린더 (월/주/일/목록 뷰, 드래그&드롭) |
 | Uppy | 5 | 파일 업로드 |
 | Framer Motion | 12 | 애니메이션 |
 | DOMPurify | 3 | XSS 방지 |
-| Lucide React | - | 아이콘 |
+| Lucide React | 1 | 아이콘 |
+| Vitest | - | 테스트 러너 |
 
 ### Backend
 
 | 기술 | 버전 | 용도 |
 |------|------|------|
 | Express | 5 | 웹 프레임워크 |
-| TypeScript | 5 | 타입 안정성 |
+| TypeScript | 6 | 타입 안정성 |
 | Sequelize | 6 | ORM (다중 DB 지원) |
-| Socket.io | 4 | 실시간 통신 |
-| JWT | - | 인증 |
-| bcrypt | 6 | 비밀번호 해싱 |
-| Speakeasy | - | 2FA (TOTP) |
-| Winston | - | 구조화 로깅 |
+| jsonwebtoken | 9 | JWT 인증 |
+| bcryptjs | 3 | 비밀번호 해싱 |
+| Speakeasy | 2 | 2FA (TOTP) |
+| Winston | 3 | 구조화 로깅 |
 | Multer | 2 | 파일 업로드 |
-| Sharp | - | 이미지 최적화 |
+| Sharp | - | 이미지 최적화 (아바타) |
 | Zod | 4 | 요청 유효성 검사 |
-| Helmet | - | 보안 헤더 |
+| Helmet | 8 | 보안 헤더 |
+| Jest | - | 테스트 러너 (SQLite in-memory) |
 
 ### 데이터베이스 (선택)
 
@@ -142,8 +144,8 @@ React + Express + SQLite/MySQL/MariaDB/PostgreSQL 기반의 풀스택 웹 애플
 | Node.js | **20.x 이상** | `node --version` |
 | npm | 9.x 이상 | `npm --version` |
 
-> **Windows 사용자**: `migrate`, `db:indexes` 스크립트는 Git Bash 또는 WSL2 환경에서 실행하세요.  
-> PowerShell / cmd.exe에서는 `npm run dev`, `npm run build`, `npm test` 등 기본 명령은 정상 동작합니다.
+> **Windows 사용자**: `npm run dev`, `npm run build`, `npm test` 등 기본 명령은 PowerShell / cmd.exe에서 정상 동작합니다.  
+> 보조 스크립트(`db:indexes` 등)에서 문제가 생기면 Git Bash 또는 WSL2 환경에서 실행하세요.
 
 ### 1. 저장소 클론
 
@@ -157,7 +159,7 @@ cd <repo>
 
 ```bash
 # 환경변수 설정 (반드시 JWT_SECRET 값 변경!)
-cp .env.example server/.env
+cp server/.env.sample server/.env
 
 cd server
 
@@ -215,11 +217,12 @@ myhome/
 │   │   │   └── wiki/          # 위키 컴포넌트 (DiffViewer, History)
 │   │   ├── config/            # 클라이언트 상수
 │   │   ├── constants/         # 게시판 타이틀 등 상수
-│   │   ├── contexts/          # Socket, Theme 컨텍스트
-│   │   ├── hooks/             # 커스텀 훅
+│   │   ├── contexts/          # Theme 컨텍스트
+│   │   ├── hooks/             # 커스텀 훅 (useDebouncedValue, usePostDetail 등)
 │   │   ├── pages/             # 페이지 컴포넌트
-│   │   │   ├── admin/         # 관리자 페이지
-│   │   │   ├── boards/        # 게시판, 게시글, 댓글
+│   │   │   ├── admin/         # 관리자 페이지 (라우트 기반 탭)
+│   │   │   ├── boards/        # 게시판, 게시글, 댓글, 에디터
+│   │   │   ├── components/    # 페이지 전용 컴포넌트 (FullCalendar 래퍼 등)
 │   │   │   ├── memos/         # 메모 보드
 │   │   │   ├── wiki/          # 위키 페이지
 │   │   │   └── *.tsx          # 인증(Login, Register, 2FA), Dashboard, Profile 등
@@ -237,8 +240,8 @@ myhome/
 │   │   ├── config/            # DB, 환경변수, Swagger, 상수 설정
 │   │   ├── controllers/       # HTTP 요청/응답 처리
 │   │   ├── middlewares/       # 인증, 권한, 보안, Rate Limit
-│   │   │   └── upload/        # Multer 파일 업로드 미들웨어
-│   │   ├── models/            # Sequelize 모델 (30개+)
+│   │   │   └── upload/        # Multer 파일 업로드 미들웨어 (file/image/avatar)
+│   │   ├── models/            # Sequelize 모델 (30개)
 │   │   ├── routes/            # 라우트 정의
 │   │   ├── services/          # 비즈니스 로직
 │   │   ├── types/             # TypeScript 타입 확장
@@ -249,7 +252,7 @@ myhome/
 │   ├── uploads/               # 업로드 파일 저장소 (gitignored)
 │   └── package.json
 │
-├── .env.example               # 환경변수 템플릿 (루트에 위치)
+├── server/.env.sample         # 환경변수 템플릿 (로컬 개발용)
 ├── .github/workflows/ci.yml   # GitHub Actions CI
 ├── nginx.conf                 # Nginx 리버스 프록시 설정
 ├── docker-compose.yml         # Docker Compose (MariaDB + App + Nginx)
@@ -261,10 +264,10 @@ myhome/
 
 ## 환경변수 설정
 
-루트의 `.env.example`을 `server/.env`로 복사하고 값을 수정하세요.
+`server/.env.sample`을 `server/.env`로 복사하고 값을 수정하세요.
 
 ```bash
-cp .env.example server/.env
+cp server/.env.sample server/.env
 ```
 
 ### 필수 설정
@@ -283,18 +286,28 @@ PORT=4000
 NODE_ENV=development
 ```
 
-### 선택 설정
+### 전체 환경변수 레퍼런스
 
-```env
-# 관리자 API IP 화이트리스트 (미설정 시 전체 허용)
-ALLOWED_ADMIN_IPS=127.0.0.1,::1
+| 변수 | 기본값 | 설명 |
+|------|--------|------|
+| `NODE_ENV` | `development` | `production`이면 시크릿 검증·보안 헤더·쿠키 Secure가 강화됨 |
+| `PORT` | `4000` | API 서버 포트 |
+| `JWT_SECRET` | — | **필수.** 액세스 토큰 서명 키 (프로덕션은 32자 이상, 플레이스홀더 금지) |
+| `JWT_REFRESH_SECRET` | — | **필수.** 리프레시 토큰 서명 키 (JWT_SECRET과 달라야 함) |
+| `ADMIN_DEFAULT_PASSWORD` | `ChangeMe_2024!` | 초기 admin 계정 비밀번호 (프로덕션은 약한 값 부팅 차단) |
+| `COOKIE_SECURE` | (프로덕션 `true`) | 인증 쿠키 Secure 플래그. HTTP 인트라넷은 `false` 명시 |
+| `DB_TYPE` | `sqlite` | `sqlite` / `mysql` / `mariadb` / `postgresql` |
+| `DB_STORAGE` | `./database.sqlite` | SQLite 파일 경로 |
+| `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` | — | 非 SQLite DB 접속 정보 |
+| `DB_SSL` / `DB_SSL_CA` | `false` / — | DB SSL 사용 여부 및 CA 인증서 (PostgreSQL 등) |
+| `ALLOWED_ADMIN_IPS` | (미설정=전체 허용) | 관리자 API 접근 허용 IP (쉼표 구분). 프로덕션 미설정 시 부팅 경고 |
+| `CLIENT_URL` / `CORS_ORIGINS` / `ALLOWED_ORIGINS` | — | CORS 허용 오리진 (쉼표 구분) |
+| `CORS_IP_PATTERN` | — | CORS 허용 사설 IP 정규식 패턴 |
+| `CORS_ALLOW_ALL` | `false` | 폐쇄망 전용 — 모든 오리진 허용 (사용 주의) |
+| `SECURITY_LOG_RETENTION_DAYS` | `90` | 보안 로그 보존 기간(일) |
+| `ERROR_LOG_RETENTION_DAYS` | `30` | 에러 로그 보존 기간(일) |
 
-# 로그 보존 기간 (일)
-SECURITY_LOG_RETENTION_DAYS=90
-ERROR_LOG_RETENTION_DAYS=30
-```
-
-> 파일 업로드 제한(용량, 개수)은 환경변수가 아닌 관리자 페이지에서 동적으로 설정합니다.
+> 파일 업로드 제한(용량, 개수, 허용 확장자) 등 운영 설정은 환경변수가 아닌 **관리자 페이지 → 사이트 설정**에서 DB 기반으로 동적 관리됩니다.
 
 ---
 
@@ -310,6 +323,53 @@ ERROR_LOG_RETENTION_DAYS=30
 | MySQL | `DB_TYPE=mysql` + `DB_HOST/PORT/USER/PASSWORD/NAME` |
 | MariaDB | `DB_TYPE=mariadb` + `DB_HOST/PORT/USER/PASSWORD/NAME` |
 | PostgreSQL | `DB_TYPE=postgresql` + `DB_HOST/PORT/USER/PASSWORD/NAME` |
+
+> 테이블 스키마는 서버 첫 실행 시 Sequelize `sync`로 자동 생성됩니다. SQLite는 `site_settings` 컬럼 누락을 자동 보정합니다.
+
+---
+
+## 아키텍처
+
+### 데이터 모델 (Sequelize, 30개)
+
+| 도메인 | 모델 |
+|--------|------|
+| **인증·사용자** | `User`, `Role`, `UserSession`, `LoginHistory` |
+| **게시판·게시글** | `Board`, `BoardAccess`, `BoardManager`, `Post`, `PostTag`, `PostRead`, `PostLike`, `PostReaction`, `PostBookmark`, `Bookmark` |
+| **댓글** | `Comment`, `CommentReaction` |
+| **위키·메모** | `WikiPage`, `WikiRevision`, `Memo` |
+| **이벤트** | `Event`, `EventPermission` |
+| **태그·알림·신고** | `Tag`, `Notification`, `Report` |
+| **운영·보안** | `SiteSettings`, `RateLimitSettings`, `IpRule`, `SecurityLog`, `ErrorLog`, `AuditLog` |
+
+- `Post`·`Comment`은 `paranoid`(soft-delete). 게시글 삭제 시 자식(댓글/리액션/조회기록/태그)은 트랜잭션으로 함께 정리됩니다.
+- 첨부파일은 `Post.attachments`에 JSON으로 저장(`{filename, originalname, size, mimetype, path}`), 파일은 `{timestamp}_{랜덤}` 형식(확장자 제거)으로 `uploads/files`에 저장됩니다.
+
+### 권한 모델 (RBAC)
+
+**기본 역할** (삭제 불가: `admin`/`manager`/`guest`)
+
+| 역할 | 설명 |
+|------|------|
+| `admin` | 전체 관리자 — 모든 게시판·관리 기능 접근 |
+| `manager` | 매니저 — 게시판 관리, 고정, 신고 처리 등 |
+| `user` | 일반 사용자 |
+| `guest` | 최소 권한 (역할 삭제 시 마이그레이션 대상) |
+
+관리자 페이지에서 **커스텀 역할**을 생성하고 게시판별 권한을 부여할 수 있습니다.
+
+**권한 레이어**
+
+| 레이어 | 권한 | 적용 대상 |
+|--------|------|-----------|
+| 게시판 접근 (`BoardAccess`) | `canRead` / `canWrite` / `canDelete` | 역할별 게시판 단위 |
+| 게시판 담당자 (`BoardManager`) | 특정 게시판 관리 위임 | 사용자 단위 |
+| 이벤트 권한 (`EventPermission`) | `canRead` / `canCreate` / `canUpdate` / `canDelete` | 역할별 |
+| 위키 권한 | 읽기/쓰기 역할 목록 | 역할별 |
+| 개인 폴더 | 소유자 전용 (owner-only) | 사용자 개인 게시판 |
+
+- 비활성 게시판(`isActive=false`)은 admin/manager를 제외하고 접근 차단됩니다.
+- 비밀글은 비밀번호(`password`) 또는 허용 사용자 목록(`users`) 방식, E2EE 암호화 옵션을 지원합니다.
 
 ---
 
@@ -347,13 +407,17 @@ ERROR_LOG_RETENTION_DAYS=30
 ### 빠른 실행
 
 ```bash
-# 1. 환경변수 설정
-cp .env.example .env
-# .env 파일을 열어 아래 항목 반드시 변경:
-#   JWT_SECRET, JWT_REFRESH_SECRET  — 32자 이상 랜덤 문자열
-#   DB_PASSWORD                     — MariaDB 비밀번호
-#   DB_ROOT_PASSWORD                — MariaDB root 비밀번호
-#   ADMIN_DEFAULT_PASSWORD          — 초기 admin 계정 비밀번호
+# 1. 환경변수 설정 — docker-compose는 프로젝트 루트의 .env를 읽습니다.
+#    아래 변수가 필수입니다(미설정 시 컨테이너가 기동되지 않음):
+cat > .env <<'EOF'
+DB_PASSWORD=change-me-db-password
+DB_ROOT_PASSWORD=change-me-root-password
+JWT_SECRET=change-me-32-characters-minimum-secret
+JWT_REFRESH_SECRET=change-me-different-32-characters-secret
+ADMIN_DEFAULT_PASSWORD=change-me-admin-password
+EOF
+# ⚠️ 위 값들을 실제 강한 값으로 반드시 교체하세요.
+#    (프로덕션 빌드 시 server/.env의 시크릿 검증이 플레이스홀더/약한 값을 거부합니다)
 
 # 2. 이미지 빌드 & 컨테이너 실행
 docker-compose up -d --build
@@ -403,13 +467,17 @@ docker-compose down -v
 - CORS 설정
 - Rate Limiting (전체 / API / 로그인별 개별 제한)
 - 동적 Rate Limit (DB 기반 관리자 설정)
-- SQL Injection 방지 (ORM + Zod 유효성 검사)
-- XSS 방지 (DOMPurify + sanitize-html)
-- 파일 업로드 검증 (MIME 타입, 경로 조작 방지, 확장자 블록리스트)
-- Helmet 보안 헤더
-- CSRF 미들웨어
-- IP 화이트리스트 (Nginx + 앱 레벨)
-- 비밀번호 재설정 토큰 SHA-256 해싱 (DB 저장)
+- SQL Injection 방지 (ORM 파라미터 바인딩 + Zod 유효성 검사)
+- XSS 방지 (클라이언트 DOMPurify + 서버 sanitize-html)
+- 파일 업로드 검증 (MIME 타입 + 매직넘버, 경로 조작 방지, 확장자 블록리스트, 확장자 제거 저장)
+- 첨부파일 다운로드 인가 (게시판 읽기 권한 + 비밀글 접근 검증 — `/api/uploads/download` 단일 경로, 정적 서빙 우회 차단)
+- Helmet 보안 헤더 (CSP, HSTS, nosniff 등)
+- CSRF 미들웨어 (X-Requested-With 검증)
+- IP 화이트리스트 (Nginx + 앱 레벨), 프로덕션 미설정 시 부팅 경고
+- 비밀번호 재설정 토큰 SHA-256 해싱 (DB 저장), bcryptjs 비밀번호 해싱
+- 로그아웃/비밀번호 변경 시 tokenVersion 증가로 기존 세션 즉시 무효화
+- 프로덕션 시크릿 검증 (JWT 시크릿/admin 비밀번호가 플레이스홀더·약한 값이면 부팅 차단)
+- 쿠키 `Secure` 플래그 프로덕션 기본 적용 (HttpOnly + SameSite=Lax)
 - 보안 이벤트 자동 로깅
 
 ### 배포 전 보안 체크리스트
@@ -443,6 +511,34 @@ npm run format:check
 npm run build          # Vite 빌드 성공
 ```
 
+### npm 스크립트 레퍼런스
+
+**서버 (`server/`)**
+
+| 스크립트 | 설명 |
+|----------|------|
+| `npm run dev` | 개발 서버 (nodemon + ts-node, 포트 4000) |
+| `npm run build` | 프로덕션 빌드 (`tsc` → `dist/`) |
+| `npm start` | 빌드 결과 실행 (`node dist/index.js`) |
+| `npm test` | Jest 테스트 (SQLite in-memory) |
+| `npm run lint` / `lint:fix` | ESLint 검사 / 자동 수정 |
+| `npm run format` / `format:check` | Prettier 포맷 적용 / 검사 |
+| `npm run setup:{sqlite\|mysql\|mariadb\|postgresql}` | `.env`에 DB 설정 작성 |
+| `npm run db:indexes` | DB 인덱스 생성 |
+| `npm run init:roles` | 기본 역할 초기화 |
+| `npm run install:db-drivers` | MySQL/PostgreSQL 드라이버 설치 |
+
+**클라이언트 (`client/`)**
+
+| 스크립트 | 설명 |
+|----------|------|
+| `npm run dev` | Vite 개발 서버 (포트 8080, HMR) |
+| `npm run build` | 프로덕션 빌드 (`dist/`) |
+| `npm run preview` | 빌드 결과 미리보기 |
+| `npm test` / `test:watch` | Vitest 테스트 |
+| `npm run lint` / `lint:fix` | ESLint 검사 / 자동 수정 |
+| `npm run format` / `format:check` | Prettier 포맷 적용 / 검사 |
+
 ### 테스트
 
 ```bash
@@ -454,15 +550,20 @@ cd server && npm test
 
 ### 데이터베이스 초기화 스크립트
 
+> 테이블 생성과 기본 데이터(admin 계정·역할·사이트 설정) 시드는 **서버 첫 실행 시 자동**으로 수행됩니다. 아래는 보조 스크립트입니다.
+
 ```bash
-# DB 환경변수 자동 설정 (sqlite / mysql / mariadb / postgresql)
+# DB 환경변수 자동 설정 (.env에 DB 항목 작성) — sqlite / mysql / mariadb / postgresql
 cd server && npm run setup:sqlite
 
 # DB 인덱스 생성
 cd server && npm run db:indexes
 
-# 마이그레이션 실행
-cd server && npm run migrate
+# 역할 초기화 (선택)
+cd server && npm run init:roles
+
+# 추가 DB 드라이버 설치 (MySQL/PostgreSQL 사용 시)
+cd server && npm run install:db-drivers
 ```
 
 ### 코드 스타일
@@ -507,14 +608,13 @@ cd server && npm run dev   # 재실행 시 자동 재생성
 # CREATE DATABASE myhome CHARACTER SET utf8mb4;
 ```
 
-### Windows에서 migrate / db:indexes 실패
+### Windows에서 db:indexes 실패
 
-PowerShell이나 cmd.exe에서는 `NODE_ENV=` 접두사 문법이 지원되지 않습니다.  
-Git Bash 또는 WSL2에서 실행하세요:
+`db:indexes` 스크립트는 `cross-env`로 `NODE_ENV`를 설정하므로 PowerShell/cmd.exe에서도 동작하지만,
+문제가 있으면 Git Bash 또는 WSL2에서 실행하세요:
 
 ```bash
 # Git Bash / WSL2
-cd server && npm run migrate
 cd server && npm run db:indexes
 ```
 

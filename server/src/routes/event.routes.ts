@@ -20,18 +20,10 @@ router.get(
   getEvents as RequestHandler
 );
 
-router.put(
-  '/:id',
-  authenticate as RequestHandler,
-  checkEventPermission('update') as RequestHandler,
-  updateEvent as RequestHandler
-);
+// update/delete: 컨트롤러에서 소유자 vs canUpdate/canDelete 권한을 함께 처리하므로
+// 여기서 checkEventPermission을 적용하면 소유자가 자기 이벤트를 수정/삭제할 수 없게 됨
+router.put('/:id', authenticate as RequestHandler, updateEvent as RequestHandler);
 
-router.delete(
-  '/:id',
-  authenticate as RequestHandler,
-  checkEventPermission('delete') as RequestHandler,
-  deleteEvent as RequestHandler
-);
+router.delete('/:id', authenticate as RequestHandler, deleteEvent as RequestHandler);
 
 export default router;

@@ -2,7 +2,7 @@ import { Memo, MemoColor } from '../models/Memo';
 import { BaseService } from './base.service';
 import { AppError } from '../middlewares/error.middleware';
 import { sequelize } from '../config/sequelize';
-import { literal } from 'sequelize';
+import { getSettings } from '../utils/settingsCache';
 
 export class MemoService extends BaseService {
   async getMemos(userId: string): Promise<Memo[]> {
@@ -13,6 +13,7 @@ export class MemoService extends BaseService {
         ['order', 'ASC'],
         ['createdAt', 'DESC'],
       ],
+      limit: 500, // 사용자당 최대 500개 메모 반환 (무제한 조회 방지)
     });
   }
 
@@ -24,11 +25,27 @@ export class MemoService extends BaseService {
       color?: 'yellow' | 'green' | 'blue' | 'pink' | 'purple';
     }
   ): Promise<Memo> {
-    // DB 레벨 subquery로 order 계산 — 동시 요청 시 중복 order 방지
+    // 관리자가 동적으로 조정 가능 — settingsCache에서 읽음
+    const MAX_MEMOS_PER_USER = getSettings().memoMaxPerUser;
+
+    // 사용자당 최대 메모 수 제한 (DoS 방지).
+    // 전체 row를 SELECT FOR UPDATE 잠그는 비용을 피하기 위해 count로 변경.
+    // InnoDB가 gap lock으로 phantom INSERT까지 막아주지는 않지만, 200건 한도는
+    // strict한 invariant가 아니라 사용자 보호용 상한이므로 트레이드오프 수용.
     return sequelize.transaction(async t => {
-      const nextOrder = literal(
-        `(SELECT COALESCE(MAX(\`order\`), 0) + 1 FROM Memos WHERE UserId = ${sequelize.escape(userId)})`
-      );
+      const existingCount = await Memo.count({
+        where: { UserId: userId },
+        transaction: t,
+      });
+      if (existingCount >= MAX_MEMOS_PER_USER) {
+        throw new AppError(400, `메모는 최대 ${MAX_MEMOS_PER_USER}개까지 생성할 수 있습니다.`);
+      }
+
+      // Sequelize .max()로 order 계산 — dialect-aware 인용 부호(MySQL/PG/SQLite 공통)
+      const maxOrder = (await Memo.max('order', {
+        where: { UserId: userId },
+        transaction: t,
+      })) as number | null;
       return Memo.create(
         {
           UserId: userId,
@@ -36,8 +53,7 @@ export class MemoService extends BaseService {
           content: data.content || '',
           color: data.color || 'yellow',
           isPinned: false,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          order: nextOrder as any,
+          order: (maxOrder ?? 0) + 1,
         },
         { transaction: t }
       );

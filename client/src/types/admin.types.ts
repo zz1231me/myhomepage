@@ -108,19 +108,37 @@ export type AuditAction =
   | 'deactivate_user'
   | 'reset_password'
   | 'change_role'
+  | 'create_board'
   | 'update_board'
   | 'delete_board'
+  | 'create_role'
+  | 'update_role'
+  | 'delete_role'
   | 'update_permission'
   | 'delete_event'
+  | 'update_event'
   | 'update_site_settings'
-  | 'force_logout';
+  | 'force_logout'
+  | 'delete_security_log'
+  | 'delete_error_log'
+  | 'create_ip_rule'
+  | 'update_ip_rule'
+  | 'delete_ip_rule';
 
 export interface AuditLogRecord {
   id: string;
   adminId: string;
   adminName: string;
   action: AuditAction;
-  targetType: 'user' | 'board' | 'role' | 'event' | 'setting';
+  targetType:
+    | 'user'
+    | 'board'
+    | 'role'
+    | 'event'
+    | 'setting'
+    | 'security_log'
+    | 'error_log'
+    | 'ip_rule';
   targetId?: string | null;
   targetName?: string | null;
   beforeValue?: Record<string, unknown> | null;

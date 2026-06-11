@@ -64,6 +64,39 @@ export function validateEnv(): void {
     );
   }
 
+  // ✅ 프로덕션에서는 시크릿이 .env.sample의 플레이스홀더/약한 값으로 배포되는 것을 차단 (fail-loud).
+  //    개발 환경은 플레이스홀더 그대로 동작하도록 허용.
+  if (process.env.NODE_ENV === 'production') {
+    const problems: string[] = [];
+    const jwt = process.env.JWT_SECRET ?? '';
+    const refresh = process.env.JWT_REFRESH_SECRET ?? '';
+    // 알려진 플레이스홀더 패턴 (대소문자 무시)
+    const placeholderRe =
+      /change[-_ ]?this|your[-_ ]?super[-_ ]?secret|example|placeholder|changeme/i;
+
+    if (jwt.length < 32) problems.push('JWT_SECRET은 최소 32자 이상이어야 합니다.');
+    if (refresh.length < 32) problems.push('JWT_REFRESH_SECRET은 최소 32자 이상이어야 합니다.');
+    if (placeholderRe.test(jwt))
+      problems.push('JWT_SECRET이 기본 플레이스홀더 값입니다. 실제 시크릿으로 교체하세요.');
+    if (placeholderRe.test(refresh))
+      problems.push('JWT_REFRESH_SECRET이 기본 플레이스홀더 값입니다. 실제 시크릿으로 교체하세요.');
+    if (jwt && refresh && jwt === refresh)
+      problems.push('JWT_SECRET과 JWT_REFRESH_SECRET은 서로 다른 값이어야 합니다.');
+
+    const adminPw = process.env.ADMIN_DEFAULT_PASSWORD ?? '';
+    if (!adminPw || adminPw.length < 8 || placeholderRe.test(adminPw) || adminPw === 'admin')
+      problems.push(
+        'ADMIN_DEFAULT_PASSWORD가 설정되지 않았거나 약한 기본값입니다. 8자 이상의 강한 값으로 설정하세요.'
+      );
+
+    if (problems.length > 0) {
+      throw new Error(
+        `❌ 프로덕션 보안 환경변수 검증 실패:\n${problems.map(p => `  - ${p}`).join('\n')}\n\n` +
+          `배포 전 .env의 시크릿 값을 반드시 교체해주세요.`
+      );
+    }
+  }
+
   // validateEnv()는 logger 초기화 전에 호출되므로 console.log 사용 (의도적)
   if (process.env.NODE_ENV !== 'production') {
     process.stdout.write(`✅ 환경변수 검증 완료 (DB: ${dbTypeRaw})\n`);
@@ -88,6 +121,7 @@ export const env = {
 
   // SSL 설정 (PostgreSQL 등에서 사용)
   DB_SSL: process.env.DB_SSL === 'true',
+  DB_SSL_CA: process.env.DB_SSL_CA || '',
 
   // 서버 설정
   PORT: Number(process.env.PORT) || 4000,

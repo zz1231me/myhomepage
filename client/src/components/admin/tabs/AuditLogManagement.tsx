@@ -5,6 +5,7 @@ import { AuditLogRecord, AuditAction } from '../../../types/admin.types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { AdminSection } from '../common/AdminSection';
 import { formatDateTime } from '../../../utils/date';
+import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
 
 const ACTION_LABELS: Record<AuditAction, string> = {
   create_user: '사용자 생성',
@@ -16,12 +17,22 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   deactivate_user: '계정 비활성화',
   reset_password: '비밀번호 초기화',
   change_role: '역할 변경',
+  create_board: '게시판 생성',
   update_board: '게시판 수정',
   delete_board: '게시판 삭제',
+  create_role: '역할 생성',
+  update_role: '역할 수정',
+  delete_role: '역할 삭제',
   update_permission: '권한 설정',
   delete_event: '이벤트 삭제',
+  update_event: '이벤트 수정',
   update_site_settings: '사이트 설정',
   force_logout: '강제 로그아웃',
+  delete_security_log: '보안 로그 삭제',
+  delete_error_log: '에러 로그 삭제',
+  create_ip_rule: 'IP 규칙 생성',
+  update_ip_rule: 'IP 규칙 수정',
+  delete_ip_rule: 'IP 규칙 삭제',
 };
 
 const ACTION_COLORS: Record<string, string> = {
@@ -34,12 +45,22 @@ const ACTION_COLORS: Record<string, string> = {
   deactivate_user: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300',
   reset_password: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
   change_role: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300',
+  create_board: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
   update_board: 'bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300',
   delete_board: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+  create_role: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
+  update_role: 'bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300',
+  delete_role: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
   update_permission: 'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300',
   delete_event: 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300',
+  update_event: 'bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300',
   update_site_settings: 'bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-300',
   force_logout: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+  delete_security_log: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+  delete_error_log: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+  create_ip_rule: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
+  update_ip_rule: 'bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300',
+  delete_ip_rule: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
 };
 
 export const AuditLogManagement = () => {
@@ -55,6 +76,8 @@ export const AuditLogManagement = () => {
   const [filterTargetType, setFilterTargetType] = useState('');
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
+  // 자유 입력 필터는 디바운스 — 키 입력마다 API 호출하지 않도록
+  const debouncedAdminId = useDebouncedValue(filterAdminId, 400);
 
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const rowVirtualizer = useVirtualizer({
@@ -68,7 +91,7 @@ export const AuditLogManagement = () => {
     try {
       setLoading(true);
       const params: Record<string, string | number> = { page, limit: 20 };
-      if (filterAdminId) params.adminId = filterAdminId;
+      if (debouncedAdminId) params.adminId = debouncedAdminId;
       if (filterAction) params.action = filterAction;
       if (filterTargetType) params.targetType = filterTargetType;
       if (filterStartDate) params.startDate = filterStartDate;
@@ -83,7 +106,7 @@ export const AuditLogManagement = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, filterAdminId, filterAction, filterTargetType, filterStartDate, filterEndDate]);
+  }, [page, debouncedAdminId, filterAction, filterTargetType, filterStartDate, filterEndDate]);
 
   useEffect(() => {
     fetchLogs();
@@ -317,25 +340,27 @@ export const AuditLogManagement = () => {
           </div>
 
           {/* 페이지네이션 */}
-          <div className="px-6 py-3 flex items-center justify-between border-t border-slate-200 dark:border-slate-700">
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="px-3 py-1 rounded border border-slate-300 dark:border-slate-600 text-sm disabled:opacity-50 dark:text-slate-300"
-            >
-              이전
-            </button>
-            <span className="text-sm text-slate-700 dark:text-slate-300">
-              {page} / {totalPages}
-            </span>
-            <button
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              className="px-3 py-1 rounded border border-slate-300 dark:border-slate-600 text-sm disabled:opacity-50 dark:text-slate-300"
-            >
-              다음
-            </button>
-          </div>
+          {totalPages > 0 && (
+            <div className="px-6 py-3 flex items-center justify-between border-t border-slate-200 dark:border-slate-700">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="px-3 py-1 rounded border border-slate-300 dark:border-slate-600 text-sm disabled:opacity-50 dark:text-slate-300"
+              >
+                이전
+              </button>
+              <span className="text-sm text-slate-700 dark:text-slate-300">
+                {page} / {totalPages}
+              </span>
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="px-3 py-1 rounded border border-slate-300 dark:border-slate-600 text-sm disabled:opacity-50 dark:text-slate-300"
+              >
+                다음
+              </button>
+            </div>
+          )}
         </div>
       </AdminSection>
     </div>

@@ -1,5 +1,6 @@
 // server/src/services/report.service.ts - 콘텐츠 신고 서비스
-import { Op } from 'sequelize';
+import { Op, UniqueConstraintError } from 'sequelize';
+import { sequelize } from '../config/sequelize';
 import { Report, ReportTargetType, ReportReason, ReportStatus } from '../models/Report';
 import { Post } from '../models/Post';
 import { Comment } from '../models/Comment';
@@ -37,7 +38,14 @@ export class ReportService extends BaseService {
     });
     if (existing) throw new AppError(409, '이미 신고한 콘텐츠입니다.');
 
-    return Report.create({ reporterId, targetType, targetId, reason, description });
+    try {
+      return await Report.create({ reporterId, targetType, targetId, reason, description });
+    } catch (err) {
+      if (err instanceof UniqueConstraintError) {
+        throw new AppError(409, '이미 신고한 콘텐츠입니다.');
+      }
+      throw err;
+    }
   }
 
   async getReports(params: {
@@ -67,41 +75,49 @@ export class ReportService extends BaseService {
       offset: pagination.offset,
     });
 
-    // 각 신고에 대상 정보 추가 (post/comment 제목 등)
-    const enriched = await Promise.all(
-      rows.map(async report => {
-        const plain = report.get({ plain: true }) as Report & {
-          reporter?: { id: string; name: string };
-        };
-        let targetInfo: { title?: string; content?: string } = {};
-
-        try {
-          if (plain.targetType === 'post') {
-            const post = await Post.findByPk(plain.targetId, {
-              attributes: ['id', 'title', 'boardType'],
-              paranoid: false,
-            });
-            if (post) {
-              const p = post.get({ plain: true }) as { title: string; boardType: string };
-              targetInfo = { title: p.title };
-            }
-          } else {
-            const comment = await Comment.findByPk(plain.targetId, {
-              attributes: ['id', 'content'],
-              paranoid: false,
-            });
-            if (comment) {
-              const c = comment.get({ plain: true }) as { content: string };
-              targetInfo = { content: c.content?.substring(0, 100) };
-            }
-          }
-        } catch {
-          // 삭제된 대상일 수 있음 — 무시
-        }
-
-        return { ...plain, targetInfo };
-      })
+    // 각 신고에 대상 정보 추가 (post/comment 제목 등) — N+1 방지용 배치 조회
+    const plains = rows.map(
+      report => report.get({ plain: true }) as Report & { reporter?: { id: string; name: string } }
     );
+
+    const postIds = plains.filter(r => r.targetType === 'post').map(r => r.targetId);
+    const commentIds = plains.filter(r => r.targetType === 'comment').map(r => r.targetId);
+
+    const [postsData, commentsData] = await Promise.all([
+      postIds.length > 0
+        ? Post.findAll({
+            where: { id: { [Op.in]: postIds } },
+            attributes: ['id', 'title'],
+            paranoid: false,
+          })
+        : Promise.resolve([]),
+      commentIds.length > 0
+        ? Comment.findAll({
+            where: { id: { [Op.in]: commentIds } },
+            attributes: ['id', 'content'],
+            paranoid: false,
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const postMap = new Map(
+      postsData.map(p => [String(p.id), p.get({ plain: true }) as { title: string }])
+    );
+    const commentMap = new Map(
+      commentsData.map(c => [String(c.id), c.get({ plain: true }) as { content: string }])
+    );
+
+    const enriched = plains.map(plain => {
+      let targetInfo: { title?: string; content?: string } = {};
+      if (plain.targetType === 'post') {
+        const p = postMap.get(plain.targetId);
+        if (p) targetInfo = { title: p.title };
+      } else {
+        const c = commentMap.get(plain.targetId);
+        if (c) targetInfo = { content: c.content?.substring(0, 100) };
+      }
+      return { ...plain, targetInfo };
+    });
 
     return this.buildPagedResponse(enriched, count, pagination);
   }
@@ -112,18 +128,26 @@ export class ReportService extends BaseService {
     status: 'reviewed' | 'dismissed' | 'action_taken';
     reviewNote?: string;
   }): Promise<Report> {
-    const report = await Report.findByPk(params.reportId);
-    if (!report) throw new AppError(404, '신고를 찾을 수 없습니다.');
-    if (report.status !== 'pending') throw new AppError(400, '이미 처리된 신고입니다.');
+    return sequelize.transaction(async t => {
+      const report = await Report.findByPk(params.reportId, {
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
+      if (!report) throw new AppError(404, '신고를 찾을 수 없습니다.');
+      if (report.status !== 'pending') throw new AppError(400, '이미 처리된 신고입니다.');
 
-    await report.update({
-      status: params.status,
-      reviewedBy: params.reviewerId,
-      reviewedAt: new Date(),
-      reviewNote: params.reviewNote,
+      await report.update(
+        {
+          status: params.status,
+          reviewedBy: params.reviewerId,
+          reviewedAt: new Date(),
+          reviewNote: params.reviewNote,
+        },
+        { transaction: t }
+      );
+
+      return report;
     });
-
-    return report;
   }
 
   async getReportStats() {

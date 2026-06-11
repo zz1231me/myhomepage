@@ -13,6 +13,26 @@ import {
 } from '../services/ipRule.service';
 import { IpRuleType } from '../models/IpRule';
 import { AppError } from '../middlewares/error.middleware';
+import { auditLogService } from '../services/auditLog.service';
+
+function logIpRuleAudit(
+  req: AuthRequest,
+  action: 'create_ip_rule' | 'update_ip_rule' | 'delete_ip_rule',
+  targetId: string | null,
+  payload: Record<string, unknown>
+): void {
+  auditLogService
+    .createAuditLog({
+      adminId: req.user?.id ?? 'unknown',
+      adminName: req.user?.name ?? 'unknown',
+      action,
+      targetType: 'ip_rule',
+      targetId: targetId ?? undefined,
+      afterValue: payload,
+      ipAddress: req.ip ?? null,
+    })
+    .catch(err => logError(`감사 로그 기록 실패 (${action})`, err));
+}
 
 function toAppError(err: unknown): AppError | null {
   return err instanceof AppError ? err : null;
@@ -61,8 +81,18 @@ export const addIpRule = async (req: AuthRequest, res: Response): Promise<void> 
 
   // 기본 IP/CIDR 형식 검증
   const ipTrimmed = ip.trim();
-  const ipPattern = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
-  if (!ipPattern.test(ipTrimmed) && ipTrimmed !== '::1' && ipTrimmed !== 'localhost') {
+
+  function isValidIpCidr(value: string): boolean {
+    if (value === '::1' || value === 'localhost') return true;
+    const cidrMatch = value.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:\/(\d{1,2}))?$/);
+    if (!cidrMatch) return false;
+    const octets = [cidrMatch[1], cidrMatch[2], cidrMatch[3], cidrMatch[4]];
+    if (octets.some(o => parseInt(o, 10) > 255)) return false;
+    if (cidrMatch[5] !== undefined && parseInt(cidrMatch[5], 10) > 32) return false;
+    return true;
+  }
+
+  if (!isValidIpCidr(ipTrimmed)) {
     sendError(res, 400, '유효하지 않은 IP 형식입니다. (예: 192.168.1.1 또는 192.168.0.0/24)');
     return;
   }
@@ -73,6 +103,11 @@ export const addIpRule = async (req: AuthRequest, res: Response): Promise<void> 
       ip: ipTrimmed,
       description: description ?? null,
       createdBy: userId,
+    });
+    logIpRuleAudit(req, 'create_ip_rule', rule.id ?? null, {
+      type,
+      ip: ipTrimmed,
+      description: description ?? null,
     });
     sendSuccess(res, rule, 'IP 규칙이 추가되었습니다.', 201);
   } catch (err) {
@@ -96,6 +131,7 @@ export const patchIpRule = async (req: AuthRequest, res: Response): Promise<void
 
   try {
     const rule = await updateIpRule(id, { description, isActive });
+    logIpRuleAudit(req, 'update_ip_rule', id, { description, isActive });
     sendSuccess(res, rule, 'IP 규칙이 수정되었습니다.');
   } catch (err) {
     const appErr = toAppError(err);
@@ -110,6 +146,7 @@ export const removeIpRule = async (req: AuthRequest, res: Response): Promise<voi
   const { id } = req.params;
   try {
     await deleteIpRule(id);
+    logIpRuleAudit(req, 'delete_ip_rule', id, {});
     sendSuccess(res, null, 'IP 규칙이 삭제되었습니다.');
   } catch (err) {
     const appErr = toAppError(err);

@@ -67,25 +67,30 @@ export const useEventManagement = () => {
   ) => {
     if (saving) return;
 
-    setPermissions(prev => {
-      const updated = prev.map(p => (p.roleId === roleId ? { ...p, [type]: !p[type] } : p));
+    // ⚠ setState 업데이터 내부에서 API 호출 금지 (StrictMode에서 updater가 2회 실행되어 이중 토글 버그)
+    // 업데이터 밖에서 계산 후 optimistic setPermissions → API 호출 → 실패 시 fetchPermissions 롤백
+    const updated = permissions.map(p => (p.roleId === roleId ? { ...p, [type]: !p[type] } : p));
 
-      setSaving(true);
+    setSaving(true);
+    setPermissions(updated);
 
-      const validPermissions = updated.map(p => ({
-        roleId: p.roleId,
-        canCreate: p.canCreate,
-        canRead: p.canRead,
-        canUpdate: p.canUpdate,
-        canDelete: p.canDelete,
-      }));
+    const validPermissions = updated.map(p => ({
+      roleId: p.roleId,
+      canCreate: p.canCreate,
+      canRead: p.canRead,
+      canUpdate: p.canUpdate,
+      canDelete: p.canDelete,
+    }));
 
-      api
-        .put('/admin/events/permissions', { permissions: validPermissions })
-        .finally(() => setSaving(false));
-
-      return updated;
-    });
+    try {
+      await api.put('/admin/events/permissions', { permissions: validPermissions });
+    } catch (err) {
+      // 저장 실패 시 서버 상태로 롤백 (useBoardManagement와 동일 패턴)
+      if (import.meta.env.DEV) console.error('이벤트 권한 저장 실패 — 서버 상태로 롤백', err);
+      await fetchPermissions();
+    } finally {
+      setSaving(false);
+    }
   };
 
   return {

@@ -11,6 +11,7 @@ import {
 } from './config';
 import { validateFilename } from './utils';
 import { logInfo, logError } from '../../utils/logger';
+import { AppError } from '../error.middleware';
 
 /**
  * 이미지 업로드 Storage 설정 (에디터용 - 랜덤 ID)
@@ -39,20 +40,20 @@ const imageStorage = multer.diskStorage({
  */
 function imageFilter(_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) {
   try {
-    // 파일명 검증
+    // 파일명 검증 — 사용자 입력 오류이므로 400(AppError)로 전달해 500 오인 방지
     if (!validateFilename(file.originalname)) {
-      return cb(new Error('허용되지 않는 파일명입니다.'));
+      return cb(new AppError(400, '허용되지 않는 파일명입니다.'));
     }
 
     // 이미지 확장자만 허용 (관리자 설정 반영)
     const ext = path.extname(file.originalname).toLowerCase();
     if (!getDynamicAllowedExtensions().IMAGE.includes(ext)) {
-      return cb(new Error('이미지 파일만 업로드 가능합니다.'));
+      return cb(new AppError(400, '이미지 파일만 업로드 가능합니다.'));
     }
 
     // 이미지 MIME 타입 검증
     if (!file.mimetype.startsWith('image/')) {
-      return cb(new Error('이미지 파일이 아닙니다.'));
+      return cb(new AppError(400, '이미지 파일이 아닙니다.'));
     }
 
     logInfo(`이미지 업로드 허용: ${file.originalname}`);

@@ -1,5 +1,5 @@
 // client/src/components/AuthProvider.tsx
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../store/auth';
 import { useAuthInit } from '../hooks/useAuthInit';
 import { refreshToken } from '../api/auth';
@@ -29,6 +29,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const { isLoading } = useAuthInit();
   const intervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRefreshing = useRef(false); // ✅ 토큰 갱신 중 플래그 추가
+  const [isTimerActive, setIsTimerActive] = useState(false);
 
   // 🔄 스마트한 백그라운드 토큰 갱신 설정 (개선됨)
   useEffect(() => {
@@ -38,6 +39,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (import.meta.env.DEV) console.info('🛑 로그아웃 상태로 인한 토큰 갱신 타이머 정리');
         clearInterval(intervalRef.current);
         intervalRef.current = null;
+        setIsTimerActive(false);
       }
       isRefreshing.current = false; // ✅ 갱신 플래그 리셋
       return;
@@ -51,6 +53,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     if (import.meta.env.DEV) console.info('🔄 백그라운드 토큰 갱신 타이머 시작');
 
     // ✅ 30초마다 체크
+    setIsTimerActive(true);
     intervalRef.current = setInterval(async () => {
       // ✅ 이미 갱신 중이면 스킵
       if (isRefreshing.current) {
@@ -75,8 +78,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           try {
             const response = await refreshToken();
 
-            if (response.tokenInfo) {
-              updateTokenInfo(response.tokenInfo);
+            // 갱신 중 로그아웃(clearUser)이 발생했으면 플래그가 false로 리셋됨 → 재주입 방지
+            if (!isRefreshing.current) return;
+
+            if (response.data?.tokenInfo) {
+              updateTokenInfo(response.data.tokenInfo);
               if (import.meta.env.DEV) console.info('✅ 사전 토큰 갱신 성공');
             }
           } catch (error) {
@@ -103,6 +109,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
+        setIsTimerActive(false);
       }
       isRefreshing.current = false; // ✅ 플래그 리셋
     };
@@ -134,7 +141,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           {user && (
             <>
               <div>👤 사용자: {user.name}</div>
-              <div>🔄 자동갱신: {intervalRef.current ? '✅' : '❌'}</div>
+              <div>🔄 자동갱신: {isTimerActive ? '✅' : '❌'}</div>
               {tokenInfo && (
                 <>
                   <div>⏰ Access 만료: {formatDateTime(new Date(tokenInfo.accessTokenExpiry))}</div>

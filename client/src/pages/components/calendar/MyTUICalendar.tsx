@@ -16,6 +16,7 @@ import { dateUtils } from './utils';
 import { useCalendarEvents } from './hooks/useCalendarEvents';
 import { CalendarHeader, CalendarView } from './components/CalendarHeader';
 import { CalendarModal } from './components/CalendarModal';
+import { ConfirmationModal } from '../../../components/admin/common/ConfirmationModal';
 import './styles/calendar.css';
 
 const DEFAULT_FORM: EventFormData = {
@@ -47,6 +48,8 @@ const MyTUICalendar: React.FC = () => {
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<ModalMode>('view');
+  // 편집 취소 시 복원할 폼 스냅샷
+  const formDataSnapshotRef = useRef<EventFormData | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [currentView, setCurrentView] = useState<CalendarView>('dayGridMonth');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -116,7 +119,7 @@ const MyTUICalendar: React.FC = () => {
     setFormData({
       title: event.title,
       body: event.extendedProps.body || '',
-      isAllday: true,
+      isAllday: originalEvent.isAllday ?? event.allDay,
       start: startDate,
       end: endDate,
       category: event.extendedProps.category || 'meeting',
@@ -148,7 +151,7 @@ const MyTUICalendar: React.FC = () => {
           calendarId: originalEvent.calendarId,
           title: originalEvent.title,
           body: originalEvent.body || '',
-          isAllday: true,
+          isAllday: originalEvent.isAllday ?? true,
           start: startDate.toISOString(),
           end: endDate.toISOString(),
           category: originalEvent.category,
@@ -170,10 +173,13 @@ const MyTUICalendar: React.FC = () => {
     [canEditEvent, loadEvents]
   );
 
-  const handleEventDrop = (info: EventDropArg) => applyEventDateChange(info.event, info.revert);
+  const handleEventDrop = (info: EventDropArg) => {
+    void applyEventDateChange(info.event, info.revert);
+  };
 
-  const handleEventResize = (info: EventResizeDoneArg) =>
-    applyEventDateChange(info.event, info.revert);
+  const handleEventResize = (info: EventResizeDoneArg) => {
+    void applyEventDateChange(info.event, info.revert);
+  };
 
   /* ──── 폼 제출 ──── */
   const handleSubmit = async (e: React.FormEvent) => {
@@ -191,10 +197,11 @@ const MyTUICalendar: React.FC = () => {
     try {
       if (modalMode === 'create') await handleCreateEvent(formData);
       else if (modalMode === 'edit' && selectedEvent)
-        await handleUpdateEvent(selectedEvent.id, formData);
+        await handleUpdateEvent(selectedEvent.id, formData, selectedEvent);
       setIsModalOpen(false);
-    } catch {
-      toast.error('일정 저장에 실패했습니다.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '일정 저장에 실패했습니다.';
+      toast.error(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -222,7 +229,7 @@ const MyTUICalendar: React.FC = () => {
 
   const handleDatesSet = (dateInfo: { view: { title: string } }) => {
     setCalendarTitle(dateInfo.view.title);
-    loadEvents();
+    void loadEvents();
   };
 
   /* ──── 렌더 ──── */
@@ -317,81 +324,38 @@ const MyTUICalendar: React.FC = () => {
         selectedEvent={selectedEvent}
         formData={formData}
         canEdit={selectedEvent ? canEditEvent(selectedEvent) : false}
-        canDelete={selectedEvent ? canEditEvent(selectedEvent) : false}
+        canDelete={selectedEvent ? canEditEvent(selectedEvent) && !selectedEvent.isReadOnly : false}
         isSubmitting={isSubmitting}
         isDeleting={isDeleting}
-        onClose={() => setIsModalOpen(false)}
-        onEdit={() => setModalMode('edit')}
+        onClose={() => {
+          setIsModalOpen(false);
+          setSelectedEvent(null);
+          setFormData(DEFAULT_FORM);
+        }}
+        onEdit={() => {
+          formDataSnapshotRef.current = formData;
+          setModalMode('edit');
+        }}
         onDelete={handleDelete}
         onSubmit={handleSubmit}
         onFormChange={data => setFormData(prev => ({ ...prev, ...data }))}
-        onCancelEdit={() => setModalMode('view')}
+        onCancelEdit={() => {
+          setModalMode('view');
+          if (formDataSnapshotRef.current) setFormData(formDataSnapshotRef.current);
+        }}
       />
 
-      {/* 삭제 확인 모달 */}
-      {showDeleteConfirm && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4
-                        bg-slate-900/50 dark:bg-slate-950/70 backdrop-blur-sm"
-        >
-          <div
-            className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl
-                          border border-slate-200 dark:border-slate-800
-                          max-w-sm w-full p-6 animate-scaleIn"
-          >
-            <div
-              className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30
-                            flex items-center justify-center mx-auto mb-4"
-            >
-              <svg
-                className="w-6 h-6 text-red-600 dark:text-red-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                />
-              </svg>
-            </div>
-            <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100 text-center mb-1">
-              일정 삭제
-            </h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400 text-center mb-6 leading-relaxed">
-              <span className="font-medium text-slate-700 dark:text-slate-300">
-                &ldquo;{selectedEvent?.title}&rdquo;
-              </span>
-              <br />을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
-            </p>
-            <div className="flex gap-2.5">
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 px-4 py-2.5 text-sm font-medium rounded-lg
-                           text-slate-600 dark:text-slate-400
-                           bg-slate-100 dark:bg-slate-800
-                           hover:bg-slate-200 dark:hover:bg-slate-700
-                           transition-colors duration-150"
-              >
-                취소
-              </button>
-              <button
-                onClick={confirmDelete}
-                disabled={isDeleting}
-                className="flex-1 px-4 py-2.5 text-sm font-semibold rounded-lg
-                           bg-red-600 hover:bg-red-700 active:bg-red-800
-                           text-white shadow-sm
-                           disabled:opacity-50 disabled:cursor-not-allowed
-                           transition-all duration-150 active:scale-[0.98]"
-              >
-                {isDeleting ? '삭제 중…' : '삭제'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* 삭제 확인 모달 — ConfirmationModal로 통합 (ESC/focus trap/aria 지원) */}
+      <ConfirmationModal
+        open={showDeleteConfirm}
+        title="일정 삭제"
+        message={`"${selectedEvent?.title ?? ''}" 일정을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`}
+        confirmLabel={isDeleting ? '삭제 중…' : '삭제'}
+        cancelLabel="취소"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </div>
   );
 };

@@ -164,7 +164,6 @@ function ForgotPassword() {
                             disabled:opacity-50 disabled:cursor-not-allowed
                             transition-all duration-200
                             placeholder:text-slate-400 dark:placeholder:text-slate-500"
-                  style={{ border: 'none', outline: 'none' }}
                   placeholder="가입 시 사용한 이메일을 입력하세요"
                 />
               </div>
@@ -180,7 +179,6 @@ function ForgotPassword() {
                           transition-all duration-150
                           disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100
                           flex items-center justify-center gap-2"
-                style={{ border: 'none', outline: 'none' }}
               >
                 {isLoading ? (
                   <>

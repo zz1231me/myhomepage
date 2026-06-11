@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import api from '../../api/axios';
 import { Board, BoardPermission, Role } from '../../types/admin.types';
 
@@ -8,6 +8,8 @@ export const useBoardManagement = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [dataLoaded, setDataLoaded] = useState(false);
+  // 동일 tick 내 다중 클릭 race 방지용 — setState는 비동기라 saving state만으로 막을 수 없다.
+  const inFlightRef = useRef<Set<string>>(new Set());
 
   const [fetchError, setFetchError] = useState<string | null>(null);
 
@@ -48,36 +50,48 @@ export const useBoardManagement = () => {
   };
 
   const fetchBoardPermissions = async (boardList: Board[]) => {
+    const results = await Promise.all(
+      boardList.map(board =>
+        api
+          .get(`/admin/boards/${board.id}/permissions`)
+          .then(res => ({ boardId: board.id, data: res.data.data || res.data }))
+          .catch(err => {
+            if (import.meta.env.DEV) console.error(`권한 조회 실패 (${board.name}):`, err);
+            return { boardId: board.id, data: [] };
+          })
+      )
+    );
     const permissionsState: Record<string, BoardPermission[]> = {};
-    for (const board of boardList) {
-      try {
-        const res = await api.get(`/admin/boards/${board.id}/permissions`);
-        permissionsState[board.id] = res.data.data || res.data;
-      } catch (err) {
-        if (import.meta.env.DEV) console.error(`권한 조회 실패 (${board.name}):`, err);
-      }
+    for (const { boardId, data } of results) {
+      permissionsState[boardId] = data;
     }
     setPermissions(permissionsState);
   };
 
-  const updatePermission = async (
+  const updatePermission = (
     boardId: string,
     roleId: string,
     type: 'canRead' | 'canWrite' | 'canDelete',
     roles: Role[]
   ) => {
-    if (saving[boardId]) return;
+    // ✅ ref 기반 동기 lock — setState/saving은 비동기라 동일 tick의 연속 클릭을 막지 못함
+    if (inFlightRef.current.has(boardId)) return;
+    inFlightRef.current.add(boardId);
 
+    // 최신 permissions를 함수형 setState 안에서 읽어 update — closure의 stale 값 사용 차단
+    let updatedPerms: BoardPermission[] = [];
+    let skipped = false;
     setPermissions(prev => {
       const boardPerms = prev[boardId] || [];
       const existingIndex = boardPerms.findIndex(p => p.roleId === roleId);
-      let updatedPerms;
-
       if (existingIndex >= 0) {
         updatedPerms = boardPerms.map(p => (p.roleId === roleId ? { ...p, [type]: !p[type] } : p));
       } else {
         const role = roles.find(r => r.id === roleId);
-        if (!role) return prev;
+        if (!role) {
+          skipped = true;
+          return prev;
+        }
         updatedPerms = [
           ...boardPerms,
           {
@@ -89,20 +103,23 @@ export const useBoardManagement = () => {
           },
         ];
       }
-
-      // UI Optimistic Update
-      setSaving(s => ({ ...s, [boardId]: true }));
-
-      // Debounced API Call Logic would go here or in component
-      // For now, let's keep it simple and just return state
-      // The actual API call saves the state
-
-      savePermissions(boardId, updatedPerms).finally(() => {
-        setSaving(s => ({ ...s, [boardId]: false }));
-      });
-
       return { ...prev, [boardId]: updatedPerms };
     });
+
+    if (skipped) {
+      inFlightRef.current.delete(boardId);
+      return;
+    }
+
+    setSaving(s => ({ ...s, [boardId]: true }));
+    savePermissions(boardId, updatedPerms)
+      .catch(() => {
+        if (import.meta.env.DEV) console.error('권한 저장 실패 — 서버 상태로 롤백됨');
+      })
+      .finally(() => {
+        inFlightRef.current.delete(boardId);
+        setSaving(s => ({ ...s, [boardId]: false }));
+      });
   };
 
   const savePermissions = async (boardId: string, perms: BoardPermission[]) => {
@@ -120,6 +137,14 @@ export const useBoardManagement = () => {
       });
     } catch (err) {
       if (import.meta.env.DEV) console.error('권한 저장 실패:', err);
+      // 저장 실패 시 서버 상태로 롤백
+      try {
+        const res = await api.get(`/admin/boards/${boardId}/permissions`);
+        setPermissions(prev => ({ ...prev, [boardId]: res.data.data || res.data }));
+      } catch {
+        // 롤백 실패 시 무시
+      }
+      throw err;
     }
   };
 

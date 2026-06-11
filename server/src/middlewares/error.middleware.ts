@@ -77,6 +77,23 @@ export const errorHandler = (
     return;
   }
 
+  // AppError가 아니지만 4xx status를 가진 오류는 클라이언트 오류로 처리한다.
+  // 예: body-parser의 잘못된 JSON(SyntaxError, type='entity.parse.failed', status=400),
+  //     과대 페이로드(413) 등. generic 500 + critical 에러로그로 오인되는 것을 방지.
+  const clientStatus =
+    (err as { status?: number; statusCode?: number }).status ??
+    (err as { statusCode?: number }).statusCode;
+  if (typeof clientStatus === 'number' && clientStatus >= 400 && clientStatus < 500) {
+    res.status(clientStatus).json({
+      success: false,
+      message:
+        (err as { type?: string }).type === 'entity.parse.failed'
+          ? '요청 본문(JSON) 형식이 올바르지 않습니다.'
+          : err.message || '잘못된 요청입니다.',
+    });
+    return;
+  }
+
   // Log unexpected errors
   void errorLogService.createLog({
     userId,

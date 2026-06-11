@@ -8,14 +8,16 @@ import {
   getReportStats,
 } from '../controllers/report.controller';
 import { authenticate } from '../middlewares/auth.middleware';
+import { apiLimiter } from '../middlewares/rate-limit.middleware';
 import { AuthRequest } from '../types/auth-request';
 
 const router = Router();
 
-// 신고 제출 (인증된 사용자)
+// 신고 제출 (인증된 사용자) — 남용 방지를 위해 apiLimiter 적용
 router.post(
   '/',
   authenticate as RequestHandler,
+  apiLimiter as RequestHandler,
   asyncHandler((req, res) => createReport(req as AuthRequest, res))
 );
 
@@ -23,6 +25,7 @@ router.post(
 router.get(
   '/stats',
   authenticate as RequestHandler,
+  apiLimiter as RequestHandler,
   asyncHandler((req, res) => getReportStats(req as AuthRequest, res))
 );
 
@@ -30,6 +33,7 @@ router.get(
 router.get(
   '/',
   authenticate as RequestHandler,
+  apiLimiter as RequestHandler,
   asyncHandler((req, res) => getReports(req as AuthRequest, res))
 );
 

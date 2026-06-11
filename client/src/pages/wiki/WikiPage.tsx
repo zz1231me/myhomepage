@@ -21,15 +21,24 @@ const WikiPageRoute = () => {
   const navigate = useNavigate();
   const { getUserRole } = useAuth();
   const role = getUserRole();
-  const [allowedRoles, setAllowedRoles] = useState<string[]>(['admin', 'manager']);
-  const canEdit = role !== null && allowedRoles.includes(role);
+  const isAdminOrManager = role === 'admin' || role === 'manager';
+  const [allowedRoles, setAllowedRoles] = useState<string[]>([]);
+  const [permissionsLoaded, setPermissionsLoaded] = useState(false);
+  // admin/manager는 서버와 동일하게 항상 편집 허용; 나머지는 권한 로드 후 판단
+  const canEdit =
+    isAdminOrManager || (permissionsLoaded && role !== null && allowedRoles.includes(role));
 
   const { handleImageUpload } = useImageUpload();
 
   useEffect(() => {
     getWikiEditPermissions()
-      .then(data => setAllowedRoles(data.roles))
-      .catch(() => {});
+      .then(data => {
+        setAllowedRoles(data.roles);
+        setPermissionsLoaded(true);
+      })
+      .catch(() => {
+        setPermissionsLoaded(true); // 에러 시에도 로드 완료로 처리 (admin/manager는 항상 가능)
+      });
   }, []);
 
   const [allPages, setAllPages] = useState<WikiPageType[]>([]);
@@ -99,6 +108,9 @@ const WikiPageRoute = () => {
         const page = await updateWikiPage(currentPage.slug, data);
         setCurrentPage(page);
         await fetchPages();
+        if (page.slug !== currentPage.slug) {
+          navigate(`/dashboard/wiki/${page.slug}`, { replace: true });
+        }
       }
       setIsEditing(false);
       setIsCreating(false);

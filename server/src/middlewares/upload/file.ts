@@ -13,6 +13,7 @@ import {
 import { validateFilename } from './utils';
 import { logInfo, logError } from '../../utils/logger';
 import { getSettings } from '../../utils/settingsCache';
+import { AppError } from '../error.middleware';
 
 /**
  * 일반 파일 업로드 Storage 설정
@@ -41,38 +42,31 @@ const fileStorage = multer.diskStorage({
 /**
  * 파일 필터 함수 — 크기·허용 확장자는 런타임에 settingsCache에서 읽음
  */
-function fileFilter(req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) {
+function fileFilter(_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) {
   try {
-    // 파일명 검증 (경로 조작 등)
+    // 파일명 검증 (경로 조작 등) — 사용자 입력 오류이므로 400(AppError)로 전달(500 오인 방지)
     if (!validateFilename(file.originalname)) {
-      return cb(new Error('허용되지 않는 파일명입니다.'));
-    }
-
-    // 파일 크기 사전 체크 (관리자 설정 반영)
-    const docLimit = getDynamicSizeLimits().DOCUMENT;
-    const contentLength = parseInt(req.headers['content-length'] || '0');
-    if (contentLength > docLimit) {
-      return cb(
-        new Error(`파일 크기가 너무 큽니다. 최대 ${docLimit / 1024 / 1024}MB까지 가능합니다.`)
-      );
+      return cb(new AppError(400, '허용되지 않는 파일명입니다.'));
     }
 
     const ext = path.extname(file.originalname).toLowerCase();
 
     // ✅ 절대 차단 확장자 (DB 설정으로 변경 불가)
     if (BLOCKED_EXTENSIONS.includes(ext)) {
-      return cb(new Error(`보안상 위험한 파일 형식입니다: ${ext}`));
+      return cb(new AppError(400, `보안상 위험한 파일 형식입니다: ${ext}`));
     }
 
     // ✅ 확장자 화이트리스트 검사 (관리자 설정 반영)
     if (!ext || !getDynamicAllAllowedExtensions().includes(ext)) {
-      return cb(new Error(`허용되지 않는 파일 형식입니다. (${ext || '확장자 없음'})`));
+      return cb(new AppError(400, `허용되지 않는 파일 형식입니다. (${ext || '확장자 없음'})`));
     }
 
     // ✅ MIME 타입 ↔ 확장자 일치 검사 (MIME_TYPE_MAP에 있는 타입만)
     const expectedExts = MIME_TYPE_MAP[file.mimetype];
     if (expectedExts !== undefined && !expectedExts.includes(ext)) {
-      return cb(new Error(`파일 확장자와 내용이 일치하지 않습니다. (${file.mimetype} → ${ext})`));
+      return cb(
+        new AppError(400, `파일 확장자와 내용이 일치하지 않습니다. (${file.mimetype} → ${ext})`)
+      );
     }
 
     logInfo('파일 업로드 허용', { originalname: file.originalname });
@@ -98,7 +92,7 @@ function buildFileUploader(): multer.Multer {
       files: maxFileCount,
       fields: 10,
       fieldNameSize: 100,
-      fieldSize: 1024 * 1024, // 1MB
+      fieldSize: 2 * 1024 * 1024, // 2MB (한글 500K자 × 3바이트 ≒ 1.5MB + 여유)
       headerPairs: 20,
     },
   });

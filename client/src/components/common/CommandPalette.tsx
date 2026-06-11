@@ -90,7 +90,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onOpenChan
               </Command.Item>
               <Command.Item
                 value="profile 프로필 설정"
-                onSelect={() => runCommand(() => navigate('/dashboard/profile'))}
+                onSelect={() => runCommand(() => navigate('/profile'))}
                 className="command-item"
               >
                 <span className="command-item-icon">👤</span>
@@ -99,7 +99,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onOpenChan
               {user?.role === 'admin' && (
                 <Command.Item
                   value="admin 관리자"
-                  onSelect={() => runCommand(() => navigate('/dashboard/admin'))}
+                  onSelect={() => runCommand(() => navigate('/admin'))}
                   className="command-item"
                 >
                   <span className="command-item-icon">⚙️</span>

@@ -14,10 +14,6 @@ export type RoleType = (typeof ROLES)[keyof typeof ROLES];
 export const isAdminOrManager = (role: string): boolean =>
   role === ROLES.ADMIN || role === ROLES.MANAGER;
 
-// ✅ JWT 토큰 만료 시간
-export const ACCESS_TOKEN_HOURS = 2; // 2시간
-export const REFRESH_TOKEN_DAYS = 3; // 3일
-
 // ✅ 비밀번호 해싱
 export const BCRYPT_ROUNDS = 10;
 
@@ -43,6 +39,12 @@ export const RESERVED_BOARD_IDS = [
   'status',
   'ws',
   'socket',
+  // /api/boards 하위 라우트 리터럴 세그먼트 — 동명 게시판 ID가 라우트를 가리는 것 방지
+  // (예: id가 'check'면 GET /check/can-manage 가 /check/:boardType 에 먹힘)
+  'check',
+  'accessible',
+  'personal',
+  'setup-dummy',
 ];
 
 // ✅ 페이지네이션

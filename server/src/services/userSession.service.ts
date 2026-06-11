@@ -27,14 +27,8 @@ export class UserSessionService extends BaseService {
         Date.now() + getSettings().jwtRefreshTokenDays * 24 * 60 * 60 * 1000
       );
 
-      // 동일 토큰 해시가 이미 있으면 upsert
-      const existing = await UserSession.findOne({ where: { sessionToken } });
-      if (existing) {
-        await existing.update({ isActive: true, lastActiveAt: new Date(), expiresAt });
-        return;
-      }
-
-      await UserSession.create({
+      // upsert: sessionToken unique 제약을 이용해 find+create를 원자적으로 처리
+      await UserSession.upsert({
         userId: data.userId,
         sessionToken,
         ipAddress: data.ipAddress,
@@ -77,12 +71,35 @@ export class UserSessionService extends BaseService {
     try {
       const oldHash = this.hashToken(oldRawToken);
       const newHash = this.hashToken(newRawToken);
+      // expiresAt도 갱신 — DB 만료시각과 JWT 만료시각이 계속 동기화되도록
+      const newExpiresAt = new Date(
+        Date.now() + getSettings().jwtRefreshTokenDays * 24 * 60 * 60 * 1000
+      );
       await UserSession.update(
-        { sessionToken: newHash, lastActiveAt: new Date() },
+        { sessionToken: newHash, lastActiveAt: new Date(), expiresAt: newExpiresAt },
         { where: { sessionToken: oldHash, isActive: true } }
       );
     } catch (error) {
       logError('세션 토큰 교체 실패', error);
+    }
+  }
+
+  /**
+   * DB 세션 유효성 검증 (refreshToken 호출 전 isActive 확인)
+   * forceLogout된 세션은 false 반환 → 토큰 갱신 차단
+   */
+  async validateSession(rawToken: string): Promise<boolean> {
+    try {
+      const sessionToken = this.hashToken(rawToken);
+      const session = await UserSession.findOne({
+        where: { sessionToken, isActive: true, expiresAt: { [Op.gt]: new Date() } },
+        attributes: ['id'],
+      });
+      return session !== null;
+    } catch (error) {
+      logError('세션 유효성 검증 실패', error);
+      // 검증 실패 시 보수적으로 false 반환 — 강제 로그아웃된 세션이 DB 오류 시 통과하는 것을 방지
+      return false;
     }
   }
 

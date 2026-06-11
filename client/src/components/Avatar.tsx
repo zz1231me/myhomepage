@@ -84,9 +84,21 @@ export const Avatar: React.FC<AvatarProps> = React.memo(
       const baseUrl = user.avatar;
 
       // ✅ 사용자별 고유 식별자로 캐시 버스팅 (매번 새로고침 방지)
-      const cacheKey = btoa(`${user.id}_${user.avatar}`).replace(/[^a-zA-Z0-9]/g, '');
-      const separator = baseUrl.includes('?') ? '&' : '?';
+      // btoa는 Latin1만 지원하므로 한글 ID(예: '홍길동') → InvalidCharacterError 발생.
+      // encodeURIComponent로 ASCII 변환 후 btoa 적용해 안전 처리. 실패 시 캐시 버스터 생략 (URL 자체에
+      // 서버가 생성한 timestamp+uuid가 이미 포함되어 cache busting 효과 있음).
+      let cacheKey = '';
+      try {
+        cacheKey = btoa(encodeURIComponent(`${user.id}_${user.avatar}`)).replace(
+          /[^a-zA-Z0-9]/g,
+          ''
+        );
+      } catch {
+        // btoa 실패 시 빈 캐시키 → 쿼리 파라미터 생략
+      }
+      if (!cacheKey) return baseUrl;
 
+      const separator = baseUrl.includes('?') ? '&' : '?';
       return `${baseUrl}${separator}v=${cacheKey}`;
     }, [user.id, user.avatar, imageError]);
 

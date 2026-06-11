@@ -59,7 +59,7 @@ export const WikiDetail: React.FC<WikiDetailProps> = ({ page, allPages, canEdit,
         altText={imageViewer.altText}
       />
       <div className="flex-1 overflow-y-auto bg-white dark:bg-slate-900">
-        <div className="max-w-4xl mx-auto px-6 py-8">
+        <div className="max-w-[var(--content-width-reading)] mx-auto px-6 py-8">
           {/* 브레드크럼 */}
           <nav className="flex items-center gap-1.5 text-sm mb-6 flex-wrap">
             {breadcrumb.map((p, i) => (

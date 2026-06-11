@@ -24,7 +24,9 @@ export const maintenanceMiddleware = async (
   try {
     // Rebuild cache when stale
     if (_mode === null || Date.now() > _expiry) {
-      const settings = await SiteSettings.findByPk(1, {
+      // findByPk(1)은 SiteSettings 행의 ID가 1이 아닐 때 null 반환 → maintenance 무시되는 버그
+      // siteSettings.ts(#125)와 동일하게 findOne으로 변경
+      const settings = await SiteSettings.findOne({
         attributes: ['maintenanceMode', 'maintenanceMessage'],
       });
       _mode = settings?.maintenanceMode ?? false;
@@ -36,8 +38,9 @@ export const maintenanceMiddleware = async (
 
     // Always allow: auth, site-settings (so login + maintenance banner still work), 2FA
     // NOTE: middleware is mounted at /api, so req.path is relative (e.g. /auth/login, not /api/auth/login)
+    // ⚠️ 세그먼트 경계를 검사해야 한다. 단순 startsWith('/auth')는 /auth-bypass 같은 경로도 통과시킴.
     const alwaysAllow = ['/auth', '/site-settings', '/2fa'];
-    if (alwaysAllow.some(p => req.path.startsWith(p))) return next();
+    if (alwaysAllow.some(p => req.path === p || req.path.startsWith(p + '/'))) return next();
 
     // Decode token from cookie to check role — no DB query needed (role is in JWT payload)
     try {

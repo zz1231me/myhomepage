@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Role } from '../../../types/admin.types';
 import { useRoleManagement } from '../../../hooks/admin/useRoleManagement';
+import { useAuth } from '../../../store/auth';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { AdminSection } from '../common/AdminSection';
 import { ConfirmationModal } from '../common/ConfirmationModal';
@@ -9,6 +10,7 @@ import { toast } from '../../../utils/toast';
 
 export const RoleManagement = () => {
   const { roles, fetchRoles, addRole, updateRole, deleteRole, loading } = useRoleManagement();
+  const { user: currentUser } = useAuth();
 
   useEffect(() => {
     fetchRoles();
@@ -109,7 +111,7 @@ export const RoleManagement = () => {
           </AdminFormField>
           <button
             onClick={handleAddRole}
-            disabled={!roleForm.id || !roleForm.name}
+            disabled={!roleForm.id.trim() || !roleForm.name.trim()}
             className="px-4 py-2 text-sm font-semibold rounded-lg bg-primary-600 hover:bg-primary-700 disabled:bg-slate-300 dark:disabled:bg-slate-600 disabled:cursor-not-allowed text-white transition-colors"
           >
             역할 추가
@@ -204,7 +206,8 @@ export const RoleManagement = () => {
                         <div className="flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => handleSaveEdit(role.id)}
-                            className="px-3 py-1.5 text-xs font-medium rounded-md bg-primary-600 hover:bg-primary-700 text-white transition-colors"
+                            disabled={!editData.name.trim()}
+                            className="px-3 py-1.5 text-xs font-medium rounded-md bg-primary-600 hover:bg-primary-700 disabled:bg-slate-300 dark:disabled:bg-slate-600 disabled:cursor-not-allowed text-white transition-colors"
                           >
                             저장
                           </button>
@@ -224,7 +227,13 @@ export const RoleManagement = () => {
                             수정
                           </button>
                           <button
-                            onClick={() => setConfirmDeleteId(role.id)}
+                            onClick={() => {
+                              if (currentUser?.role === role.id) {
+                                toast.error('자신의 역할은 삭제할 수 없습니다.');
+                                return;
+                              }
+                              setConfirmDeleteId(role.id);
+                            }}
                             className="px-3 py-1.5 text-xs rounded-md border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-red-50 hover:border-red-300 hover:text-red-600 dark:hover:bg-red-900/20 transition-colors"
                           >
                             삭제

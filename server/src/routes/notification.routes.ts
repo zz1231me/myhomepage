@@ -10,10 +10,12 @@ import {
   deleteNotification,
 } from '../controllers/notification.controller';
 import { cacheMiddleware } from '../utils/cache';
+import { apiLimiter } from '../middlewares/rate-limit.middleware';
 
 const router = Router();
 
 router.use(authenticate as RequestHandler);
+router.use(apiLimiter);
 
 router.get(
   '/',

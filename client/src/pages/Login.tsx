@@ -1,6 +1,6 @@
 // src/pages/Login.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
 import { Info, AlertTriangle, Building2, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '../store/auth';
 import { useSiteSettings } from '../store/siteSettings';
@@ -11,7 +11,7 @@ import { useTheme } from '../contexts/ThemeContext';
 
 function Login() {
   const { setUser, isAuthenticated } = useAuth();
-  const { settings, setSettings } = useSiteSettings();
+  const { settings, setSettings, isLoadedFromServer } = useSiteSettings();
   const { setTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
@@ -20,10 +20,12 @@ function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  // Register에서 회원가입 직후 관리자 승인 대기 상태로 넘어왔는지 표시
+  const [showApprovalInfo, setShowApprovalInfo] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  // App.tsx에서 이미 로드한 경우 재요청 불필요
-  const [settingsLoaded, setSettingsLoaded] = useState(() => Boolean(settings.siteName));
+  // App.tsx에서 이미 서버 설정을 받아온 경우 재요청 불필요
+  const [settingsLoaded, setSettingsLoaded] = useState(() => isLoadedFromServer);
 
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -45,20 +47,18 @@ function Login() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const state = location.state as { message?: string; registeredId?: string } | null;
+    const state = location.state as {
+      message?: string;
+      registeredId?: string;
+      showApprovalInfo?: boolean;
+    } | null;
     if (state?.message) {
       setSuccessMessage(state.message);
       if (state.registeredId) setId(state.registeredId);
+      if (state.showApprovalInfo) setShowApprovalInfo(true);
       window.history.replaceState({}, document.title);
     }
   }, [location.state]);
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      authLogger.info('이미 로그인된 상태, 대시보드로 이동');
-      navigate('/dashboard', { replace: true });
-    }
-  }, [isAuthenticated, navigate]);
 
   useEffect(() => {
     if (error) {
@@ -112,6 +112,10 @@ function Login() {
     }
   };
 
+  if (isAuthenticated) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   if (!settingsLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
@@ -138,6 +142,23 @@ function Login() {
       <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-violet-400/10 dark:bg-violet-600/8 rounded-full blur-3xl pointer-events-none" />
 
       <div className="w-full max-w-[400px] relative">
+        {/* 관리자 승인 대기 안내 (회원가입 직후 requireApproval=true 인 경우) */}
+        {showApprovalInfo && (
+          <div className="mb-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/60 rounded-xl animate-slideInDown">
+            <div className="flex gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                  관리자 승인 대기 중
+                </p>
+                <p className="text-sm text-amber-700 dark:text-amber-400 mt-0.5">
+                  관리자가 가입을 승인하면 로그인할 수 있습니다. 잠시만 기다려주세요.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 성공 메시지 */}
         {successMessage && (
           <div className="mb-4 p-4 bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800/60 rounded-xl animate-slideInDown">
@@ -294,18 +315,26 @@ function Login() {
             </button>
           </form>
 
-          {/* 회원가입 링크 */}
-          {settings.allowRegistration !== false && (
-            <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-400">
-              계정이 없으신가요?{' '}
-              <Link
-                to="/register"
-                className="text-primary-600 dark:text-primary-400 font-semibold hover:text-primary-700 dark:hover:text-primary-300 transition-colors"
-              >
-                회원가입
-              </Link>
-            </p>
-          )}
+          {/* 비밀번호 찾기 + 회원가입 링크 */}
+          <div className="mt-5 flex flex-col items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+            <Link
+              to="/forgot-password"
+              className="text-primary-600 dark:text-primary-400 font-medium hover:text-primary-700 dark:hover:text-primary-300 transition-colors"
+            >
+              비밀번호를 잊으셨나요?
+            </Link>
+            {settings.allowRegistration !== false && (
+              <p>
+                계정이 없으신가요?{' '}
+                <Link
+                  to="/register"
+                  className="text-primary-600 dark:text-primary-400 font-semibold hover:text-primary-700 dark:hover:text-primary-300 transition-colors"
+                >
+                  회원가입
+                </Link>
+              </p>
+            )}
+          </div>
 
           {/* 관리자 로그인 메시지 */}
           {settings.loginMessage && (

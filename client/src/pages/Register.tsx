@@ -13,6 +13,7 @@ import {
 import { register } from '../api/auth';
 import { useSiteSettings } from '../store/siteSettings';
 import { logger } from '../utils/logger';
+import { PasswordRequirements } from '../components/common/PasswordRequirements';
 
 function Register() {
   const { settings } = useSiteSettings();
@@ -39,50 +40,62 @@ function Register() {
     return undefined;
   }, [error]);
 
+  // 검증 실패 시 해당 input에 포커스 + 스크롤. 사용자가 어느 필드를 고쳐야 하는지 즉시 알 수 있도록.
+  const failWith = (message: string, fieldId: string) => {
+    setError(message);
+    const el = document.getElementById(fieldId) as HTMLInputElement | null;
+    if (el) {
+      el.focus({ preventScroll: false });
+      el.setAttribute('aria-invalid', 'true');
+    }
+    return;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    // 이전에 invalid 표시된 필드 모두 초기화
+    ['id', 'name', 'email', 'password', 'confirmPassword'].forEach(fid => {
+      const el = document.getElementById(fid);
+      if (el) el.removeAttribute('aria-invalid');
+    });
 
     // ✅ 강화된 클라이언트 검증
     if (!formData.id.trim() || formData.id.length < 4 || formData.id.length > 20) {
-      setError('아이디는 4-20자 사이여야 합니다.');
-      return;
+      return failWith('아이디는 4-20자 사이여야 합니다.', 'id');
     }
 
     // ✅ 서버와 동일한 ID 형식 검증 (영문, 숫자, 언더스코어만 허용)
     if (!/^[a-zA-Z0-9_]{4,20}$/.test(formData.id)) {
-      setError('아이디는 영문자, 숫자, 언더스코어(_)만 사용 가능합니다.');
-      return;
+      return failWith('아이디는 영문자, 숫자, 언더스코어(_)만 사용 가능합니다.', 'id');
     }
 
     if (!formData.name.trim() || formData.name.length < 2 || formData.name.length > 10) {
-      setError('이름은 2-10자 사이여야 합니다.');
-      return;
+      return failWith('이름은 2-10자 사이여야 합니다.', 'name');
     }
 
     if (formData.password.length < settings.minPasswordLength) {
-      setError(`비밀번호는 ${settings.minPasswordLength}자 이상이어야 합니다.`);
-      return;
+      return failWith(`비밀번호는 ${settings.minPasswordLength}자 이상이어야 합니다.`, 'password');
     }
 
-    // ✅ 비밀번호 복잡도 검증: 영문 소문자 + 숫자 포함
-    const hasLowerCase = /[a-z]/.test(formData.password);
-    const hasNumber = /[0-9]/.test(formData.password);
-
-    if (!hasLowerCase || !hasNumber) {
-      setError('비밀번호는 영문 소문자와 숫자를 포함해야 합니다.');
-      return;
+    // ✅ 비밀번호 복잡도 검증 (관리자 설정 기반)
+    if (settings.requireUppercase && !/[A-Z]/.test(formData.password)) {
+      return failWith('비밀번호는 영문 대문자를 포함해야 합니다.', 'password');
+    }
+    if (settings.requireLowercase && !/[a-z]/.test(formData.password)) {
+      return failWith('비밀번호는 영문 소문자를 포함해야 합니다.', 'password');
+    }
+    if (settings.requireNumberOrSpecial && !/[0-9!@#$%^&*]/.test(formData.password)) {
+      return failWith('비밀번호는 숫자 또는 특수문자(!@#$%^&*)를 포함해야 합니다.', 'password');
     }
 
     if (formData.password !== formData.confirmPassword) {
-      setError('비밀번호가 일치하지 않습니다.');
-      return;
+      return failWith('비밀번호가 일치하지 않습니다.', 'confirmPassword');
     }
 
     // ✅ 이메일 검증 (선택사항)
     if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      setError('올바른 이메일 형식이 아닙니다.');
-      return;
+      return failWith('올바른 이메일 형식이 아닙니다.', 'email');
     }
 
     setIsLoading(true);
@@ -187,7 +200,6 @@ function Register() {
                           disabled:opacity-50 disabled:cursor-not-allowed
                           transition-all duration-200
                           placeholder:text-slate-400 dark:placeholder:text-slate-500"
-                style={{ border: 'none', outline: 'none' }}
                 placeholder="영문, 숫자 4-20자"
                 pattern="[a-zA-Z0-9_]+"
                 title="영문자, 숫자, 언더스코어(_)만 사용 가능 (4-20자)"
@@ -216,7 +228,6 @@ function Register() {
                           disabled:opacity-50 disabled:cursor-not-allowed
                           transition-all duration-200
                           placeholder:text-slate-400 dark:placeholder:text-slate-500"
-                style={{ border: 'none', outline: 'none' }}
                 placeholder="실명 2-10자"
               />
             </div>
@@ -240,7 +251,6 @@ function Register() {
                           disabled:opacity-50 disabled:cursor-not-allowed
                           transition-all duration-200
                           placeholder:text-slate-400 dark:placeholder:text-slate-500"
-                style={{ border: 'none', outline: 'none' }}
                 placeholder="이메일@example.com (선택)"
               />
             </div>
@@ -262,12 +272,11 @@ function Register() {
                   disabled={isLoading}
                   required
                   minLength={settings.minPasswordLength}
-                  className="w-full px-4 py-3 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100
+                  className="w-full pl-4 pr-12 py-3 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100
                             focus:bg-slate-50 dark:focus:bg-slate-600 focus:ring-2 focus:ring-primary-500/40
                             disabled:opacity-50 disabled:cursor-not-allowed
                             transition-all duration-200
                             placeholder:text-slate-400 dark:placeholder:text-slate-500"
-                  style={{ border: 'none', outline: 'none', paddingRight: '3rem' }}
                   placeholder={`${settings.minPasswordLength}자 이상, 대소문자+숫자/특수문자 포함`}
                 />
                 <button
@@ -275,11 +284,16 @@ function Register() {
                   onClick={() => setShowPassword(!showPassword)}
                   disabled={isLoading}
                   className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-500 transition-colors"
-                  style={{ border: 'none', outline: 'none' }}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+              {/* 비밀번호 실시간 체크리스트 — 어느 조건을 못 채웠는지 즉시 확인 */}
+              {formData.password.length > 0 && (
+                <div className="mt-2">
+                  <PasswordRequirements password={formData.password} />
+                </div>
+              )}
             </div>
 
             {/* 비밀번호 확인 */}
@@ -298,12 +312,11 @@ function Register() {
                   onChange={e => handleChange('confirmPassword', e.target.value)}
                   disabled={isLoading}
                   required
-                  className="w-full px-4 py-3 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 
-                            focus:bg-slate-50 dark:focus:bg-slate-600
+                  className="w-full pl-4 pr-12 py-3 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100
+                            focus:bg-slate-50 dark:focus:bg-slate-600 focus:ring-2 focus:ring-primary-500/40
                             disabled:opacity-50 disabled:cursor-not-allowed
                             transition-all duration-200
                             placeholder:text-slate-400 dark:placeholder:text-slate-500"
-                  style={{ border: 'none', outline: 'none', paddingRight: '3rem' }}
                   placeholder="비밀번호를 다시 입력"
                 />
                 <button
@@ -311,7 +324,6 @@ function Register() {
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                   disabled={isLoading}
                   className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-500 transition-colors"
-                  style={{ border: 'none', outline: 'none' }}
                 >
                   {showConfirmPassword ? (
                     <EyeOff className="w-4 h-4" />
@@ -332,8 +344,8 @@ function Register() {
                         active:scale-[0.98]
                         transition-all duration-150
                         disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100
+                        focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2
                         flex items-center justify-center gap-2"
-              style={{ border: 'none', outline: 'none' }}
             >
               {isLoading ? (
                 <>

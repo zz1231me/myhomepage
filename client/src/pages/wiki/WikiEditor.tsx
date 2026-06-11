@@ -53,13 +53,23 @@ import koTranslations from 'ckeditor5/translations/ko.js';
 import { WikiPage } from '../../types/wiki.types';
 
 // Module-level ref for upload function (avoids stale closure in CKEditor plugin)
+type WikiUploadFn = (
+  blob: Blob,
+  callback: (url: string, alt?: string) => void,
+  opts?: {
+    signal?: AbortSignal;
+    onProgress?: (e: { loaded: number; total: number }) => void;
+  }
+) => Promise<void> | void;
+
 const wikiUploadFnRef = {
-  current: null as ((blob: Blob, callback: (url: string, alt?: string) => void) => void) | null,
+  current: null as WikiUploadFn | null,
 };
 
 class WikiUploadAdapter {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private loader: any;
+  private controller = new AbortController();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(loader: any) {
     this.loader = loader;
@@ -73,11 +83,32 @@ class WikiUploadAdapter {
             reject(new Error('이미지 업로드 핸들러가 설정되지 않았습니다.'));
             return;
           }
-          fn(file, (url: string) => resolve({ default: url }));
+          let settled = false;
+          const result = fn(
+            file,
+            (url: string) => {
+              settled = true;
+              resolve({ default: url });
+            },
+            {
+              signal: this.controller.signal,
+              onProgress: ({ loaded, total }) => {
+                this.loader.uploadTotal = total;
+                this.loader.uploaded = loaded;
+              },
+            }
+          );
+          if (result && typeof (result as Promise<void>).catch === 'function') {
+            (result as Promise<void>).catch(err => {
+              if (!settled) reject(err);
+            });
+          }
         })
     );
   }
-  abort() {}
+  abort() {
+    this.controller.abort();
+  }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -204,7 +235,7 @@ interface WikiEditorProps {
   }) => void;
   onCancel: () => void;
   isSaving?: boolean;
-  onImageUpload?: (blob: Blob, callback: (url: string, alt?: string) => void) => void;
+  onImageUpload?: WikiUploadFn;
 }
 
 export const WikiEditor: React.FC<WikiEditorProps> = ({

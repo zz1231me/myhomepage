@@ -7,11 +7,20 @@ import asyncHandler from 'express-async-handler';
 
 import { authenticate } from '../middlewares/auth.middleware';
 import { uploadImages } from '../middlewares/upload/image'; // ✅ 직접 import
-import { uploadLimiter, downloadLimiter } from '../middlewares/rate-limit.middleware';
+import { validateUploadedFile } from '../middlewares/upload/validator';
+import {
+  uploadLimiter,
+  downloadLimiter,
+  apiLimiter,
+  adminLimiter,
+} from '../middlewares/rate-limit.middleware';
 import { AuthRequest } from '../types/auth-request';
 import { logError, logInfo } from '../utils/logger';
 import { sendSuccess, sendError, sendNotFound, sendForbidden } from '../utils/response';
-import { isAdminOrManager } from '../config/constants';
+import { isAdminOrManager, ROLES } from '../config/constants';
+import { Op, WhereOptions } from 'sequelize';
+import { Post } from '../models/Post';
+import { boardService } from '../services/board.service';
 
 const router = Router();
 
@@ -45,6 +54,7 @@ router.post(
   authenticate as RequestHandler,
   uploadLimiter as RequestHandler,
   uploadImages.single('image'),
+  validateUploadedFile as RequestHandler,
   asyncHandler((req, res) => {
     const authReq = req as AuthRequest;
 
@@ -68,7 +78,9 @@ router.get(
   downloadLimiter as RequestHandler,
   asyncHandler(async (req, res) => {
     const { filename } = req.params as Record<string, string>;
-    const originalName = req.query.originalName as string;
+    const rawOriginalName = req.query.originalName;
+    const originalName =
+      typeof rawOriginalName === 'string' ? rawOriginalName.substring(0, 255) : undefined;
 
     const resolvedFilePath = resolveSecureFilePath(filename, filesDir);
     if (!resolvedFilePath) {
@@ -84,6 +96,43 @@ router.get(
 
     // 다운로드 파일명 결정 (resolvedFilePath에서 basename 추출)
     const savedFilename = path.basename(resolvedFilePath);
+
+    // ✅ 첨부파일 인가: 파일을 첨부한 게시글을 찾아 게시판 읽기 권한 + 비밀글 접근을 검증
+    //    (인증만으로는 다른 게시판/비밀글 첨부파일을 파일명만 알면 받아갈 수 있는 IDOR 방지)
+    const authReq = req as AuthRequest;
+    const userId = authReq.user.id;
+    const userRole = authReq.user.role;
+    // attachments는 TEXT(JSON 문자열) 컬럼이지만 모델 게터 타입이 Attachment[]라 LIKE에 캐스팅 필요
+    const owningPost = await Post.findOne({
+      where: { attachments: { [Op.like]: `%${savedFilename}%` } } as WhereOptions,
+    });
+    if (owningPost) {
+      const perm = await boardService.checkPermission(
+        userId,
+        userRole,
+        owningPost.boardType,
+        'canRead'
+      );
+      if (!perm.hasAccess) {
+        sendForbidden(res, '이 파일에 접근할 권한이 없습니다.');
+        return;
+      }
+      // 'users' 지정 비밀글만 다운로드 시 허용 목록을 검증 (서버가 판별 가능).
+      // password/E2EE 비밀글은 stateless 다운로드 엔드포인트에서 비밀번호 검증 상태를 알 수 없고,
+      // 파일명은 비밀번호 입력 후에만 노출되는 capability이므로 게시판 읽기 권한 통과로 충분.
+      // (정상적으로 글을 열람한 비소유자가 첨부를 못 받는 회귀 방지)
+      if (owningPost.isSecret && owningPost.secretType === 'users') {
+        const isOwner = owningPost.UserId === userId;
+        const isPrivileged = userRole === ROLES.ADMIN || userRole === ROLES.MANAGER;
+        const allowed = (owningPost.secretUserIds || []).includes(userId);
+        if (!isOwner && !isPrivileged && !allowed) {
+          sendForbidden(res, '이 비밀글의 첨부파일에 접근할 권한이 없습니다.');
+          return;
+        }
+      }
+    }
+    // owningPost가 없으면(매칭되는 게시글 없음) 기존 동작 유지 — 게시글 삭제 시 파일도 함께 삭제되므로
+    // 일반적으로 고아 파일은 존재하지 않음
     const downloadFilename = originalName || savedFilename;
     const encodedFilename = encodeURIComponent(downloadFilename);
 
@@ -141,6 +190,7 @@ router.get(
  */
 router.get(
   '/info/:filename',
+  apiLimiter,
   authenticate as RequestHandler,
   asyncHandler(async (req, res) => {
     const { filename } = req.params as Record<string, string>;
@@ -199,6 +249,7 @@ function listFilesInDir(dir: string, type: 'file' | 'image') {
  */
 router.get(
   '/admin/list',
+  adminLimiter,
   authenticate as RequestHandler,
   asyncHandler(async (req, res) => {
     const authReq = req as AuthRequest;
@@ -208,6 +259,10 @@ router.get(
     }
 
     const fileType = req.query.type as string | undefined;
+    const search = String(req.query.search ?? '')
+      .trim()
+      .toLowerCase()
+      .slice(0, 200);
     const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10));
     const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit ?? '20'), 10)));
 
@@ -217,6 +272,11 @@ router.get(
     }
     if (!fileType || fileType === 'image') {
       allFiles = allFiles.concat(listFilesInDir(imagesDir, 'image'));
+    }
+
+    // 파일명 검색 — 페이지네이션 전에 전체 집합에서 필터 (현재 페이지 한정 버그 방지)
+    if (search) {
+      allFiles = allFiles.filter(f => f?.filename.toLowerCase().includes(search));
     }
 
     // 최신순 정렬
@@ -244,6 +304,7 @@ router.get(
  */
 router.delete(
   '/admin/:type/:filename',
+  adminLimiter,
   authenticate as RequestHandler,
   asyncHandler(async (req, res) => {
     const authReq = req as AuthRequest;

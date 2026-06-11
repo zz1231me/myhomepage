@@ -24,7 +24,13 @@ const SecretPostModal: React.FC<SecretPostModalProps> = ({
 
   useEffect(() => {
     inputRef.current?.focus();
-  }, []);
+    // ESC로 목록으로 돌아가기 (다른 모달과 일관)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onBack();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onBack]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,6 +41,9 @@ const SecretPostModal: React.FC<SecretPostModalProps> = ({
     <div className="page-container overflow-y-auto">
       <div className="content-wrapper flex items-center justify-center min-h-[60vh]">
         <motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-label={isEncrypted ? 'E2EE 암호화 글 비밀번호 입력' : '비밀글 비밀번호 입력'}
           className="card p-8 max-w-md w-full"
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -87,6 +96,7 @@ const SecretPostModal: React.FC<SecretPostModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowPassword(v => !v)}
+                  aria-label={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 text-sm"
                   tabIndex={-1}
                 >
@@ -94,7 +104,10 @@ const SecretPostModal: React.FC<SecretPostModalProps> = ({
                 </button>
               </div>
               {error && (
-                <p className="mt-1.5 text-sm text-red-600 dark:text-red-400 flex items-center gap-1">
+                <p
+                  role="alert"
+                  className="mt-1.5 text-sm text-red-600 dark:text-red-400 flex items-center gap-1"
+                >
                   <span>⚠️</span> {error}
                 </p>
               )}

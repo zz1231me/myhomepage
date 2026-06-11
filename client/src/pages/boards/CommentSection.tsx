@@ -2,60 +2,26 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { CKEditor } from '@ckeditor/ckeditor5-react';
-import {
-  ClassicEditor,
-  Alignment,
-  AutoLink,
-  BlockQuote,
-  Bold,
-  Code,
-  CodeBlock,
-  Essentials,
-  FindAndReplace,
-  FontBackgroundColor,
-  FontColor,
-  FontFamily,
-  FontSize,
-  Heading,
-  HorizontalLine,
-  Indent,
-  IndentBlock,
-  Italic,
-  Link,
-  List,
-  ListProperties,
-  Paragraph,
-  PasteFromOffice,
-  RemoveFormat,
-  Strikethrough,
-  Subscript,
-  Superscript,
-  Table,
-  TableCellProperties,
-  TableColumnResize,
-  TableProperties,
-  TableToolbar,
-  Underline,
-  type EditorConfig,
-} from 'ckeditor5';
+import { ClassicEditor, type EditorConfig } from 'ckeditor5';
+import { buildEditorConfig } from '../../components/editor/core/editorConfig';
 import axios from '../../api/axios';
 import { useAuth } from '../../store/auth';
 import { ReportButton } from '../../components/boards/ReportButton';
-import { CommentReactionBar } from '../../components/boards/CommentReactionBar';
 import { Avatar } from '../../components/Avatar';
 import { formatRelativeDate, formatFullDateTime, toISOString } from '../../utils/date';
 import { sanitizeCommentHTML } from '../../utils/htmlSanitizer';
+import { toast } from '../../utils/toast';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/atom-one-dark.min.css';
 import 'ckeditor5/ckeditor5.css';
 import '../../components/editor/core/CKEditorOverride.css';
 import '../../styles/CKContentView.css';
-import koTranslations from 'ckeditor5/translations/ko.js';
 import {
   useCommentOperations,
   getTextLength,
   type Comment,
 } from '../../hooks/useCommentOperations';
+import { useSiteSettings } from '../../store/siteSettings';
 
 export type { Comment };
 
@@ -105,7 +71,10 @@ interface ErrorBannerProps {
   onRetry?: () => void;
 }
 const ErrorBanner: React.FC<ErrorBannerProps> = ({ message, onDismiss, onRetry }) => (
-  <div className="flex items-start gap-3 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
+  <div
+    role="alert"
+    className="flex items-start gap-3 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl"
+  >
     <svg
       className="w-5 h-5 text-red-500 dark:text-red-400 flex-shrink-0 mt-0.5"
       fill="none"
@@ -138,123 +107,6 @@ const ErrorBanner: React.FC<ErrorBannerProps> = ({ message, onDismiss, onRetry }
     )}
   </div>
 );
-
-const COMMENT_PLUGINS = [
-  Essentials,
-  Paragraph,
-  Heading,
-  Bold,
-  Italic,
-  Underline,
-  Strikethrough,
-  Code,
-  Subscript,
-  Superscript,
-  Alignment,
-  Link,
-  AutoLink,
-  List,
-  ListProperties,
-  BlockQuote,
-  CodeBlock,
-  HorizontalLine,
-  Table,
-  TableCellProperties,
-  TableColumnResize,
-  TableProperties,
-  TableToolbar,
-  FontColor,
-  FontBackgroundColor,
-  FontSize,
-  FontFamily,
-  PasteFromOffice,
-  FindAndReplace,
-  Indent,
-  IndentBlock,
-  RemoveFormat,
-];
-
-const COMMENT_TOOLBAR_ITEMS = [
-  'undo',
-  'redo',
-  '|',
-  'bold',
-  'italic',
-  'underline',
-  'strikethrough',
-  'code',
-  '|',
-  'subscript',
-  'superscript',
-  '|',
-  'fontColor',
-  'fontBackgroundColor',
-  'fontFamily',
-  'fontSize',
-  '|',
-  'alignment',
-  '|',
-  'bulletedList',
-  'numberedList',
-  '|',
-  'outdent',
-  'indent',
-  '|',
-  'blockQuote',
-  'codeBlock',
-  '|',
-  'link',
-  'insertTable',
-  '|',
-  'horizontalLine',
-  'removeFormat',
-  '|',
-  'findAndReplace',
-];
-
-const LINK_CONFIG = {
-  defaultProtocol: 'https://',
-  addTargetToExternalLinks: true,
-  decorators: {
-    isExternal: {
-      mode: 'automatic' as const,
-      callback: (url: string | null) => url !== null && /^(https?:)?\/\//.test(url),
-      attributes: { target: '_blank', rel: 'noopener noreferrer' },
-    },
-  },
-};
-
-const SHARED_COMMENT_CONFIG: EditorConfig = {
-  licenseKey: 'GPL',
-  translations: [koTranslations],
-  plugins: COMMENT_PLUGINS,
-  toolbar: { items: COMMENT_TOOLBAR_ITEMS, shouldNotGroupWhenFull: true },
-  heading: {
-    options: [
-      { model: 'paragraph', title: '본문', class: 'ck-heading_paragraph' },
-      { model: 'heading1', view: 'h1', title: '제목 1', class: 'ck-heading_heading1' },
-      { model: 'heading2', view: 'h2', title: '제목 2', class: 'ck-heading_heading2' },
-      { model: 'heading3', view: 'h3', title: '제목 3', class: 'ck-heading_heading3' },
-    ],
-  },
-  table: {
-    contentToolbar: [
-      'tableColumn',
-      'tableRow',
-      'mergeTableCells',
-      'tableProperties',
-      'tableCellProperties',
-    ],
-  },
-  fontSize: {
-    options: [10, 12, 14, 'default', 18, 20, 24, 28, 32],
-    supportAllValues: false,
-  },
-  list: {
-    properties: { styles: true, startIndex: true, reversed: true },
-  },
-  link: LINK_CONFIG,
-};
 
 /** 댓글 본문 렌더러 — DOMPurify sanitizeCommentHTML + hljs 코드 하이라이팅 */
 const CommentContent = React.memo<{ content: string }>(({ content }) => {
@@ -308,6 +160,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
   const { isAuthenticated, getUserId, getUser, isAdmin } = useAuth();
   const currentUserId = getUserId();
   const currentUser = getUser();
+  const { settings: siteSettings } = useSiteSettings();
 
   const fetchComments = useCallback(
     async (signal?: AbortSignal) => {
@@ -339,15 +192,15 @@ const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
   });
 
   const writeConfig = useMemo<EditorConfig>(
-    () => ({ ...SHARED_COMMENT_CONFIG, placeholder: '댓글을 입력하세요...' }),
+    () => buildEditorConfig('comment', { placeholder: '댓글을 입력하세요...' }),
     []
   );
   const editConfig = useMemo<EditorConfig>(
-    () => ({ ...SHARED_COMMENT_CONFIG, placeholder: '댓글을 수정하세요...' }),
+    () => buildEditorConfig('comment', { placeholder: '댓글을 수정하세요...' }),
     []
   );
   const replyConfig = useMemo<EditorConfig>(
-    () => ({ ...SHARED_COMMENT_CONFIG, placeholder: '답글을 입력하세요...' }),
+    () => buildEditorConfig('comment', { placeholder: '답글을 입력하세요...' }),
     []
   );
 
@@ -378,7 +231,8 @@ const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // 복사 실패 시 조용히 무시 (권한 거부 등)
+      // 복사 실패(권한 거부 등) 시 사용자에게 피드백
+      toast.error('댓글 복사에 실패했습니다.');
     }
   }, [commentTree]);
 
@@ -401,7 +255,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
       const isEditing = ops.editingCommentId === comment.id;
       const isDeletedUser = userName.startsWith('삭제된계정_');
       const isReplyingHere = ops.replyingToId === comment.id;
-      const canReply = isAuthenticated && (comment.depth ?? 0) < 3;
+      const canReply = isAuthenticated && (comment.depth ?? 0) < siteSettings.commentMaxDepth - 1;
 
       return (
         <div key={comment.id}>
@@ -585,12 +439,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
                     </div>
                   </div>
                 ) : (
-                  <>
-                    <CommentContent content={comment.content} />
-                    {!isDeletedUser && (
-                      <CommentReactionBar commentId={comment.id} disabled={!isAuthenticated} />
-                    )}
-                  </>
+                  <CommentContent content={comment.content} />
                 )}
               </div>
             </div>

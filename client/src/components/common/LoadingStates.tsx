@@ -5,16 +5,48 @@ import React from 'react';
 interface LoadingSpinnerProps {
   message?: string;
   hint?: string;
+  /** 스피너 크기 — sm: 16px (inline), md: 24px, lg: 48px (page-level 기본) */
+  size?: 'sm' | 'md' | 'lg';
+  /** message 없이 스피너만 렌더 (인라인 사용) */
+  inline?: boolean;
 }
 
+const SIZE_CLASSES: Record<NonNullable<LoadingSpinnerProps['size']>, string> = {
+  sm: 'h-4 w-4 border-2',
+  md: 'h-6 w-6 border-2',
+  lg: 'h-12 w-12 border-b-2',
+};
+
+/**
+ * 통합 로딩 스피너.
+ * - `inline`: 텍스트 없이 작은 스피너 (버튼/리스트 아이템 안 등)
+ * - 기본: 메시지 + 페이지 중앙 정렬
+ *
+ * 프로젝트 전반의 다양한 인라인 스피너를 이 컴포넌트로 대체해 시각 일관성 확보.
+ */
 export const LoadingSpinner = React.memo(
-  ({ message = '데이터를 불러오는 중...', hint }: LoadingSpinnerProps) => (
-    <div className="flex flex-col items-center justify-center py-12">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mb-4"></div>
-      <p className="text-slate-600 dark:text-slate-400">{message}</p>
-      {hint && <div className="mt-2 text-sm text-slate-400 dark:text-slate-500">{hint}</div>}
-    </div>
-  )
+  ({
+    message = '데이터를 불러오는 중...',
+    hint,
+    size = 'lg',
+    inline = false,
+  }: LoadingSpinnerProps) => {
+    const spinner = (
+      <div
+        role="status"
+        aria-label="로딩 중"
+        className={`animate-spin rounded-full border-primary-600 border-t-transparent dark:border-primary-400 dark:border-t-transparent ${SIZE_CLASSES[size]}`}
+      />
+    );
+    if (inline) return spinner;
+    return (
+      <div className="flex flex-col items-center justify-center py-12">
+        <div className={`mb-4 ${size !== 'lg' ? 'mb-3' : ''}`}>{spinner}</div>
+        <p className="text-slate-600 dark:text-slate-400">{message}</p>
+        {hint && <div className="mt-2 text-sm text-slate-400 dark:text-slate-500">{hint}</div>}
+      </div>
+    );
+  }
 );
 LoadingSpinner.displayName = 'LoadingSpinner';
 

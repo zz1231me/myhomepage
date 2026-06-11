@@ -41,7 +41,7 @@ export class LoginHistoryService extends BaseService {
    * 로그인 이력 조회
    */
   async getLoginHistory(params: GetLoginHistoryDTO) {
-    const page = params.page || 1;
+    const page = Math.min(Math.max(params.page || 1, 1), 10000);
     const limit = Math.min(params.limit || 20, 100);
     const offset = (page - 1) * limit;
 
@@ -56,14 +56,19 @@ export class LoginHistoryService extends BaseService {
       where.status = params.status;
     }
 
-    if (params.startDate && params.endDate) {
-      where.createdAt = {
-        [Op.between]: [new Date(params.startDate), new Date(params.endDate)],
-      };
-    } else if (params.startDate) {
-      where.createdAt = { [Op.gte]: new Date(params.startDate) };
-    } else if (params.endDate) {
-      where.createdAt = { [Op.lte]: new Date(params.endDate) };
+    const toDate = (s: string): Date | null => {
+      const d = new Date(s);
+      return isNaN(d.getTime()) ? null : d;
+    };
+    const startDate = params.startDate ? toDate(params.startDate) : null;
+    const endDate = params.endDate ? toDate(params.endDate) : null;
+
+    if (startDate && endDate) {
+      where.createdAt = { [Op.between]: [startDate, endDate] };
+    } else if (startDate) {
+      where.createdAt = { [Op.gte]: startDate };
+    } else if (endDate) {
+      where.createdAt = { [Op.lte]: endDate };
     }
 
     const { count, rows } = await LoginHistory.findAndCountAll({

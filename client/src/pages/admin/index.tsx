@@ -1,6 +1,8 @@
 // client/src/pages/AdminUserPage.tsx - 디자인 일관성 개선
-import { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense, useEffect } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { PageContainer } from '../../components/common/PageContainer';
+import { scrollContentToTop } from '../../utils/scroll';
 import { TabNavigation } from '../../components/admin/common/TabNavigation';
 import { LoadingSpinner } from '../../components/admin/common/LoadingSpinner';
 
@@ -36,9 +38,18 @@ import { PageHeader } from '../../components/common/PageHeader';
 // ...
 
 const AdminUserPage = () => {
+  const location = useLocation();
+
+  // 관리자 탭(라우트) 전환 시 상단으로 (긴 탭→짧은 탭 잔여 스크롤 방지)
+  // admin은 독립 라우트(=window 스크롤)이므로 공통 헬퍼로 처리
+  useEffect(() => {
+    scrollContentToTop();
+  }, [location.pathname]);
+
   return (
-    <div className="page-container p-6 overflow-y-auto">
-      <div className="content-wrapper">
+    // admin은 Dashboard <main> 밖 독립 라우트라 배경/높이를 직접 제공
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
+      <PageContainer>
         <PageHeader
           title="관리자 페이지"
           description="시스템 전체를 관리하는 컨트롤 센터"
@@ -107,7 +118,7 @@ const AdminUserPage = () => {
             </Suspense>
           </div>
         </div>
-      </div>
+      </PageContainer>
     </div>
   );
 };

@@ -18,7 +18,6 @@ import AttachmentList from '../../components/AttachmentList';
 import ImageViewer from '../../components/ImageViewer';
 import SecretPostModal from '../../components/boards/SecretPostModal';
 import { EncryptedPostView } from '../../components/boards/EncryptedPostView';
-import { ReactionPicker } from '../../components/boards/ReactionPicker';
 import { ReportButton } from '../../components/boards/ReportButton';
 import hljs from 'highlight.js';
 import { usePostDetail } from '../../hooks/usePostDetail';
@@ -27,12 +26,12 @@ import { sanitizeHTML } from '../../utils/htmlSanitizer';
 import { formatFullDateTime, toISOString } from '../../utils/date';
 import { PageSkeleton, PageError, PageNotFound } from '../../components/common/LoadingStates';
 import { PageHeader } from '../../components/common/PageHeader';
-import { AnimatedPage } from '../../components/common/AnimatedPage';
+import { PageContainer } from '../../components/common/PageContainer';
+import { ConfirmationModal } from '../../components/admin/common/ConfirmationModal';
 import { markPostRead, togglePin } from '../../api/posts';
-import { toggleReaction, getReactions } from '../../api/reactions';
 import { getPostTags } from '../../api/tags';
 import { useAuth } from '../../store/auth';
-import { ReactionType, Tag } from '../../types/board.types';
+import { Tag } from '../../types/board.types';
 import { toast } from '../../utils/toast';
 
 // TagBadge/PostListItem과 동일한 색상 안전 검증
@@ -109,10 +108,6 @@ const PostDetail = () => {
   const userRole = getUserRole();
   const canPin = userRole === 'admin' || isBoardManager;
 
-  const [reactions, setReactions] = useState<{
-    myReaction: string | null;
-    counts: Record<string, number>;
-  }>({ myReaction: null, counts: {} });
   const [isPinned, setIsPinned] = useState<boolean>(false);
   const [postTags, setPostTags] = useState<Tag[]>([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -125,18 +120,12 @@ const PostDetail = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardType, id, post?.id, loading]);
 
-  // Load reactions and tags when post loads; reset first to avoid stale state
+  // Load tags when post loads; reset first to avoid stale state
   useEffect(() => {
     if (!boardType || !id || !post) return;
     let cancelled = false;
-    setReactions({ myReaction: null, counts: {} });
     setPostTags([]);
     setIsPinned(post.isPinned || false);
-    getReactions(boardType, id)
-      .then(data => {
-        if (!cancelled) setReactions(data);
-      })
-      .catch(() => {});
     getPostTags(boardType, id)
       .then(data => {
         if (!cancelled) setPostTags(data);
@@ -147,16 +136,6 @@ const PostDetail = () => {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardType, id, post?.id]);
-
-  const handleReact = async (type: ReactionType) => {
-    if (!boardType || !id) return;
-    try {
-      const result = await toggleReaction(boardType, id, type);
-      setReactions(result);
-    } catch {
-      toast.error('반응을 등록하지 못했습니다.');
-    }
-  };
 
   const handlePin = async () => {
     if (!boardType || !id) return;
@@ -231,247 +210,224 @@ const PostDetail = () => {
   if (!post) return <PageNotFound onBack={handleBack} />;
 
   return (
-    <AnimatedPage className="page-container overflow-y-auto">
-      <div className="content-wrapper">
-        {/* ✅ 표준화된 페이지 헤더 적용 */}
-        <PageHeader
-          title={getBoardTitle(boardType!)}
-          icon={<FileText className="w-6 h-6 text-primary-600 dark:text-primary-400" />}
-        >
-          <button onClick={handleBack} aria-label="목록으로 돌아가기" className="btn-secondary">
-            <ArrowLeft className="w-4 h-4 mr-1.5" />
-            목록으로
-          </button>
-        </PageHeader>
+    <PageContainer>
+      {/* ✅ 표준화된 페이지 헤더 적용 */}
+      <PageHeader
+        title={getBoardTitle(boardType!)}
+        icon={<FileText className="w-6 h-6 text-primary-600 dark:text-primary-400" />}
+      >
+        <button onClick={handleBack} aria-label="목록으로 돌아가기" className="btn-secondary">
+          <ArrowLeft className="w-4 h-4 mr-1.5" />
+          목록으로
+        </button>
+      </PageHeader>
 
-        {/* ✅ 게시글 카드 */}
-        <main className="card overflow-hidden mb-6">
-          {/* 게시글 헤더 */}
-          <header className="px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900">
-            <div className="flex items-start gap-3 mb-4">
-              {isPinned && (
-                <span className="flex-shrink-0 mt-1" title="고정된 게시글">
-                  <Pin className="w-5 h-5 text-amber-500" fill="currentColor" />
-                </span>
-              )}
-              <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex-1 leading-snug">
-                {post.title}
-              </h1>
-            </div>
-
-            {/* Tags */}
-            {postTags.length > 0 && (
-              <div className="flex items-center gap-2 flex-wrap mb-4">
-                {postTags.map(tag => {
-                  const safeColor = isSafeColor(tag.color) ? tag.color : '#3b82f6';
-                  return (
-                    <span
-                      key={tag.id}
-                      className="text-xs px-2.5 py-1 rounded-full font-medium"
-                      style={{
-                        backgroundColor: safeColor + '20',
-                        color: safeColor,
-                        border: `1px solid ${safeColor}40`,
-                      }}
-                    >
-                      #{tag.name}
-                    </span>
-                  );
-                })}
-              </div>
+      {/* ✅ 게시글 카드 */}
+      <main className="card overflow-hidden mb-6">
+        {/* 게시글 헤더 */}
+        <header className="px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900">
+          <div className="flex items-start gap-3 mb-4">
+            {isPinned && (
+              <span className="flex-shrink-0 mt-1" title="고정된 게시글">
+                <Pin className="w-5 h-5 text-amber-500" fill="currentColor" />
+              </span>
             )}
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex-1 leading-snug">
+              {post.title}
+            </h1>
+          </div>
 
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <div className="flex items-center gap-4">
-                {/* ✅ 작성자 정보 - 올바른 타입 사용 */}
-                <div className="flex items-center gap-3">
-                  <Avatar
-                    user={{
-                      id: post.user?.id || '',
-                      name: post.author,
-                      avatar: post.user?.avatar || null,
+          {/* Tags */}
+          {postTags.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap mb-4">
+              {postTags.map(tag => {
+                const safeColor = isSafeColor(tag.color) ? tag.color : '#3b82f6';
+                return (
+                  <span
+                    key={tag.id}
+                    className="text-xs px-2.5 py-1 rounded-full font-medium"
+                    style={{
+                      backgroundColor: safeColor + '20',
+                      color: safeColor,
+                      border: `1px solid ${safeColor}40`,
                     }}
-                    size="md"
-                  />
-                  <div>
-                    <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                      {post.author}
-                    </div>
-                    <time
-                      dateTime={toISOString(post.createdAt)}
-                      title={formatFullDateTime(post.createdAt)}
-                      className="text-xs text-slate-500 dark:text-slate-400 cursor-default"
-                    >
-                      {formatDate(post.createdAt)}
-                    </time>
+                  >
+                    #{tag.name}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-4">
+              {/* ✅ 작성자 정보 - 올바른 타입 사용 */}
+              <div className="flex items-center gap-3">
+                <Avatar
+                  user={{
+                    id: post.user?.id || '',
+                    name: post.author,
+                    avatar: post.user?.avatar || null,
+                  }}
+                  size="md"
+                />
+                <div>
+                  <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    {post.author}
                   </div>
+                  <time
+                    dateTime={toISOString(post.createdAt)}
+                    title={formatFullDateTime(post.createdAt)}
+                    className="text-xs text-slate-500 dark:text-slate-400 cursor-default"
+                  >
+                    {formatDate(post.createdAt)}
+                  </time>
                 </div>
+              </div>
 
-                {/* 조회수 */}
-                {post.viewCount !== undefined && (
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 rounded-full text-xs font-medium text-slate-700 dark:text-slate-300">
-                    <Eye className="w-4 h-4" aria-hidden="true" />
-                    <span className="sr-only">조회수</span>
-                    <span>{post.viewCount.toLocaleString()}</span>
-                  </div>
-                )}
+              {/* 조회수 */}
+              {post.viewCount !== undefined && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 rounded-full text-xs font-medium text-slate-700 dark:text-slate-300">
+                  <Eye className="w-4 h-4" aria-hidden="true" />
+                  <span className="sr-only">조회수</span>
+                  <span>{post.viewCount.toLocaleString()}</span>
+                </div>
+              )}
 
-                {/* 좋아요 */}
+              {/* 좋아요 */}
+              <button
+                onClick={handleToggleLike}
+                disabled={likeLoading}
+                aria-label={liked ? '좋아요 취소' : '좋아요'}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  liked
+                    ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50'
+                    : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
+                }`}
+              >
+                <Heart className="w-4 h-4" fill={liked ? 'currentColor' : 'none'} />
+                <span>{likeCount.toLocaleString()}</span>
+              </button>
+
+              {/* 핀 버튼 (관리자/매니저) */}
+              {canPin && (
                 <button
-                  onClick={handleToggleLike}
-                  disabled={likeLoading}
-                  aria-label={liked ? '좋아요 취소' : '좋아요'}
+                  type="button"
+                  onClick={handlePin}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                    liked
-                      ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50'
+                    isPinned
+                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/50'
                       : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
                   }`}
+                  aria-label={isPinned ? '고정 해제' : '게시글 고정'}
                 >
-                  <Heart className="w-4 h-4" fill={liked ? 'currentColor' : 'none'} />
-                  <span>{likeCount.toLocaleString()}</span>
+                  <Pin className="w-3.5 h-3.5" fill="currentColor" />
+                  {isPinned ? '고정 해제' : '고정'}
                 </button>
+              )}
 
-                {/* 반응 */}
-                <ReactionPicker
-                  myReaction={reactions.myReaction as ReactionType | null}
-                  counts={reactions.counts}
-                  onReact={handleReact}
-                />
-
-                {/* 핀 버튼 (관리자/매니저) */}
-                {canPin && (
-                  <button
-                    type="button"
-                    onClick={handlePin}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                      isPinned
-                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/50'
-                        : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
-                    }`}
-                    aria-label={isPinned ? '고정 해제' : '게시글 고정'}
-                  >
-                    <Pin className="w-3.5 h-3.5" fill="currentColor" />
-                    {isPinned ? '고정 해제' : '고정'}
-                  </button>
-                )}
-
-                {/* 수정됨 표시 */}
-                {new Date(post.updatedAt).getTime() !== new Date(post.createdAt).getTime() && (
-                  <span className="badge badge-warning">수정됨</span>
-                )}
-              </div>
-
-              {/* ✅ 액션 버튼 */}
-              <div className="flex items-center gap-2">
-                {!canEditOrDelete && post?.id && (
-                  <ReportButton targetType="post" targetId={Number(post.id)} />
-                )}
-                {canEditOrDelete && (
-                  <>
-                    <button
-                      onClick={handleEdit}
-                      disabled={isDeleting}
-                      aria-label="게시글 수정"
-                      className="btn-secondary flex items-center gap-2"
-                    >
-                      <Pencil className="w-4 h-4" />
-                      <span>수정</span>
-                    </button>
-
-                    <button
-                      onClick={() => setShowDeleteConfirm(true)}
-                      disabled={isDeleting}
-                      aria-label="게시글 삭제"
-                      className="btn-danger flex items-center gap-2"
-                    >
-                      {isDeleting ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          <span>삭제 중</span>
-                        </>
-                      ) : (
-                        <>
-                          <Trash2 className="w-4 h-4" />
-                          <span>삭제</span>
-                        </>
-                      )}
-                    </button>
-                  </>
-                )}
-              </div>
+              {/* 수정됨 표시 */}
+              {new Date(post.updatedAt).getTime() !== new Date(post.createdAt).getTime() && (
+                <span className="badge badge-warning">수정됨</span>
+              )}
             </div>
-          </header>
 
-          {/* ✅ 게시글 본문 - 보안이 강화된 HTML 렌더링 */}
-          <section className="px-4 sm:px-6 py-6 sm:py-8">
-            {post.content && <CKContentRenderer content={post.content} />}
-          </section>
+            {/* ✅ 액션 버튼 */}
+            <div className="flex items-center gap-2">
+              {!canEditOrDelete && post?.id && (
+                <ReportButton targetType="post" targetId={Number(post.id)} />
+              )}
+              {canEditOrDelete && (
+                <>
+                  <button
+                    onClick={handleEdit}
+                    disabled={isDeleting}
+                    aria-label="게시글 수정"
+                    className="btn-secondary flex items-center gap-2"
+                  >
+                    <Pencil className="w-4 h-4" />
+                    <span>수정</span>
+                  </button>
 
-          {/* 첨부파일 */}
-          <AttachmentList attachments={post.attachments || []} />
-        </main>
-
-        {/* ✅ 댓글 섹션 */}
-        <section className="card overflow-hidden">
-          <header className="px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900">
-            <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <MessageCircle
-                className="w-5 h-5 text-primary-600 dark:text-primary-400"
-                fill="currentColor"
-              />
-              댓글
-            </h2>
-          </header>
-
-          <div className="px-6 py-6">
-            <React.Suspense
-              fallback={
-                <div className="py-4 text-center text-slate-400 text-sm">댓글 로딩 중...</div>
-              }
-            >
-              <CommentSection postId={id!} />
-            </React.Suspense>
+                  <button
+                    onClick={() => setShowDeleteConfirm(true)}
+                    disabled={isDeleting}
+                    aria-label="게시글 삭제"
+                    className="btn-danger flex items-center gap-2"
+                  >
+                    {isDeleting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>삭제 중</span>
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-4 h-4" />
+                        <span>삭제</span>
+                      </>
+                    )}
+                  </button>
+                </>
+              )}
+            </div>
           </div>
+        </header>
+
+        {/* ✅ 게시글 본문 - 보안이 강화된 HTML 렌더링 */}
+        <section className="px-4 sm:px-6 py-6 sm:py-8">
+          {post.content && <CKContentRenderer content={post.content} />}
         </section>
 
-        {/* 이미지 뷰어 */}
-        <ImageViewer
-          isOpen={imageViewer.isOpen}
-          onClose={closeImageViewer}
-          imageUrl={imageViewer.imageUrl}
-          altText={imageViewer.altText}
-        />
+        {/* 첨부파일 */}
+        <AttachmentList attachments={post.attachments || []} />
+      </main>
 
-        {/* 삭제 확인 모달 */}
-        {showDeleteConfirm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-sm w-full p-6">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">
-                게시글 삭제
-              </h3>
-              <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
-                정말 이 게시글을 삭제하시겠습니까? 삭제 후 복구할 수 없습니다.
-              </p>
-              <div className="flex gap-3 justify-end">
-                <button onClick={() => setShowDeleteConfirm(false)} className="btn-secondary">
-                  취소
-                </button>
-                <button
-                  onClick={() => {
-                    setShowDeleteConfirm(false);
-                    handleDelete();
-                  }}
-                  disabled={isDeleting}
-                  className="btn-danger"
-                >
-                  {isDeleting ? '삭제 중...' : '삭제'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </AnimatedPage>
+      {/* ✅ 댓글 섹션 */}
+      <section className="card overflow-hidden">
+        <header className="px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900">
+          <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <MessageCircle
+              className="w-5 h-5 text-primary-600 dark:text-primary-400"
+              fill="currentColor"
+            />
+            댓글
+          </h2>
+        </header>
+
+        <div className="px-6 py-6">
+          <React.Suspense
+            fallback={
+              <div className="py-4 text-center text-slate-400 text-sm">댓글 로딩 중...</div>
+            }
+          >
+            <CommentSection postId={id!} />
+          </React.Suspense>
+        </div>
+      </section>
+
+      {/* 이미지 뷰어 */}
+      <ImageViewer
+        isOpen={imageViewer.isOpen}
+        onClose={closeImageViewer}
+        imageUrl={imageViewer.imageUrl}
+        altText={imageViewer.altText}
+      />
+
+      {/* 삭제 확인 모달 — 공용 ConfirmationModal 사용 (포커스 트랩/ESC/포커스 복원 포함) */}
+      <ConfirmationModal
+        open={showDeleteConfirm}
+        title="게시글 삭제"
+        message="정말 이 게시글을 삭제하시겠습니까? 삭제 후 복구할 수 없습니다."
+        confirmLabel={isDeleting ? '삭제 중...' : '삭제'}
+        cancelLabel="취소"
+        variant="danger"
+        onConfirm={() => {
+          setShowDeleteConfirm(false);
+          handleDelete();
+        }}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
+    </PageContainer>
   );
 };
 

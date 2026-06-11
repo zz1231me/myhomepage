@@ -5,6 +5,7 @@ import { LoginHistoryRecord } from '../../../types/admin.types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { AdminSection } from '../common/AdminSection';
 import { formatDateTime } from '../../../utils/date';
+import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -36,6 +37,8 @@ export const LoginHistoryManagement = () => {
   const [filterStatus, setFilterStatus] = useState('');
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
+  // 자유 입력 필터는 디바운스 — 키 입력마다 API 호출하지 않도록
+  const debouncedUserId = useDebouncedValue(filterUserId, 400);
 
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const rowVirtualizer = useVirtualizer({
@@ -49,7 +52,7 @@ export const LoginHistoryManagement = () => {
     try {
       setLoading(true);
       const params: Record<string, string | number> = { page, limit: 20 };
-      if (filterUserId) params.userId = filterUserId;
+      if (debouncedUserId) params.userId = debouncedUserId;
       if (filterStatus) params.status = filterStatus;
       if (filterStartDate) params.startDate = filterStartDate;
       if (filterEndDate) params.endDate = filterEndDate;
@@ -63,7 +66,7 @@ export const LoginHistoryManagement = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, filterUserId, filterStatus, filterStartDate, filterEndDate]);
+  }, [page, debouncedUserId, filterStatus, filterStartDate, filterEndDate]);
 
   useEffect(() => {
     fetchRecords();

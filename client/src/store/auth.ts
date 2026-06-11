@@ -165,7 +165,7 @@ export const useAuth = create<AuthState>((set, get) => ({
 
   isAdmin: () => {
     const { user } = get();
-    return user?.role === 'admin';
+    return user?.role === 'admin' && user?.roleInfo?.isActive !== false;
   },
 
   // ✅ permissions.boards 배열 + personalBoard에서 검색

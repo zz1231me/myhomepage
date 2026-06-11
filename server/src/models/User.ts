@@ -236,7 +236,12 @@ class UserModel
       password: _password,
       twoFactorSecret: _twoFactorSecret,
       passwordResetToken: _passwordResetToken,
+      passwordResetExpires: _passwordResetExpires,
       emailVerificationToken: _emailVerificationToken,
+      tokenVersion: _tokenVersion,
+      failedLoginAttempts: _failedLoginAttempts,
+      lockUntil: _lockUntil,
+      lastLoginIp: _lastLoginIp,
       ...safeValues
     } = values;
     return safeValues;

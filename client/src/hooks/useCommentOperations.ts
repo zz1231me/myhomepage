@@ -2,6 +2,7 @@
 import { useState, useCallback, useRef } from 'react';
 import axios from '../api/axios';
 import { useAuth } from '../store/auth';
+import { useSiteSettings } from '../store/siteSettings';
 
 export interface Comment {
   id: number;
@@ -20,9 +21,7 @@ export interface Comment {
   replies?: Comment[];
 }
 
-let _optimisticIdCounter = 0;
-
-const MAX_CHARS = 1000;
+let _optimisticIdCounter = 0; // Number.MAX_SAFE_INTEGER로 wrapping해 overflow 방지
 
 /** HTML 태그를 제거하고 실제 문자 수 반환 */
 export const getTextLength = (html: string): number =>
@@ -45,6 +44,8 @@ export function useCommentOperations({
   const { getUserId, getUser } = useAuth();
   const currentUserId = getUserId();
   const currentUser = getUser();
+  // 관리자 설정값 동적 사용 — 이전엔 1000 하드코딩
+  const MAX_CHARS = useSiteSettings(s => s.settings.commentContentMaxLength);
 
   // 새 댓글 작성
   const [newComment, setNewComment] = useState('');
@@ -76,7 +77,8 @@ export function useCommentOperations({
       if (!textLen || textLen > MAX_CHARS || !boardType || submitting) return;
 
       const commentHtml = newComment;
-      const tempId = -++_optimisticIdCounter;
+      _optimisticIdCounter = (_optimisticIdCounter + 1) % Number.MAX_SAFE_INTEGER;
+      const tempId = -_optimisticIdCounter;
       const optimisticComment: Comment = {
         id: tempId,
         content: commentHtml,
@@ -108,7 +110,7 @@ export function useCommentOperations({
         setSubmitting(false);
       }
     },
-    [newComment, boardType, submitting, postId, currentUser, currentUserId, onRefresh]
+    [newComment, boardType, submitting, postId, currentUser, currentUserId, onRefresh, MAX_CHARS]
   );
 
   const handleReplySubmit = useCallback(
@@ -131,7 +133,7 @@ export function useCommentOperations({
         setReplySubmitting(false);
       }
     },
-    [replyContent, boardType, replySubmitting, postId, onRefresh]
+    [replyContent, boardType, replySubmitting, postId, onRefresh, MAX_CHARS]
   );
 
   const handleReplyOpen = useCallback(
@@ -183,7 +185,7 @@ export function useCommentOperations({
         setEditSaving(false);
       }
     },
-    [editContent, boardType, editSaving, onRefresh]
+    [editContent, boardType, editSaving, onRefresh, MAX_CHARS]
   );
 
   const handleDelete = useCallback(

@@ -171,8 +171,14 @@ const NumberInput: React.FC<NumberInputProps> = ({
 
   const commit = (str: string) => {
     const n = parseInt(str);
-    if (!isNaN(n)) onChange(Math.max(min, Math.min(max, n)));
-    else setRaw(String(value)); // 유효하지 않은 값이면 원래 값으로 복원
+    if (!isNaN(n)) {
+      const clamped = Math.max(min, Math.min(max, n));
+      onChange(clamped);
+      // clamp 결과가 기존 value와 같으면 useEffect가 안 돌아 raw가 입력값에 묶이므로 직접 동기화
+      setRaw(String(clamped));
+    } else {
+      setRaw(String(value)); // 유효하지 않은 값이면 원래 값으로 복원
+    }
   };
 
   return (
@@ -351,6 +357,9 @@ const DEFAULT_SETTINGS: SiteSettings = {
   globalSearchLimit: 50,
   allowGuestComment: false,
   minPasswordLength: 8,
+  requireUppercase: true,
+  requireLowercase: true,
+  requireNumberOrSpecial: true,
   commentMaxDepth: 3,
   commentMaxCount: 1000,
   avatarSizePx: 200,
@@ -362,14 +371,29 @@ const DEFAULT_SETTINGS: SiteSettings = {
   rateLimitDownloadMax: 100,
   autoSaveIntervalSeconds: 30,
   draftExpiryMinutes: 60,
+  memoMaxPerUser: 200,
+  commentContentMaxLength: 1000,
+  eventBodyMaxLength: 10000,
+  eventLocationMaxLength: 500,
 };
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export const SiteSettingsManagement = () => {
-  const { setSettings: updateStore } = useSiteSettings();
-  const [settings, setSettings] = useState<SiteSettings>(DEFAULT_SETTINGS);
-  const [loading, setLoading] = useState(true);
+  const {
+    setSettings: updateStore,
+    settings: storeSettings,
+    isLoadedFromServer,
+  } = useSiteSettings();
+
+  const [settings, setSettings] = useState<SiteSettings>(() =>
+    isLoadedFromServer
+      ? { ...DEFAULT_SETTINGS, ...(storeSettings as unknown as SiteSettings) }
+      : DEFAULT_SETTINGS
+  );
+  const [loading, setLoading] = useState(!isLoadedFromServer);
+  const isDirty = useRef(false);
+
   const [resetting, setResetting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -389,8 +413,10 @@ export const SiteSettingsManagement = () => {
     []
   );
 
-  const set = <K extends keyof SiteSettings>(key: K, val: SiteSettings[K]) =>
+  const set = <K extends keyof SiteSettings>(key: K, val: SiteSettings[K]) => {
+    isDirty.current = true;
     setSettings(prev => ({ ...prev, [key]: val }));
+  };
 
   const applyFavicon = (url: string) => {
     let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement | null;
@@ -406,14 +432,19 @@ export const SiteSettingsManagement = () => {
     (async () => {
       try {
         const data = await getSiteSettings();
-        // DEFAULT_SETTINGS와 병합하여 새 필드가 DB에 없을 때도 기본값 유지
-        setSettings({ ...DEFAULT_SETTINGS, ...data });
+        // 사용자가 편집을 시작하지 않은 경우에만 서버 데이터로 폼 덮어쓰기
+        if (!isDirty.current) {
+          setSettings({ ...DEFAULT_SETTINGS, ...data });
+        }
+        // 스토어는 항상 최신 서버 값으로 유지
+        updateStore(data as unknown as Parameters<typeof updateStore>[0]);
       } catch {
         setMessage({ type: 'error', text: '설정을 불러오는데 실패했습니다.' });
       } finally {
         setLoading(false);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -428,6 +459,7 @@ export const SiteSettingsManagement = () => {
       const updated = await updateSiteSettings(settings);
       setSettings(updated);
       updateStore(updated);
+      isDirty.current = false; // 저장 성공 시 dirty 플래그 초기화
       document.title = updated.siteTitle;
       if (updated.faviconUrl) applyFavicon(updated.faviconUrl);
       showMessage('success', '✅ 설정이 저장되었습니다.');
@@ -586,6 +618,42 @@ export const SiteSettingsManagement = () => {
               onChange={v => set('commentMaxCount', v)}
               unit="개"
             />
+            <NumberInput
+              label="댓글 본문 최대 글자수"
+              description="댓글 1개의 본문 길이 상한"
+              min={100}
+              max={10000}
+              value={settings.commentContentMaxLength}
+              onChange={v => set('commentContentMaxLength', v)}
+              unit="자"
+            />
+            <NumberInput
+              label="사용자당 최대 메모 개수"
+              description="개인 메모 보드의 사용자별 메모 상한 (DoS 방지)"
+              min={10}
+              max={2000}
+              value={settings.memoMaxPerUser}
+              onChange={v => set('memoMaxPerUser', v)}
+              unit="개"
+            />
+            <NumberInput
+              label="이벤트 본문 최대 글자수"
+              description="캘린더 이벤트의 본문(설명) 길이 상한"
+              min={100}
+              max={100000}
+              value={settings.eventBodyMaxLength}
+              onChange={v => set('eventBodyMaxLength', v)}
+              unit="자"
+            />
+            <NumberInput
+              label="이벤트 장소 최대 글자수"
+              description="캘린더 이벤트의 장소 필드 길이 상한"
+              min={10}
+              max={2000}
+              value={settings.eventLocationMaxLength}
+              onChange={v => set('eventLocationMaxLength', v)}
+              unit="자"
+            />
           </div>
         </div>
       </AdminSection>
@@ -658,13 +726,58 @@ export const SiteSettingsManagement = () => {
             </h4>
             <NumberInput
               label="비밀번호 최소 길이"
-              description="회원가입/변경 시 요구되는 최소 비밀번호 길이"
-              min={4}
-              max={32}
+              description="회원가입/변경 시 요구되는 최소 비밀번호 길이 (6~72자)"
+              min={6}
+              max={72}
               value={settings.minPasswordLength}
               onChange={v => set('minPasswordLength', v)}
               unit="자"
             />
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                비밀번호 복잡도 요구사항
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                각 조건을 끄면 해당 요건 없이도 비밀번호를 설정할 수 있습니다.
+              </p>
+              {(
+                [
+                  {
+                    key: 'requireUppercase' as const,
+                    label: '영문 대문자 포함 필수',
+                    desc: '예: A, B, C …',
+                  },
+                  {
+                    key: 'requireLowercase' as const,
+                    label: '영문 소문자 포함 필수',
+                    desc: '예: a, b, c …',
+                  },
+                  {
+                    key: 'requireNumberOrSpecial' as const,
+                    label: '숫자 또는 특수문자 포함 필수',
+                    desc: '숫자(0-9) 또는 !@#$%^&*',
+                  },
+                ] as const
+              ).map(({ key, label, desc }) => (
+                <label
+                  key={key}
+                  className="flex items-center justify-between gap-4 px-4 py-3 rounded-lg bg-slate-50 dark:bg-slate-700/50 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                >
+                  <span className="flex flex-col">
+                    <span className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                      {label}
+                    </span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">{desc}</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={settings[key]}
+                    onChange={e => set(key, e.target.checked)}
+                    className="w-4 h-4 accent-primary-600"
+                  />
+                </label>
+              ))}
+            </div>
             <NumberInput
               label="로그인 최대 시도 횟수"
               description="초과 시 계정이 잠깁니다"
@@ -825,7 +938,7 @@ export const SiteSettingsManagement = () => {
             label="아바타 최대 크기"
             description="프로필 사진 업로드 제한"
             min={1}
-            max={50}
+            max={100}
             value={settings.maxAvatarSizeMb}
             onChange={v => set('maxAvatarSizeMb', v)}
             unit="MB"
@@ -1019,6 +1132,7 @@ export const SiteSettingsManagement = () => {
             setResetting(true);
             try {
               setSettings(await getSiteSettings());
+              isDirty.current = false; // 취소 시 dirty 플래그 초기화
             } catch {
               showMessage('error', '설정을 불러오는데 실패했습니다.');
             } finally {

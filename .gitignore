@@ -19,6 +19,11 @@ node_modules/
 .DS_Store
 Thumbs.db
 
+# 환경변수 (시크릿 포함 — .env.sample만 추적)
+.env
+.env.*
+!.env.sample
+
 # 로그
 logs/
 *.log

@@ -41,7 +41,7 @@ export const Pagination = memo<PaginationProps>(({ pagination, currentPage, onPa
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
-      className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 dark:text-slate-500
+      className="w-11 h-11 sm:w-8 sm:h-8 flex items-center justify-center rounded-lg text-slate-400 dark:text-slate-500
                  hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-300
                  disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
     >
@@ -106,7 +106,7 @@ const PageBtn = ({
     onClick={() => onClick(page)}
     aria-label={`${page}페이지로 이동`}
     aria-current={current === page ? 'page' : undefined}
-    className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm font-medium transition-all duration-150 ${
+    className={`w-11 h-11 sm:w-8 sm:h-8 flex items-center justify-center rounded-lg text-sm font-medium transition-all duration-150 ${
       current === page
         ? 'bg-primary-600 dark:bg-primary-500 text-white shadow-sm scale-105'
         : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-slate-200 hover:scale-105 active:scale-95'

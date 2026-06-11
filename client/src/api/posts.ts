@@ -1,6 +1,5 @@
 import axios from './axios';
 import { unwrap } from './utils';
-import { MAX_FILE_COUNT } from '../constants/config';
 
 // ✅ 깔끔한 타입 정의
 type PostPayload = {
@@ -105,7 +104,7 @@ export async function fetchPostById(boardType: string, postId: string) {
   return postData;
 }
 
-// ✅ 비밀글 비밀번호 검증
+// ✅ 비밀글 비밀번호 검증 (일반 비밀글용 — E2EE 게시글에는 사용하지 않음)
 export async function verifySecretPost(boardType: string, postId: string, password: string) {
   const res = await axios.post(`/posts/${boardType}/${postId}/verify`, { password });
   if (!res.data.success || !res.data.data) throw new Error('잘못된 응답 구조');
@@ -155,16 +154,14 @@ export async function createPost({
     }
   }
 
-  // ✅ 다중 파일 추가 - 한글 파일명 안전 처리
+  // ✅ 다중 파일 추가 - 한글 파일명 안전 처리 (개수 제한은 호출부/서버에서 처리)
   if (files && files.length > 0) {
-    const limitedFiles = files.slice(0, MAX_FILE_COUNT);
-
     // 원본 파일명을 JSON으로 별도 전송
-    const originalNames = limitedFiles.map(file => file.name);
+    const originalNames = files.map(file => file.name);
     formData.append('originalFilenames', JSON.stringify(originalNames));
 
     // 파일 자체는 그대로 추가 (multer가 처리)
-    limitedFiles.forEach(file => {
+    files.forEach(file => {
       formData.append('files', file);
     });
   }
@@ -212,9 +209,10 @@ export async function updatePost(
     formData.append('secretPassword', secretPassword);
   if (isSecret && secretType === 'users' && secretUserIds)
     formData.append('secretUserIds', JSON.stringify(secretUserIds));
-  if (isSecret && isEncrypted) {
-    formData.append('isEncrypted', 'true');
-    if (secretSalt) formData.append('secretSalt', secretSalt);
+  if (isSecret) {
+    // isEncrypted는 항상 명시적으로 전송 (absent 시 서버가 false로 강제 처리하여 E2EE 플래그 소실 방지)
+    formData.append('isEncrypted', isEncrypted ? 'true' : 'false');
+    if (isEncrypted && secretSalt) formData.append('secretSalt', secretSalt);
   }
 
   // 낙관적 잠금 버전
@@ -225,16 +223,14 @@ export async function updatePost(
     formData.append('deletedFileNames', JSON.stringify(deletedFileNames));
   }
 
-  // ✅ 새로운 파일들 추가 - 한글 파일명 안전 처리
+  // ✅ 새로운 파일들 추가 - 한글 파일명 안전 처리 (개수 제한은 호출부/서버에서 처리)
   if (files && files.length > 0) {
-    const limitedFiles = files.slice(0, MAX_FILE_COUNT);
-
     // 원본 파일명을 JSON으로 별도 전송
-    const originalNames = limitedFiles.map(file => file.name);
+    const originalNames = files.map(file => file.name);
     formData.append('originalFilenames', JSON.stringify(originalNames));
 
     // 파일 자체는 그대로 추가 (multer가 처리)
-    limitedFiles.forEach(file => {
+    files.forEach(file => {
       formData.append('files', file);
     });
   }

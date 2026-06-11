@@ -4,7 +4,6 @@ import { AuthRequest } from '../types/auth-request';
 import Bookmark from '../models/Bookmark';
 import { sendSuccess, sendError, sendNotFound, sendValidationError } from '../utils/response';
 import { sequelize } from '../config/sequelize';
-import { literal } from 'sequelize';
 
 function normalizeAndValidateUrl(url: string): { ok: boolean; url?: string; error?: string } {
   let normalized = url.trim();
@@ -76,6 +75,11 @@ export const createBookmark = async (
       return;
     }
 
+    if (String(name).trim().length > 100) {
+      sendValidationError(res, 'name', '북마크 이름은 100자를 초과할 수 없습니다.');
+      return;
+    }
+
     const urlResult = normalizeAndValidateUrl(url);
     if (!urlResult.ok) {
       sendValidationError(res, 'url', urlResult.error!);
@@ -93,12 +97,15 @@ export const createBookmark = async (
       }
     }
 
-    // order가 명시적으로 주어지지 않은 경우 DB subquery로 원자적 계산
-    const orderExpr =
-      order !== undefined && order !== null
-        ? (order as number)
-        : // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (literal('(SELECT COALESCE(MAX(`order`), 0) + 1 FROM Bookmarks)') as any);
+    // order가 명시적으로 주어지지 않은 경우 Sequelize .max()로 계산
+    // — dialect-aware 인용 부호(MySQL/PG/SQLite 공통)
+    let orderExpr: number;
+    if (order !== undefined && order !== null) {
+      orderExpr = order as number;
+    } else {
+      const maxOrder = (await Bookmark.max('order')) as number | null;
+      orderExpr = (maxOrder ?? 0) + 1;
+    }
 
     const bookmark = await Bookmark.create({
       name: name.trim(),
@@ -127,6 +134,11 @@ export const updateBookmark = async (
     const bookmark = await Bookmark.findByPk(id);
     if (!bookmark) {
       sendNotFound(res, '북마크');
+      return;
+    }
+
+    if (name && String(name).trim().length > 100) {
+      sendValidationError(res, 'name', '북마크 이름은 100자를 초과할 수 없습니다.');
       return;
     }
 
@@ -185,14 +197,20 @@ export const reorderBookmarks = async (
   try {
     const { bookmarks } = req.body;
 
+    if (!Array.isArray(bookmarks) || bookmarks.length > 500) {
+      sendError(res, 400, '북마크 목록이 올바르지 않습니다. (최대 500개)');
+      return;
+    }
+
     if (
-      !Array.isArray(bookmarks) ||
-      bookmarks.some(b => !b.id || typeof b.order !== 'number' || b.order < 0)
+      bookmarks.some(
+        b => !b.id || !Number.isInteger(b.order) || b.order < 0 || b.order > 2_147_483_647
+      )
     ) {
       sendError(
         res,
         400,
-        '잘못된 요청 형식입니다. 각 북마크는 유효한 id와 order(0 이상 숫자)를 포함해야 합니다.'
+        '잘못된 요청 형식입니다. 각 북마크는 유효한 id와 order(0 이상 정수)를 포함해야 합니다.'
       );
       return;
     }

@@ -56,6 +56,12 @@ const SAFE_CSS_PROPS = new Set([
   'font-style',
   'text-indent',
   'white-space',
+  // 동영상 임베드 반응형 래퍼(figure.media)용 — position은 값 가드로 fixed/sticky 차단
+  'position',
+  'top',
+  'right',
+  'bottom',
+  'left',
 ]);
 
 const DANGEROUS_CSS_VALUES = /javascript:|expression\s*\(|url\s*\(/i;
@@ -77,7 +83,10 @@ function sanitizeStyleAttr(node: Element): void {
         .slice(colonIdx + 1)
         .trim()
         .toLowerCase();
-      return SAFE_CSS_PROPS.has(prop) && !DANGEROUS_CSS_VALUES.test(value);
+      if (!SAFE_CSS_PROPS.has(prop) || DANGEROUS_CSS_VALUES.test(value)) return false;
+      // position: fixed/sticky는 뷰포트 고정 오버레이(클릭재킹) 가능 → relative/absolute/static만 허용
+      if (prop === 'position' && !/^(static|relative|absolute)$/.test(value)) return false;
+      return true;
     })
     .join('; ');
 
@@ -88,11 +97,51 @@ function sanitizeStyleAttr(node: Element): void {
   }
 }
 
-// <a> 태그 보안 속성 강제 적용 + 인라인 style 정화
+// 신뢰 동영상 임베드 호스트 — iframe src 화이트리스트(호스트 → 허용 경로 prefix)
+// CKEditor MediaEmbed는 YouTube/Vimeo 임베드 URL을 생성한다(previewsInData).
+const ALLOWED_EMBED_HOSTS: Record<string, string> = {
+  'www.youtube.com': '/embed/',
+  'youtube.com': '/embed/',
+  'www.youtube-nocookie.com': '/embed/',
+  'youtube-nocookie.com': '/embed/',
+  'player.vimeo.com': '/video/',
+};
+
+/** iframe src가 신뢰 동영상 임베드(https + 허용 호스트 + 허용 경로)인지 검증 */
+function isAllowedEmbedSrc(src: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(src); // 상대/프로토콜상대 URL은 base 없이 throw → 거부
+  } catch {
+    return false;
+  }
+  if (u.protocol !== 'https:') return false;
+  const prefix = ALLOWED_EMBED_HOSTS[u.hostname.toLowerCase()];
+  return !!prefix && u.pathname.startsWith(prefix);
+}
+
+// iframe: 신뢰 동영상 호스트만 통과, 그 외(피싱/클릭재킹 프레임)는 제거.
+// 태그 단위 결정이므로 ALLOWED_TAGS 검사보다 먼저 도는 uponSanitizeElement에서 처리.
+DOMPurify.addHook('uponSanitizeElement', (node, data) => {
+  if (data.tagName !== 'iframe') return;
+  const el = node as Element;
+  const src = el.getAttribute('src') ?? '';
+  if (!isAllowedEmbedSrc(src)) {
+    el.parentNode?.removeChild(el);
+  }
+});
+
+// <a> 태그 보안 속성 강제 적용 + iframe 하드닝 + 인라인 style 정화
 DOMPurify.addHook('afterSanitizeAttributes', node => {
   if (node.tagName === 'A') {
     node.setAttribute('rel', 'noopener noreferrer');
     node.setAttribute('target', '_blank');
+  }
+  // 살아남은(=신뢰 호스트) iframe에 보수적 속성 강제
+  if (node.tagName === 'IFRAME') {
+    node.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+    node.setAttribute('loading', 'lazy');
+    node.removeAttribute('srcdoc'); // 인라인 문서 주입 차단
   }
   if (node.hasAttribute('style')) {
     sanitizeStyleAttr(node as Element);
@@ -147,6 +196,7 @@ const defaultOptions: SanitizeOptions = {
     'sup',
     'hr',
     'mark', // CKEditor Highlight 플러그인: <mark class="marker-yellow"> 등
+    'iframe', // 동영상 임베드 — src는 신뢰 호스트만 통과(uponSanitizeElement 훅)
   ],
   ALLOWED_ATTR: [
     'href',
@@ -162,6 +212,12 @@ const defaultOptions: SanitizeOptions = {
     'target',
     'rel',
     'data-figure-type', // CKEditor figure metadata
+    // 동영상 임베드 iframe 속성
+    'frameborder',
+    'allow',
+    'allowfullscreen',
+    'referrerpolicy',
+    'loading',
   ],
   ALLOW_DATA_ATTR: false,
   KEEP_CONTENT: true,
@@ -187,7 +243,9 @@ export function sanitizeHTML(dirty: string, options: SanitizeOptions = {}): stri
     KEEP_CONTENT: config.KEEP_CONTENT,
 
     FORBID_CONTENTS: ['script', 'style'],
-    FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input'],
+    // iframe은 FORBID에서 제외 — 대신 uponSanitizeElement 훅이 신뢰 호스트만 통과시키고,
+    // 댓글 등 iframe을 ALLOWED_TAGS에 넣지 않는 경로에서는 자동 제거된다.
+    FORBID_TAGS: ['script', 'style', 'object', 'embed', 'form', 'input'],
     // Note: 'style' attribute is allowed but sanitized via the afterSanitizeAttributes hook
     FORBID_ATTR: ['onclick', 'onload', 'onerror', 'onmouseover', 'onfocus', 'onblur'],
     SAFE_FOR_TEMPLATES: true,

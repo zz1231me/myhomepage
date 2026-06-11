@@ -8,7 +8,8 @@ import jwt from 'jsonwebtoken';
 import Board from '../models/Board';
 import BoardAccess from '../models/BoardAccess';
 import EventPermission from '../models/EventPermission';
-import { Op } from 'sequelize';
+import { Op, UniqueConstraintError } from 'sequelize';
+import { sequelize } from '../config/sequelize';
 import crypto from 'crypto';
 import { securityLogService } from './securityLog.service';
 import { loginHistoryService } from './loginHistory.service';
@@ -68,6 +69,15 @@ export class AuthService extends BaseService {
       }),
       BoardAccess.findAll({
         where: { roleId: user.roleId },
+        include: [
+          {
+            model: Board,
+            as: 'board',
+            attributes: ['id'],
+            where: { isActive: true, isPersonal: false },
+            required: true,
+          },
+        ],
       }),
       Board.findOne({
         where: {
@@ -218,23 +228,15 @@ export class AuthService extends BaseService {
     // 새 IP 감지를 위해 업데이트 전 이전 IP 보존
     const previousLoginIp = user.lastLoginIp ?? null;
 
-    // ✅ DB 컬럼 누락 시 save() 실패해도 로그인은 계속 진행
-    try {
-      await user.resetFailedAttempts(ipAddress);
-    } catch (err) {
-      logWarning('로그인 성공 후 실패 카운터 리셋 실패 (마이그레이션 중일 수 있음)', {
-        userId: user.id,
-        err,
-      });
-    }
-
     // ✅ 2FA 체크: 2FA가 활성화된 사용자는 추가 인증 필요
+    //    실패 카운터/lastLoginIp 갱신은 2FA 검증 성공 후로 미룬다 (2FA brute force 시 잠금 보존)
     if (user.twoFactorEnabled) {
-      // 임시 토큰 생성 (2FA 검증용, 짧은 만료시간)
-      const tempToken = jwt.sign({ id: user.id, type: '2fa_pending' }, process.env.JWT_SECRET!, {
-        expiresIn: '5m',
-        algorithm: 'HS256',
-      });
+      // 임시 토큰 생성 (2FA 검증용, 짧은 만료시간) — tv 포함으로 비밀번호 변경 시 무효화
+      const tempToken = jwt.sign(
+        { id: user.id, type: '2fa_pending', tv: user.tokenVersion ?? 0 },
+        process.env.JWT_SECRET!,
+        { expiresIn: '5m', algorithm: 'HS256' }
+      );
 
       return {
         user,
@@ -244,6 +246,16 @@ export class AuthService extends BaseService {
         requires2FA: true,
         tempToken,
       };
+    }
+
+    // ✅ DB 컬럼 누락 시 save() 실패해도 로그인은 계속 진행
+    try {
+      await user.resetFailedAttempts(ipAddress);
+    } catch (err) {
+      logWarning('로그인 성공 후 실패 카운터 리셋 실패 (마이그레이션 중일 수 있음)', {
+        userId: user.id,
+        err,
+      });
     }
 
     const payload = await this.generateUserPayload(user);
@@ -345,6 +357,8 @@ export class AuthService extends BaseService {
       if (!user) throw new AppError(401, '사용자를 찾을 수 없습니다.');
       if (user.isDeletedAccount()) throw new AppError(401, '삭제된 계정입니다.');
       if (!user.roleInfo?.isActive) throw new AppError(403, '비활성화된 역할입니다.');
+      if (user.isLocked())
+        throw new AppError(403, '계정이 잠겨있습니다. 나중에 다시 시도해주세요.');
 
       // tokenVersion 검증: 로그아웃 후 기존 토큰 무효화
       // decoded.tv가 없는 구형 토큰이면서 tokenVersion이 이미 증가된 경우도 거부
@@ -370,6 +384,12 @@ export class AuthService extends BaseService {
         process.env.JWT_REFRESH_SECRET!,
         { expiresIn: `${refreshDays}d`, algorithm: 'HS256' }
       );
+
+      // DB 세션 활성 상태 확인 — forceLogout된 세션은 토큰 갱신 차단
+      const sessionValid = await userSessionService.validateSession(token);
+      if (!sessionValid) {
+        throw new AppError(401, '세션이 만료되었습니다. 다시 로그인해주세요.');
+      }
 
       // 세션 토큰 교체 + 활동 시각 갱신
       // 구 refresh token → 신 refresh token 으로 DB 세션을 교체해야 다음 갱신에서도 추적 가능
@@ -416,35 +436,47 @@ export class AuthService extends BaseService {
       });
     }
 
-    const existing = await User.findByPk(data.id);
-    if (existing) throw new AppError(409, '이미 존재하는 아이디입니다.');
-
-    if (data.email) {
-      const existingEmail = await User.findOne({ where: { email: data.email } });
-      if (existingEmail) throw new AppError(409, '이미 사용 중인 이메일입니다.');
+    // TOCTOU 방지: 사전 findByPk 체크 없이 UniqueConstraintError에만 의존 (wiki/role과 일관)
+    // afterCreate 훅이 Board.create를 실행하므로 트랜잭션으로 감싸야 Board 실패 시 User도 롤백됨
+    try {
+      return await sequelize.transaction(async t => {
+        return User.create(
+          {
+            id: data.id,
+            password: data.password, // Hook hashes
+            name: data.name,
+            email: data.email ? data.email.toLowerCase().trim() : null,
+            roleId: 'guest',
+            isActive: false,
+          },
+          { transaction: t }
+        );
+      });
+    } catch (err) {
+      if (err instanceof UniqueConstraintError) {
+        const field = err.fields && 'email' in err.fields ? '이메일' : '아이디';
+        throw new AppError(409, `이미 사용 중인 ${field}입니다.`);
+      }
+      throw err;
     }
-
-    return User.create({
-      id: data.id,
-      password: data.password, // Hook hashes
-      name: data.name,
-      email: data.email || null,
-      roleId: 'guest',
-      isActive: false,
-    });
   }
 
   // 비밀번호 재설정 토큰 생성 및 저장
   async forgotPassword(email: string): Promise<{ token: string; user: UserInstance } | null> {
     const user = await User.findOne({ where: { email, isActive: true, isDeleted: false } });
-    if (!user) return null; // 보안상 사용자 존재 여부 숨김
+    if (!user) {
+      // 타이밍 사이드채널 완화: 존재하지 않는 이메일에도 동등한 crypto 비용 수행 (계정 열거 방지)
+      // — 응답 메시지는 컨트롤러에서 이미 동일, rate limit(5/15분)와 함께 이중 방어
+      crypto.createHash('sha256').update(crypto.randomBytes(32)).digest('hex');
+      return null;
+    }
 
     const token = await user.generatePasswordResetToken(); // 평문 토큰 반환, 내부에서 save() 호출
     return { token, user };
   }
 
   // 토큰 검증 후 비밀번호 변경
-  async resetPassword(token: string, newPassword: string): Promise<boolean> {
+  async resetPassword(token: string, newPassword: string): Promise<string | null> {
     // DB에는 SHA-256 해시가 저장되므로 입력 토큰을 해싱 후 비교
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
     const user = await User.findOne({
@@ -456,30 +488,30 @@ export class AuthService extends BaseService {
       },
     });
 
-    if (!user) return false;
+    if (!user) return null;
 
     const hashedPassword = await bcrypt.hash(newPassword, getBcryptRounds());
     user.password = hashedPassword;
     user.passwordResetToken = null;
     user.passwordResetExpires = null;
+    user.tokenVersion = (user.tokenVersion ?? 0) + 1; // 기존 세션 즉시 무효화
     // ✅ 이미 해싱된 값이므로 beforeUpdate 훅에서 재해싱 건너뜀 (hooks: false 대신 플래그 사용)
     user._skipPasswordHash = true;
     await user.save();
-    return true;
+    return user.id; // 캐시 무효화를 위해 userId 반환
   }
 
   async getUserPermissions(
     userId: string,
     roleId: string
   ): Promise<{
-    role: string;
-    eventPermissions: {
+    events: {
       canCreate: boolean;
       canRead: boolean;
       canUpdate: boolean;
       canDelete: boolean;
     };
-    boardPermissions: {
+    boards: {
       boardId: string;
       boardName: string;
       canRead: boolean;
@@ -494,10 +526,6 @@ export class AuthService extends BaseService {
       canDelete: boolean;
     } | null;
   }> {
-    // Re-use logic for getting permissions object
-    // This is basically generateUserPayload logic without full user object requirement if we have roleId
-    // But we need userId for personal board check.
-
     const eventPermission = await EventPermission.findOne({ where: { roleId } });
 
     const boardPermissionsWithBoard = await BoardAccess.findAll({
@@ -518,8 +546,7 @@ export class AuthService extends BaseService {
     });
 
     return {
-      role: roleId,
-      eventPermissions: eventPermission
+      events: eventPermission
         ? {
             canCreate: eventPermission.canCreate,
             canRead: eventPermission.canRead,
@@ -532,7 +559,7 @@ export class AuthService extends BaseService {
             canUpdate: false,
             canDelete: false,
           },
-      boardPermissions: boardPermissionsWithBoard.map(bp => ({
+      boards: boardPermissionsWithBoard.map(bp => ({
         boardId: bp.boardId,
         boardName: bp.board ? bp.board.name : 'Unknown',
         canRead: bp.canRead,

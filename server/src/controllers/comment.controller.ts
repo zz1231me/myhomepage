@@ -12,6 +12,7 @@ import {
 } from '../utils/response';
 import { logError } from '../utils/logger';
 import { getSettings } from '../utils/settingsCache';
+import { checkSecretPostAccess } from '../utils/postAccess';
 import { Post } from '../models/Post';
 import { Comment } from '../models/Comment';
 
@@ -41,14 +42,24 @@ export const createComment = async (
       return;
     }
 
-    if (content.trim().length > 1000) {
-      sendValidationError(res, 'content', '댓글은 1000자 이내로 작성해주세요.');
+    const commentMaxLen = getSettings().commentContentMaxLength;
+    if (content.trim().length > commentMaxLen) {
+      sendValidationError(res, 'content', `댓글은 ${commentMaxLen}자 이내로 작성해주세요.`);
       return;
+    }
+
+    // parentId 타입 검증: 정수만 허용 (소수점, 문자열 등 방지)
+    if (parentId !== undefined && parentId !== null) {
+      const parsedParentId = Number(parentId);
+      if (!Number.isInteger(parsedParentId) || parsedParentId <= 0) {
+        sendValidationError(res, 'parentId', '유효하지 않은 부모 댓글 ID입니다.');
+        return;
+      }
     }
 
     // ✅ 게시글 존재 여부 확인 + 알림용 정보를 한 번에 조회
     const post = await Post.findByPk(postId, {
-      attributes: ['id', 'UserId', 'title', 'boardType'],
+      attributes: ['id', 'UserId', 'title', 'boardType', 'isSecret', 'secretType', 'secretUserIds'],
     });
     if (!post) {
       sendNotFound(res, '게시글');
@@ -60,6 +71,13 @@ export const createComment = async (
     // boardType을 조작해 다른 게시판 포스트에 댓글을 다는 공격을 차단
     if (post.boardType !== boardType) {
       sendNotFound(res, '게시글');
+      return;
+    }
+
+    // ✅ 비밀글 보호: 작성자/허용 사용자/관리자만 댓글 가능
+    const access = checkSecretPostAccess(post, userId, req.user?.role);
+    if (!access.ok) {
+      sendForbidden(res, access.message);
       return;
     }
 
@@ -87,27 +105,30 @@ export const createComment = async (
         .catch(err => logError('댓글 알림 생성 실패', err));
     }
 
-    // 알림 2: 내 댓글에 대댓글 달린 경우 → 원댓글 작성자에게 알림
-    if (parentId) {
-      const parentComment = await Comment.findByPk(parentId, { attributes: ['UserId'] });
-      if (
-        parentComment?.UserId &&
-        parentComment.UserId !== userId &&
-        parentComment.UserId !== post.UserId
-      ) {
-        notificationService
-          .create({
-            userId: parentComment.UserId,
-            type: 'COMMENT',
-            message: `${commenterName}님이 회원님의 댓글에 답글을 남겼습니다.`,
-            link: `/dashboard/posts/${post.boardType}/${postId}`,
-            relatedId: postId,
-          })
-          .catch(err => logError('대댓글 알림 생성 실패', err));
-      }
-    }
-
     sendSuccess(res, comment, '댓글이 작성되었습니다.', 201);
+
+    // 알림 2: 내 댓글에 대댓글 달린 경우 → 원댓글 작성자에게 알림 (fire-and-forget, 응답 후 처리)
+    if (parentId) {
+      void Comment.findByPk(parentId, { attributes: ['UserId'] })
+        .then(parentComment => {
+          if (
+            parentComment?.UserId &&
+            parentComment.UserId !== userId &&
+            parentComment.UserId !== post.UserId
+          ) {
+            notificationService
+              .create({
+                userId: parentComment.UserId,
+                type: 'COMMENT',
+                message: `${commenterName}님이 회원님의 댓글에 답글을 남겼습니다.`,
+                link: `/dashboard/posts/${post.boardType}/${postId}`,
+                relatedId: postId,
+              })
+              .catch(err => logError('대댓글 알림 생성 실패', err));
+          }
+        })
+        .catch(err => logError('대댓글 작성자 조회 실패', err));
+    }
   } catch (err) {
     next(err);
   }
@@ -120,12 +141,36 @@ export const getCommentsByPost = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { postId } = req.params;
+    const { boardType, postId } = req.params;
     const sortBy = (req.query.sortBy as string) ?? 'oldest';
     const validSorts = ['oldest', 'newest', 'popular'];
     const sort = validSorts.includes(sortBy)
       ? (sortBy as 'oldest' | 'newest' | 'popular')
       : 'oldest';
+    const userId = req.user?.id;
+
+    // boardType 교차 검증: 다른 게시판의 댓글을 URL 조작으로 읽는 공격 차단
+    const post = await Post.findByPk(postId, {
+      attributes: ['id', 'UserId', 'boardType', 'isSecret', 'secretType', 'secretUserIds'],
+    });
+    if (!post || post.boardType !== boardType) {
+      sendNotFound(res, '게시글');
+      return;
+    }
+
+    // ✅ 비밀글 보호: 본문과 마찬가지로 댓글 목록도 비밀글 정책에 따라 차단
+    if (post.isSecret) {
+      if (!userId) {
+        sendUnauthorized(res, '로그인이 필요합니다.');
+        return;
+      }
+      const access = checkSecretPostAccess(post, userId, req.user?.role);
+      if (!access.ok) {
+        sendForbidden(res, access.message);
+        return;
+      }
+    }
+
     const comments = await commentService.getCommentsByPost(postId, sort);
     sendSuccess(res, comments, '댓글 목록 조회 성공');
   } catch (err) {
@@ -140,7 +185,7 @@ export const updateComment = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { commentId } = req.params;
+    const { boardType, commentId } = req.params;
     const { content } = req.body;
     const userId = req.user?.id;
     const userRole = req.user?.role;
@@ -155,14 +200,29 @@ export const updateComment = async (
       return;
     }
 
-    if (content.trim().length > 1000) {
-      sendValidationError(res, 'content', '댓글은 1000자 이내로 작성해주세요.');
+    const commentMaxLen = getSettings().commentContentMaxLength;
+    if (content.trim().length > commentMaxLen) {
+      sendValidationError(res, 'content', `댓글은 ${commentMaxLen}자 이내로 작성해주세요.`);
       return;
     }
 
     const numericCommentId = parseInt(commentId, 10);
     if (isNaN(numericCommentId)) {
       sendValidationError(res, 'commentId', '잘못된 댓글 ID입니다.');
+      return;
+    }
+
+    // boardType 교차 검증: 댓글이 올바른 게시판 소속인지 확인
+    const comment = await Comment.findByPk(numericCommentId, {
+      include: [{ model: Post, as: 'post', attributes: ['boardType'] }],
+    });
+    if (!comment) {
+      sendNotFound(res, '댓글');
+      return;
+    }
+    const post = (comment as Comment & { post?: { boardType: string } }).post;
+    if (!post || post.boardType !== boardType) {
+      sendNotFound(res, '댓글');
       return;
     }
 
@@ -186,7 +246,7 @@ export const deleteComment = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { commentId } = req.params;
+    const { boardType, commentId } = req.params;
     const userId = req.user?.id;
     const userRole = req.user?.role;
 
@@ -201,9 +261,23 @@ export const deleteComment = async (
       return;
     }
 
+    // boardType 교차 검증: 댓글이 올바른 게시판 소속인지 확인
+    const comment = await Comment.findByPk(numericCommentId, {
+      include: [{ model: Post, as: 'post', attributes: ['boardType'] }],
+    });
+    if (!comment) {
+      sendNotFound(res, '댓글');
+      return;
+    }
+    const post = (comment as Comment & { post?: { boardType: string } }).post;
+    if (!post || post.boardType !== boardType) {
+      sendNotFound(res, '댓글');
+      return;
+    }
+
     await commentService.deleteComment(numericCommentId, userId, userRole || 'guest');
 
-    sendSuccess(res, { deletedCommentId: commentId }, '댓글이 삭제되었습니다.');
+    sendSuccess(res, { deletedCommentId: numericCommentId }, '댓글이 삭제되었습니다.');
   } catch (err) {
     next(err);
   }

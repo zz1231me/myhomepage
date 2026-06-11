@@ -5,6 +5,8 @@ import { LoadingSpinner } from '../common/LoadingSpinner';
 import { AdminSection } from '../common/AdminSection';
 import { toast } from '../../../utils/toast';
 import { formatDateShort } from '../../../utils/date';
+import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
+import { SearchInput } from '../../common/SearchInput';
 
 interface FileItem {
   filename: string;
@@ -58,12 +60,18 @@ export const FileManagement = React.memo(() => {
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<FileItem | null>(null);
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search.trim(), 400);
 
   const fetchFiles = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.get('/uploads/admin/list', {
-        params: { page, limit: 20, type: typeFilter || undefined },
+        params: {
+          page,
+          limit: 20,
+          type: typeFilter || undefined,
+          search: debouncedSearch || undefined,
+        },
       });
       const data = res.data.data;
       setFiles(data.items as FileItem[]);
@@ -75,11 +83,16 @@ export const FileManagement = React.memo(() => {
     } finally {
       setLoading(false);
     }
-  }, [page, typeFilter]);
+  }, [page, typeFilter, debouncedSearch]);
 
   useEffect(() => {
     void fetchFiles();
   }, [fetchFiles]);
+
+  // 검색어 변경 시 1페이지로 리셋 (다른 페이지에 머물러 빈 결과가 보이는 것 방지)
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
 
   const handleDelete = async (file: FileItem) => {
     setDeletingFile(file.filename);
@@ -95,10 +108,6 @@ export const FileManagement = React.memo(() => {
       setDeletingFile(null);
     }
   };
-
-  const filteredFiles = search.trim()
-    ? files.filter(f => f.filename.toLowerCase().includes(search.trim().toLowerCase()))
-    : files;
 
   return (
     <AdminSection title="파일 관리" description="업로드된 파일과 이미지를 관리합니다.">
@@ -130,12 +139,12 @@ export const FileManagement = React.memo(() => {
           <option value="file">첨부 파일</option>
           <option value="image">이미지</option>
         </select>
-        <input
-          type="text"
+        <SearchInput
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={setSearch}
           placeholder="파일명 검색..."
-          className="px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 w-48"
+          ariaLabel="파일명 검색"
+          className="w-48"
         />
         <button
           onClick={() => void fetchFiles()}
@@ -148,7 +157,7 @@ export const FileManagement = React.memo(() => {
       {/* 목록 */}
       {loading ? (
         <LoadingSpinner message="파일 목록 불러오는 중..." />
-      ) : filteredFiles.length === 0 ? (
+      ) : files.length === 0 ? (
         <div className="text-center py-12 text-slate-400 dark:text-slate-500">
           <svg
             className="w-12 h-12 mx-auto mb-3 opacity-40"
@@ -188,7 +197,7 @@ export const FileManagement = React.memo(() => {
               </tr>
             </thead>
             <tbody>
-              {filteredFiles.map(file => (
+              {files.map(file => (
                 <tr
                   key={`${file.type}-${file.filename}`}
                   className="border-b border-slate-100 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
@@ -222,8 +231,14 @@ export const FileManagement = React.memo(() => {
                   </td>
                   <td className="py-2.5 px-3 text-right">
                     <div className="flex items-center gap-1 justify-end">
+                      {/*
+                       * downloadUrl은 이미 서버에서 prefix 포함해 반환됨:
+                       * - 파일: `/api/uploads/download/${name}` (api 포함)
+                       * - 이미지: `/uploads/images/${name}` (static serving, api 미포함)
+                       * 이전 코드는 file 타입에 `/api` 를 또 prepend해 `/api/api/...` 404 발생
+                       */}
                       <a
-                        href={file.type === 'file' ? `/api${file.downloadUrl}` : file.downloadUrl}
+                        href={file.downloadUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="px-2 py-1 text-xs text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"

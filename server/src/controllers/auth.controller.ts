@@ -17,6 +17,7 @@ import { SiteSettings } from '../models';
 import { invalidateUserCache } from '../middlewares/auth.middleware';
 import { userSessionService } from '../services/userSession.service';
 import { getSettings, getMinPasswordLength } from '../utils/settingsCache';
+import { isCookieSecure } from '../utils/cookie';
 
 // ────────────────────────────────────────────────────────────────
 // 내부 유틸: 쿠키 설정 / 응답 데이터 빌드
@@ -28,9 +29,8 @@ const setAuthCookies = (
   tokens: { accessToken: string; refreshToken?: string | null },
   oldRefreshToken?: string
 ) => {
-  // COOKIE_SECURE=true 일 때만 Secure 플래그 설정
-  // HTTPS 없이 HTTP만 쓰는 인트라넷 환경에서는 COOKIE_SECURE=false 로 설정
-  const isSecure = process.env.COOKIE_SECURE === 'true';
+  // 프로덕션 secure-by-default (HTTP 인트라넷은 COOKIE_SECURE=false 명시) — isCookieSecure() 참고
+  const isSecure = isCookieSecure();
   const { jwtAccessTokenHours, jwtRefreshTokenDays } = getSettings();
   res.cookie('access_token', tokens.accessToken, {
     httpOnly: true,
@@ -185,14 +185,24 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
       }
     }
 
-    // 세션 만료 처리 (fire-and-forget)
-    const refreshToken = req.cookies?.refresh_token as string | undefined;
-    if (refreshToken) {
-      userSessionService.expireSession(refreshToken).catch(() => {});
+    // 세션 만료 처리 (fire-and-forget) — 로그아웃 시 해당 사용자의 모든 세션 만료
+    if (authReq.user) {
+      userSessionService.expireAllUserSessions(authReq.user.id).catch(() => {});
+    } else {
+      const refreshToken = req.cookies?.refresh_token as string | undefined;
+      if (refreshToken) {
+        userSessionService.expireSession(refreshToken).catch(() => {});
+      }
     }
 
-    res.clearCookie('access_token', { path: '/' });
-    res.clearCookie('refresh_token', { path: '/' });
+    const cookieClearOptions = {
+      path: '/',
+      httpOnly: true,
+      secure: isCookieSecure(),
+      sameSite: 'lax' as const,
+    };
+    res.clearCookie('access_token', cookieClearOptions);
+    res.clearCookie('refresh_token', cookieClearOptions);
     logSuccess('로그아웃 성공');
     res.status(204).send();
   } catch (err) {
@@ -263,7 +273,7 @@ export const register = async (req: Request, res: Response, next: NextFunction):
     }
 
     // 사이트 설정에서 회원가입 허용 여부 확인
-    const siteSettings = await SiteSettings.findByPk(1);
+    const siteSettings = await SiteSettings.findOne();
     const allowRegistration = siteSettings?.allowRegistration ?? true;
     const requireApproval = siteSettings?.requireApproval ?? false;
 
@@ -331,6 +341,9 @@ export const changePassword = async (
     }
 
     await userService.changePassword(authReq.user.id, currentPassword, newPassword);
+    invalidateUserCache(authReq.user.id);
+    // 비밀번호 변경 시 모든 기존 세션 즉시 무효화 (도난된 세션 차단)
+    userSessionService.expireAllUserSessions(authReq.user.id).catch(() => {});
     sendSuccess(res, null, '비밀번호가 변경되었습니다.');
   } catch (err: unknown) {
     logError('비밀번호 변경 오류', err);
@@ -457,13 +470,17 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const success = await authService.resetPassword(token, password);
+    const resetUserId = await authService.resetPassword(token, password);
 
-    if (!success) {
+    if (!resetUserId) {
       sendError(res, 400, '유효하지 않거나 만료된 재설정 링크입니다.');
       return;
     }
 
+    // ✅ 캐시 즉시 무효화 (tokenVersion 증가 후 30초 내 재사용 방지)
+    invalidateUserCache(resetUserId);
+    // 비밀번호 재설정 시 모든 기존 세션 무효화 (탈취된 계정 보호)
+    userSessionService.expireAllUserSessions(resetUserId).catch(() => {});
     sendSuccess(res, null, '비밀번호가 성공적으로 변경되었습니다. 다시 로그인해주세요.');
   } catch (err) {
     logError('비밀번호 재설정 오류', err);
@@ -498,6 +515,8 @@ export const updateProfile = async (
     }
 
     const user = await userService.updateMyName(authReq.user.id, name);
+    // ✅ 인증 캐시 무효화 — 이름 변경 후 30초 이내 새 글/댓글의 author가 이전 이름으로 저장되는 문제 방지
+    invalidateUserCache(authReq.user.id);
     sendSuccess(res, { name: user.name }, '이름이 변경되었습니다.');
   } catch (err: unknown) {
     logError('프로필 변경 오류', err);

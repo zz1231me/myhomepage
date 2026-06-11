@@ -31,10 +31,16 @@ export const createMemo = async (req: AuthRequest, res: Response): Promise<void>
   }
 
   const { title, content, color } = req.body;
-  if (title !== undefined && String(title).length > 200) {
+  if (title !== undefined && typeof title !== 'string') {
+    return sendValidationError(res, 'title', '제목은 문자열이어야 합니다.');
+  }
+  if (content !== undefined && typeof content !== 'string') {
+    return sendValidationError(res, 'content', '내용은 문자열이어야 합니다.');
+  }
+  if (title !== undefined && title.length > 200) {
     return sendValidationError(res, 'title', '제목은 200자를 초과할 수 없습니다.');
   }
-  if (content !== undefined && String(content).length > 10000) {
+  if (content !== undefined && content.length > 10000) {
     return sendValidationError(res, 'content', '내용은 10,000자를 초과할 수 없습니다.');
   }
   if (color !== undefined && !VALID_COLORS.includes(color)) {
@@ -44,9 +50,17 @@ export const createMemo = async (req: AuthRequest, res: Response): Promise<void>
       `색상은 ${VALID_COLORS.join(', ')} 중 하나여야 합니다.`
     );
   }
+  // 제목·내용이 모두 비어 있으면 저장 의미 없음 — 댓글/게시글 검증과 일관(클라이언트도 저장 비활성)
+  if (
+    !(typeof title === 'string' && title.trim()) &&
+    !(typeof content === 'string' && content.trim())
+  ) {
+    return sendValidationError(res, 'content', '제목 또는 내용을 입력해주세요.');
+  }
 
   try {
-    const memo = await memoService.createMemo(userId, req.body);
+    // updateMemo와 동일하게 허용 필드만 명시 전달 (UserId/isPinned/order 임의 지정 차단)
+    const memo = await memoService.createMemo(userId, { title, content, color });
     sendSuccess(res, memo, '메모가 생성되었습니다.', 201);
   } catch (err) {
     if (err instanceof AppError) return sendError(res, err.statusCode, err.message);

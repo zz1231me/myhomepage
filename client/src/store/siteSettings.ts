@@ -29,6 +29,9 @@ export interface SiteSettings {
   postSecretPasswordMinLength: number;
   // ── 계정 보안 ──────────────────────────────────────────────────────────────
   minPasswordLength: number;
+  requireUppercase: boolean;
+  requireLowercase: boolean;
+  requireNumberOrSpecial: boolean;
   allowGuestComment: boolean;
   // ── 댓글 설정 ──────────────────────────────────────────────────────────────
   commentMaxDepth: number;
@@ -39,15 +42,41 @@ export interface SiteSettings {
   // ── 에디터 설정 ────────────────────────────────────────────────────────────
   autoSaveIntervalSeconds: number;
   draftExpiryMinutes: number;
+  // ── 신규: 관리자 조정 가능 ────────────────────────────────────────────────
+  memoMaxPerUser: number;
+  commentContentMaxLength: number;
+  eventBodyMaxLength: number;
+  eventLocationMaxLength: number;
+  // ── 계정/잠금 설정 ─────────────────────────────────────────────────────────
+  maxLoginAttempts: number;
+  accountLockMinutes: number;
+  bcryptRounds: number;
+  defaultPageSize: number;
+  // ── 로그 보존 ──────────────────────────────────────────────────────────────
+  securityLogRetentionDays: number;
+  errorLogRetentionDays: number;
+  // ── JWT 만료 ───────────────────────────────────────────────────────────────
+  jwtAccessTokenHours: number;
+  jwtRefreshTokenDays: number;
+  // ── 기타 설정 ──────────────────────────────────────────────────────────────
+  globalSearchLimit: number;
+  passwordResetTokenHours: number;
+  // ── Rate Limit ─────────────────────────────────────────────────────────────
+  rateLimitApiMax: number;
+  rateLimitAuthMax: number;
+  rateLimitUploadMax: number;
+  rateLimitDownloadMax: number;
 }
 
 interface SiteSettingsStore {
   settings: SiteSettings;
+  isLoadedFromServer: boolean; // ✅ 서버에서 설정을 실제로 받아왔는지 여부
   setSettings: (settings: SiteSettings) => void;
   updateSettings: (settings: Partial<SiteSettings>) => void;
 }
 
 export const useSiteSettings = create<SiteSettingsStore>(set => ({
+  isLoadedFromServer: false,
   settings: {
     siteName: '마이홈',
     siteTitle: 'Secure Board App',
@@ -91,6 +120,9 @@ export const useSiteSettings = create<SiteSettingsStore>(set => ({
     postSecretPasswordMinLength: 4,
     // 계정 보안 기본값
     minPasswordLength: 8,
+    requireUppercase: true,
+    requireLowercase: true,
+    requireNumberOrSpecial: true,
     allowGuestComment: false,
     // 댓글 설정 기본값
     commentMaxDepth: 3,
@@ -101,8 +133,32 @@ export const useSiteSettings = create<SiteSettingsStore>(set => ({
     // 에디터 설정 기본값
     autoSaveIntervalSeconds: 30,
     draftExpiryMinutes: 60,
+    // 신규: 관리자 조정 가능 기본값
+    memoMaxPerUser: 200,
+    commentContentMaxLength: 1000,
+    eventBodyMaxLength: 10000,
+    eventLocationMaxLength: 500,
+    // 계정/잠금 설정 기본값
+    maxLoginAttempts: 5,
+    accountLockMinutes: 30,
+    bcryptRounds: 10,
+    defaultPageSize: 10,
+    // 로그 보존 기본값
+    securityLogRetentionDays: 90,
+    errorLogRetentionDays: 30,
+    // JWT 만료 기본값
+    jwtAccessTokenHours: 2,
+    jwtRefreshTokenDays: 3,
+    // 기타 설정 기본값
+    globalSearchLimit: 50,
+    passwordResetTokenHours: 1,
+    // Rate Limit 기본값
+    rateLimitApiMax: 200,
+    rateLimitAuthMax: 10,
+    rateLimitUploadMax: 20,
+    rateLimitDownloadMax: 100,
   },
-  setSettings: settings => set({ settings }),
+  setSettings: settings => set({ settings, isLoadedFromServer: true }),
   updateSettings: newSettings =>
     set(state => ({
       settings: { ...state.settings, ...newSettings },
