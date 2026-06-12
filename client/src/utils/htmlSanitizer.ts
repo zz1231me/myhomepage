@@ -162,6 +162,7 @@ const defaultOptions: SanitizeOptions = {
     'br',
     'strong',
     'em',
+    'i', // CKEditor Italic 출력은 <i> (서버 allowedTags와 정합) — 없으면 이탤릭 표시 유실
     'u',
     's',
     'h1',
@@ -268,6 +269,7 @@ export function sanitizeCommentHTML(dirty: string): string {
       'br',
       'strong',
       'em',
+      'i', // CKEditor Italic 출력 <i> — 댓글 이탤릭 표시 유실 방지
       'u',
       's',
       'a',
