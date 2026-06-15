@@ -14,8 +14,6 @@ export interface Notification {
 export const getNotifications = (cursor?: number, limit = 20) =>
   api.get('/notifications', { params: { cursor, limit } }).then(unwrap);
 
-export const getUnreadCount = () => api.get('/notifications/unread-count').then(unwrap);
-
 export const markAsRead = (id: number) => api.put(`/notifications/${id}/read`).then(unwrap);
 
 export const markAllAsRead = () => api.put('/notifications/read-all').then(unwrap);

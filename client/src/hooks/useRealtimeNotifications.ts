@@ -7,9 +7,7 @@ import { useAuthStore } from '../store/auth';
 export function useRealtimeNotifications() {
   const isAuthenticated = useAuthStore(s => s.isAuthenticated);
   const newNotification = useNotificationStore(s => s.toast);
-  const unreadCount = useNotificationStore(s => s.unreadCount);
   const clearNew = useNotificationStore(s => s.clearToast);
-  const setUnreadCount = useNotificationStore(s => s.setUnreadCount);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -18,5 +16,5 @@ export function useRealtimeNotifications() {
     return () => stop();
   }, [isAuthenticated]);
 
-  return { newNotification, unreadCount, clearNew, resetCount: () => setUnreadCount(0) };
+  return { newNotification, clearNew };
 }

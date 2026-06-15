@@ -20,8 +20,6 @@ interface NotificationStoreState {
   poll: () => Promise<void>;
   start: () => void;
   stop: () => void;
-  /** 즉시 재조회(목록 갱신 등) */
-  refresh: () => Promise<void>;
   clearToast: () => void;
   setUnreadCount: (n: number) => void;
 }
@@ -34,7 +32,7 @@ export const useNotificationStore = create<NotificationStoreState>((set, get) =>
   _subscribers: 0,
 
   poll: async () => {
-    // 탭이 백그라운드면 요청 생략 — 다음 주기(또는 refresh)에서 갱신
+    // 탭이 백그라운드면 요청 생략 — 다음 주기에서 갱신
     if (typeof document !== 'undefined' && document.hidden) return;
     try {
       const res = await getNotifications(undefined, 20);
@@ -77,7 +75,6 @@ export const useNotificationStore = create<NotificationStoreState>((set, get) =>
     }
   },
 
-  refresh: () => get().poll(),
   clearToast: () => set({ toast: null }),
   setUnreadCount: n => set({ unreadCount: Math.max(0, n) }),
 }));
