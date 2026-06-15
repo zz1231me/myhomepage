@@ -5,9 +5,9 @@ import { Bell, MessageSquare, Heart, AtSign, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { stagger, listItem, scaleIn } from '../../utils/animations';
 import { useUIOverlays } from '../../store/uiOverlays';
+import { useNotificationStore } from '../../store/notifications';
 import {
   getNotifications,
-  getUnreadCount,
   markAsRead,
   markAllAsRead,
   deleteNotification,
@@ -58,8 +58,10 @@ export function NotificationBell() {
     if (next) state.openDropdown('notifications');
     else state.closeDropdown('notifications');
   }, []);
+  // unreadCount는 단일 폴링 스토어에서 구독(중복 폴링 제거). 뱃지 표시 및 액션 후 동기화에 사용.
+  const unreadCount = useNotificationStore(s => s.unreadCount);
+  const setStoreUnread = useNotificationStore(s => s.setUnreadCount);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<number | null>(null);
@@ -69,29 +71,20 @@ export function NotificationBell() {
   const panelRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
-  const fetchUnread = useCallback(async () => {
-    try {
-      const data = await getUnreadCount();
-      setUnreadCount(data?.count ?? 0);
-    } catch {
-      /* 알림 API 에러 무시 */
-    }
-  }, []);
-
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
     setFetchError(false);
     try {
       const data = await getNotifications(undefined, 20);
       setNotifications(Array.isArray(data?.notifications) ? data.notifications : []);
-      setUnreadCount(data?.unreadCount ?? 0);
+      setStoreUnread(data?.unreadCount ?? 0);
       setNextCursor(data?.nextCursor ?? null);
     } catch {
       setFetchError(true);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [setStoreUnread]);
 
   const loadMore = useCallback(async () => {
     if (!nextCursor || loadingMore) return;
@@ -110,12 +103,12 @@ export function NotificationBell() {
     }
   }, [nextCursor, loadingMore]);
 
-  // 폴링: 30초마다 안 읽은 개수 갱신
+  // 폴링은 useNotificationStore가 단일 수행 — 벨은 라이프사이클에만 참여(타이머 공유).
   useEffect(() => {
-    fetchUnread();
-    const t = setInterval(fetchUnread, 30000);
-    return () => clearInterval(t);
-  }, [fetchUnread]);
+    const { start, stop } = useNotificationStore.getState();
+    start();
+    return () => stop();
+  }, []);
 
   // 패널 열릴 때 목록 로드
   useEffect(() => {
@@ -138,7 +131,7 @@ export function NotificationBell() {
       await markAsRead(n.id);
       setNotifications(prev => prev.map(x => (x.id === n.id ? { ...x, isRead: true } : x)));
       // 이미 읽은 알림은 카운트를 감소시키지 않음
-      if (!n.isRead) setUnreadCount(prev => Math.max(0, prev - 1));
+      if (!n.isRead) setStoreUnread(unreadCount - 1);
     } catch {
       /* 알림 API 에러 무시 */
     }
@@ -156,7 +149,7 @@ export function NotificationBell() {
     try {
       await markAllAsRead();
       setNotifications(prev => prev.map(x => ({ ...x, isRead: true })));
-      setUnreadCount(0);
+      setStoreUnread(0);
     } catch {
       /* 알림 API 에러 무시 */
     }
@@ -168,7 +161,7 @@ export function NotificationBell() {
       await deleteNotification(id);
       setNotifications(prev => prev.filter(x => x.id !== id));
       const deleted = notifications.find(x => x.id === id);
-      if (deleted && !deleted.isRead) setUnreadCount(prev => Math.max(0, prev - 1));
+      if (deleted && !deleted.isRead) setStoreUnread(unreadCount - 1);
     } catch {
       /* 알림 API 에러 무시 */
     }
