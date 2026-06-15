@@ -48,12 +48,6 @@ export const PAGINATION = {
   MAX_LIMIT: MAX_PAGE_SIZE,
 } as const;
 
-// ✅ 게시글 제한 — 실제 제한은 관리자 설정(settingsCache)에서 동적으로 읽음
-// 여기 값은 DB 로드 전 fallback 및 Zod 스키마 상한선으로만 사용
-export const POST_TITLE_MAX_LENGTH = 200; // settingsCache DEFAULTS.postTitleMaxLength 와 동일
-export const POST_CONTENT_MAX_LENGTH = 500000; // settingsCache DEFAULTS.postContentMaxLength 와 동일
-export const POST_SECRET_PASSWORD_MIN_LENGTH = 4; // 최소 4자
-
 // ✅ Rate Limiting 창 및 최대 요청 수 (ms)
 export const RATE_LIMIT = {
   WINDOW_MS: 15 * 60 * 1000, // 15분
