@@ -193,7 +193,7 @@ function Register() {
                 onChange={e => handleChange('id', e.target.value)}
                 disabled={isLoading}
                 required
-                minLength={3}
+                minLength={4}
                 maxLength={20}
                 className="w-full px-4 py-3 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100
                           focus:bg-slate-50 dark:focus:bg-slate-600 focus:ring-2 focus:ring-primary-500/40
@@ -201,7 +201,7 @@ function Register() {
                           transition-all duration-200
                           placeholder:text-slate-400 dark:placeholder:text-slate-500"
                 placeholder="영문, 숫자 4-20자"
-                pattern="[a-zA-Z0-9_]+"
+                pattern="[a-zA-Z0-9_]{4,20}"
                 title="영문자, 숫자, 언더스코어(_)만 사용 가능 (4-20자)"
               />
             </div>

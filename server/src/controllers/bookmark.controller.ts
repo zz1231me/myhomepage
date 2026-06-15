@@ -142,6 +142,11 @@ export const updateBookmark = async (
       return;
     }
 
+    if (order !== undefined && (!Number.isInteger(order) || order < 0 || order > 2_147_483_647)) {
+      sendValidationError(res, 'order', '순서는 0 이상의 정수여야 합니다.');
+      return;
+    }
+
     let normalizedUrl = url;
     if (url) {
       const urlResult = normalizeAndValidateUrl(url);

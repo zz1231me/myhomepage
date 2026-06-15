@@ -52,19 +52,3 @@ export type Tag = {
   description?: string;
   boardId?: string | null;
 };
-
-export type BoardAccessResponse = {
-  hasAccess: boolean;
-  message?: string;
-  board?: {
-    id: string;
-    name: string;
-    description: string;
-    isPersonal?: boolean; // ✅ 개인 폴더 여부
-  };
-  permissions?: {
-    canRead: boolean;
-    canWrite: boolean;
-    canDelete: boolean;
-  };
-};

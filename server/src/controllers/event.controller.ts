@@ -143,8 +143,9 @@ export const createEvent = async (
         sendError(res, 400, '반복 종료 날짜는 시작 날짜 이후여야 합니다.');
         return;
       }
-      if (recurrenceInterval !== undefined && Number(recurrenceInterval) < 1) {
-        sendError(res, 400, '반복 간격은 1 이상이어야 합니다.');
+      // !(x >= 1)은 NaN(숫자 아님)과 1 미만을 모두 거부
+      if (recurrenceInterval !== undefined && !(Number(recurrenceInterval) >= 1)) {
+        sendError(res, 400, '반복 간격은 1 이상의 숫자여야 합니다.');
         return;
       }
       if (recurrenceType === 'weekly') {
@@ -383,8 +384,9 @@ export const updateEvent = async (
           sendError(res, 400, '반복 종료 날짜는 시작 날짜 이후여야 합니다.');
           return;
         }
-        if (recurrenceInterval !== undefined && Number(recurrenceInterval) < 1) {
-          sendError(res, 400, '반복 간격은 1 이상이어야 합니다.');
+        // !(x >= 1)은 NaN(숫자 아님)과 1 미만을 모두 거부
+        if (recurrenceInterval !== undefined && !(Number(recurrenceInterval) >= 1)) {
+          sendError(res, 400, '반복 간격은 1 이상의 숫자여야 합니다.');
           return;
         }
         if (effectiveRecurrenceType === 'weekly') {

@@ -22,9 +22,6 @@ export const fetchDeletedUsers = (): Promise<User[]> =>
 
 // ─── 보안 로그 ───────────────────────────────────────────────────────────────
 
-export const fetchSecurityLogs = (params?: Record<string, string | number>) =>
-  api.get('/admin/security-logs', { params }).then(unwrap);
-
 /** 보안 로그 삭제
  * - ids 지정 시 해당 로그만 삭제
  * - before 지정 시 해당 날짜 이전 삭제 (ISO string)
@@ -36,9 +33,6 @@ export const deleteSecurityLogs = (
   api.delete('/admin/security-logs', { data: options }).then(unwrap);
 
 // ─── 에러 로그 ───────────────────────────────────────────────────────────────
-
-export const fetchErrorLogs = (params?: Record<string, string | number>) =>
-  api.get('/admin/error-logs', { params }).then(unwrap);
 
 /** 에러 로그 삭제
  * - ids 지정 시 해당 로그만 삭제

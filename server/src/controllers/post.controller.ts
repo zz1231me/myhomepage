@@ -25,7 +25,6 @@ interface PostLike {
   boardType: string;
   viewCount: number;
   isPinned: boolean;
-  version: number;
   isSecret: boolean;
   secretType: string | null;
   isEncrypted: boolean;
@@ -54,7 +53,6 @@ function formatPostResponse(
     boardType: post.boardType,
     viewCount: post.viewCount || 0,
     isPinned: post.isPinned || false,
-    version: post.version ?? 0,
     isSecret: post.isSecret || false,
     secretType: post.secretType || null,
     isEncrypted: post.isEncrypted || false,
@@ -307,7 +305,6 @@ export const createPost = async (req: AuthRequest, res: Response): Promise<void>
         isSecret: post.isSecret,
         secretType: post.secretType,
         isPinned: post.isPinned,
-        version: post.version ?? 0,
         createdAt: post.createdAt,
         updatedAt: post.updatedAt,
       },
@@ -364,11 +361,6 @@ export const updatePost = async (req: AuthRequest, res: Response): Promise<void>
       secretUserIds: Array.isArray(body.secretUserIds) ? body.secretUserIds : undefined,
       isEncrypted: body.isEncrypted === true || body.isEncrypted === 'true',
       secretSalt: typeof body.secretSalt === 'string' ? body.secretSalt : undefined,
-      version: (() => {
-        if (body.version === undefined) return undefined;
-        const v = Number(body.version);
-        return isNaN(v) ? undefined : v;
-      })(),
     });
 
     logSuccess('게시글 수정 완료', { userId, postId: id });
@@ -382,7 +374,6 @@ export const updatePost = async (req: AuthRequest, res: Response): Promise<void>
         isSecret: updatedPost.isSecret,
         secretType: updatedPost.secretType,
         isPinned: updatedPost.isPinned,
-        version: updatedPost.version ?? 0,
         updatedAt: updatedPost.updatedAt,
       },
       '게시글이 수정되었습니다.'

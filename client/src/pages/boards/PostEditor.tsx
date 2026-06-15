@@ -51,7 +51,6 @@ const PostEditor = ({ mode }: Props) => {
   const [loading, setLoading] = useState(false);
   const [editorKey, setEditorKey] = useState(0);
   const [error, setError] = useState('');
-  const [postVersion, setPostVersion] = useState<number | undefined>(undefined);
 
   // 태그 상태
   const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
@@ -127,7 +126,6 @@ const PostEditor = ({ mode }: Props) => {
             // 제거돼 동영상 위젯 복원이 안 되고 서식이 변형됨. rawContent로 라운드트립 정합 보장.
             setInitialContent(post.rawContent || post.content || '');
             setEditorKey(prev => prev + 1);
-            if (typeof post.version === 'number') setPostVersion(post.version);
 
             if (post.attachments?.length > 0) {
               fileLogger.info('첨부파일 정보 로드', { count: post.attachments.length });
@@ -354,7 +352,6 @@ const PostEditor = ({ mode }: Props) => {
           files,
           keepExistingFiles: true,
           deletedFileNames,
-          version: postVersion,
           ...secretFields,
         });
         try {
@@ -401,12 +398,13 @@ const PostEditor = ({ mode }: Props) => {
       }
     } catch (err: unknown) {
       logger.error('저장 실패', err);
-      // 409: 낙관적 잠금 충돌
-      const status = (err as { response?: { status?: number; data?: { message?: string } } })
-        ?.response?.status;
-      if (status === 409) {
+      // 409: 게시판 이동 등 충돌 — 서버 메시지를 그대로 노출
+      const response = (err as { response?: { status?: number; data?: { message?: string } } })
+        ?.response;
+      if (response?.status === 409) {
         setError(
-          '다른 사용자가 이 게시글을 수정했습니다. 페이지를 새로고침한 후 다시 시도해주세요.'
+          response.data?.message ||
+            '게시글 상태가 변경되었습니다. 페이지를 새로고침한 후 다시 시도해주세요.'
         );
       } else {
         const message = err instanceof Error ? err.message : '저장 중 오류가 발생했습니다.';

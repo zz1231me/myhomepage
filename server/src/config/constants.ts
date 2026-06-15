@@ -8,18 +8,9 @@ export const ROLES = {
   GUEST: 'guest',
 } as const;
 
-export type RoleType = (typeof ROLES)[keyof typeof ROLES];
-
 /** admin 또는 manager 역할인지 확인 */
 export const isAdminOrManager = (role: string): boolean =>
   role === ROLES.ADMIN || role === ROLES.MANAGER;
-
-// ✅ 비밀번호 해싱
-export const BCRYPT_ROUNDS = 10;
-
-// ✅ 계정 보안
-export const MAX_LOGIN_ATTEMPTS = 5;
-export const ACCOUNT_LOCK_MINUTES = 30;
 
 // ✅ 예약된 게시판 ID (시스템 경로와 충돌 방지)
 export const RESERVED_BOARD_IDS = [
@@ -57,16 +48,11 @@ export const PAGINATION = {
   MAX_LIMIT: MAX_PAGE_SIZE,
 } as const;
 
-// ✅ 파일 업로드 (실제 제한은 관리자 설정에서 동적으로 읽음 — settingsCache 참고)
-export const MAX_FILE_COUNT = 5;
-export const MAX_FILE_SIZE_MB = 100;
-
 // ✅ 게시글 제한 — 실제 제한은 관리자 설정(settingsCache)에서 동적으로 읽음
 // 여기 값은 DB 로드 전 fallback 및 Zod 스키마 상한선으로만 사용
 export const POST_TITLE_MAX_LENGTH = 200; // settingsCache DEFAULTS.postTitleMaxLength 와 동일
 export const POST_CONTENT_MAX_LENGTH = 500000; // settingsCache DEFAULTS.postContentMaxLength 와 동일
 export const POST_SECRET_PASSWORD_MIN_LENGTH = 4; // 최소 4자
-export const POST_MAX_PAGE = 1000;
 
 // ✅ Rate Limiting 창 및 최대 요청 수 (ms)
 export const RATE_LIMIT = {
@@ -94,17 +80,5 @@ export const CACHE_TTL = {
 // ✅ Cache 만료 체크 주기 (초)
 export const CACHE_CHECK_PERIOD = 60;
 
-// ✅ Log 보존 기간 기본값 (일)
-export const LOG_RETENTION_DAYS = {
-  SECURITY: 90,
-  ERROR: 30,
-} as const;
-
-// ✅ 로그 자동 정리 주기: 24시간 (ms)
-export const LOG_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
-
 // ✅ JWT 알고리즘
 export const JWT_ALGORITHM = 'HS256' as const;
-
-// ✅ 요청 바디 크기 제한
-export const REQUEST_BODY_LIMIT = '10mb' as const;

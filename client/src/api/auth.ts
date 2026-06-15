@@ -92,12 +92,6 @@ export async function changePassword(currentPassword: string, newPassword: strin
   return res.data;
 }
 
-// 🔍 사용자 권한 조회
-export async function getUserPermissions() {
-  const res = await api.get('/auth/permissions');
-  return res.data;
-}
-
 // 👤 회원가입 (보안 강화) - ✅ role 필드 완전 제거, email 추가
 export async function register(id: string, password: string, name: string, email?: string) {
   // ✅ role 필드 완전 제거

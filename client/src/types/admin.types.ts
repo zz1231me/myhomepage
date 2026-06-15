@@ -176,19 +176,3 @@ export type TabType =
   | 'files'
   | 'ip-management'
   | 'board-managers';
-
-export interface LoadingStates {
-  users: boolean;
-  roles: boolean;
-  boards: boolean;
-  permissions: boolean;
-  events: boolean;
-}
-
-export interface DataLoadedStates {
-  users: boolean;
-  roles: boolean;
-  boards: boolean;
-  permissions: boolean;
-  events: boolean;
-}

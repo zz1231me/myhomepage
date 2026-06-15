@@ -97,12 +97,6 @@ export const invalidateUserCache = (userId: string): void => {
   }
 };
 
-// 전체 캐시 삭제
-export const clearAllCache = (): void => {
-  cache.flushAll();
-  logInfo('All cache cleared');
-};
-
 // 캐시 통계
 export const getCacheStats = () => {
   return {

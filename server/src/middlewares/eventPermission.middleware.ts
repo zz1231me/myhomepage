@@ -101,38 +101,3 @@ function getActionName(action: string): string {
   };
   return actionNames[action] || action;
 }
-
-// ✅ 사용자 이벤트 권한 조회 API용 헬퍼 함수
-export const getUserEventPermissions = async (roleId: string) => {
-  try {
-    const permission = await EventPermission.findOne({
-      where: { roleId },
-      include: [
-        {
-          model: Role,
-          as: 'role',
-          attributes: ['id', 'name'],
-        },
-      ],
-    });
-
-    return (
-      permission || {
-        roleId,
-        canCreate: false,
-        canRead: true, // 기본적으로 조회만 허용
-        canUpdate: false,
-        canDelete: false,
-      }
-    );
-  } catch (error) {
-    logError('사용자 이벤트 권한 조회 실패', error);
-    return {
-      roleId,
-      canCreate: false,
-      canRead: true,
-      canUpdate: false,
-      canDelete: false,
-    };
-  }
-};

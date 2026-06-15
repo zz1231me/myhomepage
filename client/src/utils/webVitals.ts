@@ -52,26 +52,4 @@ export function initWebVitals(onReport?: ReportHandler) {
   if (import.meta.env.DEV) console.info('📊 [Web Vitals] 모니터링 시작됨');
 }
 
-/**
- * 메트릭 임계값 확인
- */
-export function checkVitalThresholds(
-  name: WebVitalName,
-  value: number
-): 'good' | 'needs-improvement' | 'poor' {
-  const thresholds: Record<WebVitalName, { good: number; poor: number }> = {
-    CLS: { good: 0.1, poor: 0.25 },
-    INP: { good: 200, poor: 500 },
-    LCP: { good: 2500, poor: 4000 },
-    FCP: { good: 1800, poor: 3000 },
-    TTFB: { good: 800, poor: 1800 },
-  };
-
-  const { good, poor } = thresholds[name];
-
-  if (value <= good) return 'good';
-  if (value <= poor) return 'needs-improvement';
-  return 'poor';
-}
-
 export default initWebVitals;

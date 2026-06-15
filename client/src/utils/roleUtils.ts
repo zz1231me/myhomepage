@@ -41,21 +41,3 @@ export function getRoleName(role: UserRole): string {
       return role;
   }
 }
-
-/**
- * 역할 권한 레벨 (숫자가 클수록 높은 권한)
- */
-export function getRoleLevel(role: UserRole): number {
-  switch (role) {
-    case 'admin':
-      return 4;
-    case 'manager':
-      return 3;
-    case 'user':
-      return 2;
-    case 'guest':
-      return 1;
-    default:
-      return 0;
-  }
-}

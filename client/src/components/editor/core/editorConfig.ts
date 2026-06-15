@@ -16,6 +16,7 @@
 import {
   Alignment,
   AutoImage,
+  Autoformat,
   AutoLink,
   BlockQuote,
   Bold,
@@ -27,11 +28,14 @@ import {
   FontColor,
   FontFamily,
   FontSize,
+  Fullscreen,
   Heading,
   Highlight,
   HorizontalLine,
   Image,
   ImageCaption,
+  ImageInsert,
+  ImageInsertViaUrl,
   ImageResize,
   ImageStyle,
   ImageToolbar,
@@ -54,6 +58,7 @@ import {
   Subscript,
   Superscript,
   Table,
+  TableCaption,
   TableCellProperties,
   TableColumnResize,
   TableProperties,
@@ -114,9 +119,44 @@ const TABLE_CONFIG: EditorConfig['table'] = {
     'tableColumn',
     'tableRow',
     'mergeTableCells',
+    'toggleTableCaption',
     'tableProperties',
     'tableCellProperties',
   ],
+};
+
+// 글자색/배경색 — 한글 라벨 팔레트 + 최근 사용색(documentColors).
+// 출력은 인라인 style="color:#hex" → sanitizer 통과·CKContentView.css에서 정상 표시.
+const FONT_COLOR_CONFIG: EditorConfig['fontColor'] = {
+  colors: [
+    { color: '#000000', label: '검정' },
+    { color: '#434343', label: '진회색' },
+    { color: '#808080', label: '회색' },
+    { color: '#e74c3c', label: '빨강' },
+    { color: '#e67e22', label: '주황' },
+    { color: '#f1c40f', label: '노랑' },
+    { color: '#2ecc71', label: '초록' },
+    { color: '#3498db', label: '파랑' },
+    { color: '#9b59b6', label: '보라' },
+    { color: '#ffffff', label: '흰색', hasBorder: true },
+  ],
+  columns: 5,
+  documentColors: 6,
+};
+
+const FONT_BG_COLOR_CONFIG: EditorConfig['fontBackgroundColor'] = {
+  colors: [
+    { color: '#fde047', label: '노랑' },
+    { color: '#bbf7d0', label: '연초록' },
+    { color: '#bfdbfe', label: '연파랑' },
+    { color: '#fbcfe8', label: '분홍' },
+    { color: '#fed7aa', label: '주황' },
+    { color: '#e9d5ff', label: '연보라' },
+    { color: '#e5e7eb', label: '연회색' },
+    { color: '#ffffff', label: '흰색', hasBorder: true },
+  ],
+  columns: 5,
+  documentColors: 6,
 };
 
 const FONT_FAMILY_CONFIG: EditorConfig['fontFamily'] = {
@@ -252,6 +292,8 @@ const POST_IMAGE_PLUGINS: PluginList = [
   ImageStyle,
   ImageToolbar,
   ImageUpload,
+  ImageInsert, // 'insertImage' 드롭다운(업로드 + URL삽입 통합 UI)
+  ImageInsertViaUrl, // 외부 이미지 URL 직접 삽입
   AutoImage, // 이미지 URL 붙여넣기 → 자동 <img> 임베드
   LinkImage, // 이미지에 링크(<a><img>) — sanitizer 허용 태그라 표시 안전
 ];
@@ -293,6 +335,7 @@ const POST_PLUGINS: PluginList = [
   SpecialCharacters,
   SpecialCharactersEssentials,
   Table,
+  TableCaption,
   TableCellProperties,
   TableColumnResize,
   TableProperties,
@@ -306,6 +349,8 @@ const POST_PLUGINS: PluginList = [
   Indent,
   IndentBlock,
   RemoveFormat,
+  Autoformat, // 마크다운 단축 입력(**굵게**, # 제목, - 목록 등) — 출력은 기존 태그
+  Fullscreen, // 전체화면 편집 토글
   WordCount,
 ];
 
@@ -389,7 +434,7 @@ const POST_TOOLBAR: string[] = [
   'codeBlock',
   '|',
   'link',
-  'uploadImage',
+  'insertImage',
   'insertTable',
   'mediaEmbed',
   '|',
@@ -399,6 +444,8 @@ const POST_TOOLBAR: string[] = [
   '|',
   'removeFormat',
   'findAndReplace',
+  '|',
+  'fullscreen',
 ];
 
 // 댓글: 본문에서 실제로 렌더되는 서식만 노출(경량)
@@ -459,6 +506,8 @@ interface PresetParts {
   table?: EditorConfig['table'];
   fontFamily?: EditorConfig['fontFamily'];
   fontSize?: EditorConfig['fontSize'];
+  fontColor?: EditorConfig['fontColor'];
+  fontBackgroundColor?: EditorConfig['fontBackgroundColor'];
   highlight?: EditorConfig['highlight'];
   codeBlock?: EditorConfig['codeBlock'];
   mediaEmbed?: EditorConfig['mediaEmbed'];
@@ -474,6 +523,8 @@ const PRESETS: Record<EditorPreset, PresetParts> = {
     table: TABLE_CONFIG,
     fontFamily: FONT_FAMILY_CONFIG,
     fontSize: FONT_SIZE_CONFIG,
+    fontColor: FONT_COLOR_CONFIG,
+    fontBackgroundColor: FONT_BG_COLOR_CONFIG,
     highlight: HIGHLIGHT_CONFIG,
     codeBlock: CODEBLOCK_CONFIG,
     mediaEmbed: MEDIA_EMBED_CONFIG,
@@ -528,6 +579,8 @@ export function buildEditorConfig(
   if (parts.table) config.table = parts.table;
   if (parts.fontFamily) config.fontFamily = parts.fontFamily;
   if (parts.fontSize) config.fontSize = parts.fontSize;
+  if (parts.fontColor) config.fontColor = parts.fontColor;
+  if (parts.fontBackgroundColor) config.fontBackgroundColor = parts.fontBackgroundColor;
   if (parts.highlight) config.highlight = parts.highlight;
   if (parts.codeBlock) config.codeBlock = parts.codeBlock;
   if (parts.mediaEmbed) config.mediaEmbed = parts.mediaEmbed;

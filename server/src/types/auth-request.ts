@@ -28,12 +28,6 @@ export interface AuthRequest extends Request<ParamsFlatDictionary> {
   };
 }
 
-export interface BoardPermissionCheck {
-  hasAccess: boolean;
-  board?: BoardInstance;
-  reason?: string;
-}
-
 export interface AccessibleBoard {
   id: string;
   name: string;

@@ -24,27 +24,6 @@ function toAppError(err: unknown): AppError | null {
   return err instanceof AppError ? err : null;
 }
 
-// ✅ 게시판 목록 조회
-// 관리자: 모든 게시판 (설정용)
-// 일반 사용자: 읽기 권한이 있는 게시판만 (사이드바용)
-export const getBoards = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { role: userRole } = req.user;
-  const mode = req.query.mode as string; // 'admin' | 'sidebar'
-
-  try {
-    if (userRole === 'admin' && mode === 'admin') {
-      const allBoards = await boardService.getAllBoards();
-      sendSuccess(res, allBoards);
-    } else {
-      const accessibleBoards = await boardService.getAccessibleBoards(userRole);
-      sendSuccess(res, accessibleBoards);
-    }
-  } catch (err) {
-    logError('게시판 목록 조회 실패', err, { userRole });
-    sendError(res, 500, '게시판 목록을 불러오는데 실패했습니다.');
-  }
-};
-
 // ✅ 특정 게시판 정보 조회
 export const getBoardById = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;

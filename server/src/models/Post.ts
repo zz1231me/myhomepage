@@ -68,8 +68,6 @@ export interface PostInstance extends Model<
   secretSalt: CreationOptional<string | null>;
   // 좋아요 수 (virtual)
   likeCount?: CreationOptional<number>;
-  // 낙관적 잠금 버전
-  version: CreationOptional<number>;
   createdAt: CreationOptional<Date>;
   updatedAt: CreationOptional<Date>;
 
@@ -104,7 +102,6 @@ class PostModel
   declare public isEncrypted: CreationOptional<boolean>;
   declare public secretSalt: CreationOptional<string | null>;
   declare public likeCount: CreationOptional<number>;
-  declare public version: CreationOptional<number>;
   declare public readonly createdAt: Date;
   declare public readonly updatedAt: Date;
 
@@ -320,12 +317,6 @@ PostModel.init(
       allowNull: true,
       defaultValue: null,
       comment: 'E2EE PBKDF2 솔트값',
-    },
-    version: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      defaultValue: 0,
-      comment: '낙관적 잠금 버전 번호',
     },
     createdAt: {
       type: DataTypes.DATE,

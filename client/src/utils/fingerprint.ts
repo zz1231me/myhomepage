@@ -13,7 +13,3 @@ export async function getVisitorId(): Promise<string> {
     return '';
   }
 }
-
-export function clearVisitorId(): void {
-  visitorId = null;
-}

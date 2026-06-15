@@ -21,18 +21,3 @@ export function parsePagination(req: Request, options: PaginationOptions = {}) {
 
   return { page, limit, offset: (page - 1) * limit };
 }
-
-/**
- * 페이지네이션 메타 객체 생성
- */
-export function buildPaginationMeta(page: number, limit: number, totalCount: number) {
-  const totalPages = Math.ceil(totalCount / limit);
-  return {
-    currentPage: page,
-    totalPages,
-    totalCount,
-    limit,
-    hasNextPage: page < totalPages,
-    hasPrevPage: page > 1,
-  };
-}

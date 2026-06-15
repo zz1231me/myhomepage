@@ -71,8 +71,6 @@ export interface UpdatePostParams {
   secretUserIds?: string[] | null;
   isEncrypted?: boolean;
   secretSalt?: string | null;
-  // 낙관적 잠금: 클라이언트가 읽은 버전 번호 (제공 시 검증)
-  version?: number;
 }
 
 export interface LockedPostMeta {
@@ -767,7 +765,6 @@ export class PostService extends BaseService {
       secretUserIds,
       isEncrypted,
       secretSalt,
-      version,
     } = params;
 
     // 권한 체크용 초기 조회 (잠금 없음)
@@ -894,7 +891,7 @@ export class PostService extends BaseService {
 
     // DB 저장을 트랜잭션으로 처리
     const updatedPost = await sequelize.transaction(async t => {
-      // LOCK.UPDATE로 재조회 — 낙관적 잠금 TOCTOU 방지
+      // LOCK.UPDATE로 재조회 — 권한 체크 이후 행이 바뀌는 TOCTOU(게시판 이동 등) 방지
       const lockedPost = await Post.findByPk(postId, { transaction: t, lock: t.LOCK.UPDATE });
       if (!lockedPost) throw new AppError(404, '게시글을 찾을 수 없습니다.');
 
@@ -903,16 +900,6 @@ export class PostService extends BaseService {
         throw new AppError(
           409,
           '게시글이 다른 게시판으로 이동되었습니다. 페이지를 새로고침 후 다시 시도해주세요.'
-        );
-      }
-
-      // 버전 체크 (잠금 내부에서 수행)
-      // version은 선택적(opt-in 낙관적 잠금) — 제공되면 충돌을 감지하고, 생략하면
-      // last-write-wins로 동작한다(클라이언트 에디터는 항상 version을 전송해 충돌을 감지함).
-      if (version !== undefined && lockedPost.version !== version) {
-        throw new AppError(
-          409,
-          '다른 사용자가 이미 이 게시글을 수정했습니다. 페이지를 새로고침 후 다시 시도해주세요.'
         );
       }
 
@@ -956,8 +943,6 @@ export class PostService extends BaseService {
         }
       }
 
-      // 낙관적 잠금: 버전 증가
-      lockedPost.version = (lockedPost.version ?? 0) + 1;
       await lockedPost.save({ transaction: t });
 
       const saved = await Post.findByPk(postId, {

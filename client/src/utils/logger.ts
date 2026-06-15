@@ -153,7 +153,6 @@ export const createLogger = (prefix: string): Logger => new Logger(prefix);
 
 // 편의 로거들 (즉시 사용 가능)
 export const authLogger = createLogger('인증');
-export const apiLogger = createLogger('API');
 export const boardLogger = createLogger('게시판');
 export const fileLogger = createLogger('파일');
 

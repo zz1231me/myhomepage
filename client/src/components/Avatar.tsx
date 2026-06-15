@@ -224,23 +224,5 @@ export const Avatar: React.FC<AvatarProps> = React.memo(
   }
 );
 
-// 기존 인터페이스 호환성을 위한 래퍼 (기존 코드 호환)
-interface LegacyAvatarProps {
-  name: string;
-  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
-  variant?: 'gradient' | 'solid' | 'muted';
-  className?: string;
-}
-
-export const LegacyAvatar: React.FC<LegacyAvatarProps> = ({
-  name,
-  size = 'md',
-  variant = 'gradient',
-  className = '',
-}) => {
-  const user = { id: '', name, avatar: null };
-  return <Avatar user={user} size={size} variant={variant} className={className} />;
-};
-
 // 기존 export와의 호환성을 위해 default로도 export
 export default Avatar;

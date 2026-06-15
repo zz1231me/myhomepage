@@ -369,18 +369,4 @@ export const AvatarUpload: React.FC<AvatarUploadProps> = ({
   );
 };
 
-// 간단한 아바타 표시 전용 컴포넌트 (업로드 기능 없음)
-export const AvatarDisplay: React.FC<{
-  user: User;
-  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
-  className?: string;
-  onClick?: () => void;
-}> = ({ user, size = 'md', className = '', onClick }) => {
-  return (
-    <div className={className} onClick={onClick}>
-      <Avatar user={user} size={size} />
-    </div>
-  );
-};
-
 export default AvatarUpload;

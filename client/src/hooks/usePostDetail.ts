@@ -258,12 +258,14 @@ export const usePostDetail = ({ boardType, id }: UsePostDetailProps) => {
     setLikeLoading(true);
     try {
       const result = await toggleLike(boardType, id);
+      // 언마운트/다른 게시글 이동 후 응답이 도착해 잘못된 상태를 덮어쓰지 않도록 가드
+      if (!mountedRef.current) return;
       setLiked(result.liked);
       setLikeCount(result.likeCount);
     } catch (err) {
       if (import.meta.env.DEV) console.error('좋아요 처리 실패:', err);
     } finally {
-      setLikeLoading(false);
+      if (mountedRef.current) setLikeLoading(false);
     }
   }, [boardType, id, likeLoading]);
 

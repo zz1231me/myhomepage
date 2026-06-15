@@ -547,6 +547,9 @@ const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       currentUserId,
+      currentUser?.name,
+      currentUser?.avatar,
+      siteSettings.commentMaxDepth,
       isAuthenticated,
       isAdmin,
       ops.editingCommentId,

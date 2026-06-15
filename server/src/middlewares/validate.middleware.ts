@@ -25,23 +25,6 @@ export const validateBody =
   };
 
 /**
- * 쿼리 파라미터를 zod 스키마로 검증하는 미들웨어 팩토리
- */
-export const validateQuery =
-  <T>(schema: ZodSchema<T>) =>
-  (req: Request, res: Response, next: NextFunction): void => {
-    const result = schema.safeParse(req.query);
-    if (!result.success) {
-      const message = formatZodError(result.error);
-      sendError(res, 400, message);
-      return;
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (req as any).validatedQuery = result.data;
-    next();
-  };
-
-/**
  * ZodError를 사람이 읽기 쉬운 메시지로 변환
  */
 function formatZodError(error: ZodError): string {

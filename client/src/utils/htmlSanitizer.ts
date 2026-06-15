@@ -287,25 +287,3 @@ export function sanitizeCommentHTML(dirty: string): string {
     ALLOW_DATA_ATTR: false,
   });
 }
-
-/**
- * 텍스트만 추출 (모든 HTML 태그 제거)
- */
-export function stripHTML(dirty: string): string {
-  return DOMPurify.sanitize(dirty, {
-    ALLOWED_TAGS: [],
-    KEEP_CONTENT: true,
-  });
-}
-
-/**
- * URL 유효성 검증
- */
-export function isValidURL(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return ['http:', 'https:', 'mailto:'].includes(parsed.protocol);
-  } catch {
-    return false;
-  }
-}

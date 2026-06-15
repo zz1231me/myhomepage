@@ -7,11 +7,6 @@ export async function getAllBoardsWithManagers(): Promise<BoardWithManagers[]> {
   return unwrap(res);
 }
 
-export async function getBoardManagers(boardId: string): Promise<BoardManagerRecord[]> {
-  const res = await axios.get(`/board-managers/boards/${boardId}`);
-  return unwrap(res);
-}
-
 export async function addBoardManager(
   boardId: string,
   userId: string

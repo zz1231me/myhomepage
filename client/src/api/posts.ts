@@ -192,11 +192,9 @@ export async function updatePost(
     secretUserIds,
     isEncrypted,
     secretSalt,
-    version,
   }: Omit<PostPayload, 'boardType'> & {
     keepExistingFiles?: boolean;
     deletedFileNames?: string[];
-    version?: number;
   }
 ) {
   const formData = new FormData();
@@ -214,9 +212,6 @@ export async function updatePost(
     formData.append('isEncrypted', isEncrypted ? 'true' : 'false');
     if (isEncrypted && secretSalt) formData.append('secretSalt', secretSalt);
   }
-
-  // 낙관적 잠금 버전
-  if (version !== undefined) formData.append('version', String(version));
 
   // ✅ 삭제된 파일명 목록 전송
   if (deletedFileNames && deletedFileNames.length > 0) {
@@ -251,15 +246,6 @@ export async function deletePost(boardType: string, postId: string) {
   return unwrap(res);
 }
 
-// ✅ 파일 크기 포맷팅 유틸리티
-export function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 Bytes';
-  const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
 export async function markPostRead(boardType: string, postId: string): Promise<void> {
   await axios.post(`/posts/${boardType}/${postId}/read`).catch(() => {});
 }
@@ -267,25 +253,4 @@ export async function markPostRead(boardType: string, postId: string): Promise<v
 export async function togglePin(boardType: string, postId: string): Promise<{ isPinned: boolean }> {
   const res = await axios.patch(`/posts/${boardType}/${postId}/pin`);
   return unwrap(res);
-}
-
-// ✅ 파일 타입 확인 유틸리티
-export function getFileType(
-  filename: string
-): 'image' | 'document' | 'archive' | 'video' | 'audio' | 'file' {
-  const ext = filename.split('.').pop()?.toLowerCase();
-  if (!ext) return 'file';
-
-  const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'];
-  const documentExts = ['pdf', 'doc', 'docx', 'txt', 'hwp', 'ppt', 'pptx', 'xls', 'xlsx'];
-  const archiveExts = ['zip', 'rar', '7z', 'tar', 'gz', 'bz2'];
-  const videoExts = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv'];
-  const audioExts = ['mp3', 'wav', 'flac', 'aac', 'ogg'];
-
-  if (imageExts.includes(ext)) return 'image';
-  if (documentExts.includes(ext)) return 'document';
-  if (archiveExts.includes(ext)) return 'archive';
-  if (videoExts.includes(ext)) return 'video';
-  if (audioExts.includes(ext)) return 'audio';
-  return 'file';
 }

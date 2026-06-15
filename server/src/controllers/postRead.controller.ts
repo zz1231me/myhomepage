@@ -6,7 +6,7 @@ import { postReadService } from '../services/postRead.service';
 import { AppError } from '../middlewares/error.middleware';
 
 export const markAsRead = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { id: postId } = req.params;
+  const { id: postId, boardType } = req.params;
   const userId = req.user?.id;
 
   if (!userId) {
@@ -15,7 +15,7 @@ export const markAsRead = async (req: AuthRequest, res: Response): Promise<void>
   }
 
   try {
-    await postReadService.markRead(postId, userId);
+    await postReadService.markRead(postId, userId, boardType);
     sendSuccess(res, null, '읽음 처리 완료');
   } catch (err) {
     if (err instanceof AppError) {

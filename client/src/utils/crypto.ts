@@ -60,10 +60,3 @@ export function decryptContent(
     return null;
   }
 }
-
-export function isEncryptedContent(content: string): boolean {
-  // Encrypted content has format: base64:base64 and doesn't look like JSON
-  if (content.startsWith('{') || content.startsWith('[')) return false;
-  const parts = content.split(':');
-  return parts.length === 2 && parts[0].length > 0 && parts[1].length > 0;
-}
