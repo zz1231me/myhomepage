@@ -128,61 +128,70 @@ const PORT = env.PORT;
 // ============================================================================
 // ✅ SQLite 마이그레이션 헬퍼 — 모델에 추가된 신규 컬럼을 누락 없이 보강
 // ============================================================================
-// SQLite는 sync({alter:true})가 FK 제약 + backup/drop 패턴으로 실패할 수 있어
-// 운영용 alter는 쓰지 못한다. 대신 모델 정의를 기준으로 누락된 컬럼만
-// ALTER TABLE ADD COLUMN으로 직접 추가한다. 이미 있는 컬럼은 SQLITE_ERROR로 reject되어
-// catch에서 무시. 컬럼 추가만 안전(SQLite는 DROP/RENAME 컬럼 제약 있음).
-async function ensureSiteSettingsColumns() {
-  const { sequelize } = await import('./config/sequelize');
-  const { QueryTypes } = await import('sequelize');
-
-  // 모델 정의의 attributes에서 모든 컬럼 메타(field, type, defaultValue) 추출
-  const { SiteSettings } = await import('./models/SiteSettings');
+// 모델에 추가된 신규 컬럼을 DB에 보강한다(모든 dialect + 모든 테이블).
+// Sequelize QueryInterface(describeTable/addColumn)를 사용하므로 dialect에 맞는 SQL이 자동 생성된다.
+// SQLite는 sync({alter})를 못 쓰고, 그 외 DB(MariaDB 등)도 alter:true가 컬럼을 못 붙이는 경우가
+// 있어, 이 보강을 안전망으로 모든 DB에서 실행한다. 마이그레이션 도구가 없는 환경에서 모델에
+// 컬럼이 추가돼도 재시작만으로 "no such column" 류 오류를 막는다.
+// - 이미 있는 컬럼은 건너뜀 (idempotent)
+// - VIRTUAL(가상 컬럼)·PK는 보강 대상 아님
+// - NOT NULL인데 기본값 없는 신규 컬럼은 기존 행 때문에 추가 실패할 수 있어 경고만 남김(수동 처리 필요)
+async function ensureModelColumns(model: (typeof sequelize.models)[string]): Promise<void> {
+  const qi = sequelize.getQueryInterface();
+  const rawTableName = model.getTableName();
+  const tableName = typeof rawTableName === 'string' ? rawTableName : rawTableName.tableName;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rawAttributes = (SiteSettings as any).rawAttributes as Record<string, any>;
+  const rawAttributes = (model as any).rawAttributes as Record<string, any>;
 
-  // 현재 DB의 site_settings 컬럼 목록 조회
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const existingCols = (await sequelize.query('PRAGMA table_info(site_settings);', {
-    type: QueryTypes.SELECT,
-  })) as any[];
-  const existingNames = new Set(existingCols.map(c => String(c.name)));
+  let existing: Record<string, unknown>;
+  try {
+    existing = await qi.describeTable(tableName);
+  } catch (err) {
+    // sync가 테이블을 생성했어야 정상 — 조회 실패 시 해당 테이블 보강을 건너뛰되,
+    // 스키마 진단이 목적인 기능이므로 조용히 넘기지 않고 경고를 남긴다.
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn(`[${tableName}] 컬럼 보강 스킵 (테이블 조회 실패): ${msg}`);
+    return;
+  }
 
-  // 누락된 컬럼만 ALTER TABLE ADD COLUMN
+  // 타임스탬프/PK는 항상 존재 — 건너뛴다 (underscored: created_at/updated_at)
+  const SKIP = new Set(['id', 'created_at', 'updated_at', 'createdAt', 'updatedAt']);
+
   for (const key of Object.keys(rawAttributes)) {
     const attr = rawAttributes[key];
-    const fieldName: string = attr.field ?? key;
-    if (existingNames.has(fieldName)) continue;
-    if (fieldName === 'id' || fieldName === 'created_at' || fieldName === 'updated_at') continue;
-
-    // 컬럼 타입 결정
+    // VIRTUAL(DB 컬럼 없음)·PK는 ADD COLUMN 대상이 아님
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const type = (attr.type as any)?.key ?? 'TEXT';
-    let sqlType = 'TEXT';
-    if (type === 'INTEGER') sqlType = 'INTEGER';
-    else if (type === 'BOOLEAN' || type === 'TINYINT') sqlType = 'INTEGER';
-    else if (type === 'DATE') sqlType = 'DATETIME';
-    else if (type === 'STRING') sqlType = 'TEXT';
-    else if (type === 'TEXT') sqlType = 'TEXT';
+    if ((attr.type as any)?.key === 'VIRTUAL' || attr.primaryKey) continue;
+    // underscored:true면 Sequelize가 attr.field에 snake_case 컬럼명을 설정한다
+    const fieldName: string = attr.field ?? key;
+    if (SKIP.has(fieldName) || existing[fieldName]) continue;
 
-    // 기본값
-    let defaultClause = '';
-    const def = attr.defaultValue;
-    if (def !== undefined && def !== null) {
-      if (typeof def === 'boolean') defaultClause = ` DEFAULT ${def ? 1 : 0}`;
-      else if (typeof def === 'number') defaultClause = ` DEFAULT ${def}`;
-      else if (typeof def === 'string') defaultClause = ` DEFAULT ${JSON.stringify(def)}`;
-    }
-
-    const nullClause = attr.allowNull === false ? ' NOT NULL' : '';
-    const sql = `ALTER TABLE site_settings ADD COLUMN \`${fieldName}\` ${sqlType}${nullClause}${defaultClause};`;
     try {
-      await sequelize.query(sql);
-      logger.info(`➕ site_settings 컬럼 추가: ${fieldName}`);
+      // addColumn은 dialect에 맞는 타입/기본값/NOT NULL SQL을 알아서 생성한다.
+      // references는 의도적으로 생략 — 누락 컬럼 복구가 목적이며 FK 제약은 추가하지 않는다.
+      await qi.addColumn(tableName, fieldName, {
+        type: attr.type,
+        allowNull: attr.allowNull ?? true,
+        defaultValue: attr.defaultValue,
+      });
+      logger.info(`➕ [${tableName}] 컬럼 추가: ${fieldName}`);
     } catch (err) {
-      // 이미 존재하거나 기타 에러는 경고만
-      const errMsg = err instanceof Error ? err.message : String(err);
-      logger.warn(`site_settings 컬럼 추가 실패 (이미 있을 가능성): ${fieldName} - ${errMsg}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn(
+        `[${tableName}] 컬럼 추가 실패 (이미 있거나 NOT NULL+기본값없음): ${fieldName} - ${msg}`
+      );
+    }
+  }
+}
+
+// 등록된 모든 모델에 대해 누락 컬럼 보강 (한 모델 실패가 전체를 막지 않도록 개별 try)
+async function ensureAllModelColumns(): Promise<void> {
+  for (const model of Object.values(sequelize.models)) {
+    try {
+      await ensureModelColumns(model);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn(`[${model.name}] 컬럼 보강 중 오류: ${msg}`);
     }
   }
 }
@@ -765,10 +774,9 @@ const startServer = async () => {
     await sequelize.sync(syncOptions);
     logger.info('✅ 테이블 동기화 완료');
 
-    // SQLite 환경에서만: 모델에 추가된 신규 컬럼을 ALTER TABLE ADD COLUMN으로 보강
-    if (env.DB_TYPE === 'sqlite') {
-      await ensureSiteSettingsColumns();
-    }
+    // 모델에 추가된 신규 컬럼 보강 — 모든 DB(sqlite/mysql/mariadb/postgres) + 모든 테이블.
+    // sync alter가 컬럼을 못 붙인 경우의 안전망(QueryInterface로 dialect 자동 처리).
+    await ensureAllModelColumns();
 
     await initializeDefaultData();
 
