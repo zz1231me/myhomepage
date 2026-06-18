@@ -76,11 +76,13 @@ const AssetUploader: React.FC<AssetUploaderProps> = ({ label, hint, accept, valu
         </div>
 
         <div className="flex-1 space-y-2 min-w-0">
+          {/* type="text" — 업로드가 반환하는 상대경로(/uploads/...)도 허용해야 하므로 type="url" 금지.
+              (type="url"은 절대 URL만 유효로 보고 상대경로를 막아 baseURL 수동입력을 강요함) */}
           <input
-            type="url"
+            type="text"
             value={value ?? ''}
             onChange={e => onChange(e.target.value || null)}
-            placeholder="https://example.com/image.png 또는 파일 업로드"
+            placeholder="파일 업로드 시 자동 입력 (또는 https://... 직접 입력)"
             className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
 
