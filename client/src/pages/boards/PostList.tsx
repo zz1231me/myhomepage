@@ -1,6 +1,6 @@
 // src/pages/boards/PostList.tsx - 중복 권한 체크 제거
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams, useLocation } from 'react-router-dom';
 import { fetchPostsByType, PostListResponse } from '../../api/posts';
 import { getTags } from '../../api/tags';
 import { checkUserBoardAccess, checkBoardManageCapability } from '../../api/boards';
@@ -43,13 +43,17 @@ const PostList = () => {
   const navigate = useNavigate();
   const { getUserRole } = useAuth();
 
+  const location = useLocation();
   const handlePostClick = useCallback(
     (postId: string) => {
       if (boardType) {
-        navigate(`/dashboard/posts/${boardType}/${postId}`);
+        // 현재 목록 URL(페이지·검색·태그 포함)을 넘겨, 상세에서 "목록으로" 시 원위치 복귀
+        navigate(`/dashboard/posts/${boardType}/${postId}`, {
+          state: { from: `${location.pathname}${location.search}` },
+        });
       }
     },
-    [boardType, navigate]
+    [boardType, navigate, location.pathname, location.search]
   );
 
   const handleNewPost = useCallback(() => {

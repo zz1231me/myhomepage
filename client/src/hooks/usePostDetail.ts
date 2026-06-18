@@ -1,6 +1,6 @@
 // src/hooks/usePostDetail.ts - 비밀글 + 좋아요 지원
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../store/auth';
 import {
   fetchPostById,
@@ -77,6 +77,7 @@ export const usePostDetail = ({ boardType, id }: UsePostDetailProps) => {
   const [likeLoading, setLikeLoading] = useState(false);
 
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, getUserId, getUserName, isAdmin } = useAuth();
 
   const canEditOrDelete = useMemo(() => {
@@ -270,8 +271,10 @@ export const usePostDetail = ({ boardType, id }: UsePostDetailProps) => {
   }, [boardType, id, likeLoading]);
 
   const handleBack = useCallback(() => {
-    navigate(`/dashboard/posts/${boardType}`);
-  }, [navigate, boardType]);
+    // 목록에서 넘어온 경우 원래 목록 위치(페이지·검색·태그)로 복귀, 아니면 게시판 첫 페이지
+    const from = (location.state as { from?: string } | null)?.from;
+    navigate(from || `/dashboard/posts/${boardType}`);
+  }, [navigate, boardType, location.state]);
 
   const handleEdit = useCallback(() => {
     if (!canEditOrDelete) {
