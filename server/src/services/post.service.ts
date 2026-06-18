@@ -57,6 +57,8 @@ export interface CreatePostParams {
 export interface UpdatePostParams {
   postId: string;
   expectedBoardType?: string;
+  /** 이동할 대상 게시판 ID (현재와 다르면 게시판 이동) */
+  targetBoardType?: string;
   title: string;
   content: string;
   userId: string;
@@ -751,6 +753,7 @@ export class PostService extends BaseService {
     const {
       postId,
       expectedBoardType,
+      targetBoardType,
       title,
       content,
       userId,
@@ -941,6 +944,32 @@ export class PostService extends BaseService {
             lockedPost.secretSalt = null;
           }
         }
+      }
+
+      // 게시판 이동: targetBoardType이 현재와 다르면 대상 게시판 쓰기 권한 확인 후 이동.
+      // 댓글/태그/첨부는 PostId로 연결돼 자동으로 따라간다(별도 이전 불필요).
+      if (targetBoardType && targetBoardType !== lockedPost.boardType) {
+        const targetBoard = await Board.findByPk(targetBoardType);
+        if (!targetBoard) {
+          throw new AppError(404, '이동할 게시판을 찾을 수 없습니다.');
+        }
+        if (targetBoard.isPersonal) {
+          throw new AppError(400, '개인 공간으로는 이동할 수 없습니다.');
+        }
+        if (!targetBoard.isActive) {
+          throw new AppError(400, '비활성 게시판으로는 이동할 수 없습니다.');
+        }
+        const privileged = userRole === ROLES.ADMIN || userRole === ROLES.MANAGER;
+        if (!privileged) {
+          const [targetAccess, targetManager] = await Promise.all([
+            BoardAccess.findOne({ where: { boardId: targetBoardType, roleId: userRole } }),
+            BoardManager.findOne({ where: { boardId: targetBoardType, userId } }),
+          ]);
+          if (!targetManager && !targetAccess?.canWrite) {
+            throw new AppError(403, '이동할 게시판에 글을 쓸 권한이 없습니다.');
+          }
+        }
+        lockedPost.boardType = targetBoardType;
       }
 
       await lockedPost.save({ transaction: t });

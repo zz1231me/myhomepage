@@ -342,6 +342,10 @@ export const updatePost = async (req: AuthRequest, res: Response): Promise<void>
     const updatedPost = await postService.updatePost({
       postId: id,
       expectedBoardType: boardType,
+      targetBoardType:
+        typeof body.targetBoardType === 'string' && body.targetBoardType.trim()
+          ? body.targetBoardType.trim()
+          : undefined,
       title: body.title,
       content: body.content,
       userId,

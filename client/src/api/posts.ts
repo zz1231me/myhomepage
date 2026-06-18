@@ -192,15 +192,22 @@ export async function updatePost(
     secretUserIds,
     isEncrypted,
     secretSalt,
+    targetBoardType,
   }: Omit<PostPayload, 'boardType'> & {
     keepExistingFiles?: boolean;
     deletedFileNames?: string[];
+    /** 게시판 이동 대상 (현재와 다르면 이동) */
+    targetBoardType?: string;
   }
 ) {
   const formData = new FormData();
   formData.append('title', title);
   formData.append('content', content);
   formData.append('keepExistingFiles', keepExistingFiles.toString());
+  // 게시판 이동: 현재 게시판과 다를 때만 전송
+  if (targetBoardType && targetBoardType !== boardType) {
+    formData.append('targetBoardType', targetBoardType);
+  }
   formData.append('isSecret', isSecret ? 'true' : 'false');
   if (isSecret && secretType) formData.append('secretType', secretType);
   if (isSecret && secretType === 'password' && secretPassword)

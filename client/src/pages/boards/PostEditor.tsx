@@ -17,6 +17,7 @@ import { fetchPostById, createPost, updatePost } from '../../api/posts';
 import { getBoardTitle } from '../../constants/boardTitles';
 import { logger, fileLogger } from '../../utils/logger';
 import { useImageUpload } from '../../hooks/useImageUpload';
+import { useAccessibleBoards } from '../../hooks/useAccessibleBoards';
 import { TagSelector } from '../../components/boards/TagSelector';
 import { getPostTags, savePostTags } from '../../api/tags';
 import { Tag } from '../../types/board.types';
@@ -51,6 +52,11 @@ const PostEditor = ({ mode }: Props) => {
   const [loading, setLoading] = useState(false);
   const [editorKey, setEditorKey] = useState(0);
   const [error, setError] = useState('');
+
+  // 게시판 이동(수정 모드) — 쓰기 권한 있는 일반 게시판 목록 + 선택값
+  const [targetBoard, setTargetBoard] = useState(boardType ?? '');
+  const { regularBoards } = useAccessibleBoards();
+  const moveTargets = regularBoards.filter(b => b.permissions.canWrite);
 
   // 태그 상태
   const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
@@ -346,17 +352,20 @@ const PostEditor = ({ mode }: Props) => {
       setLoading(true);
 
       if (mode === 'edit' && id) {
-        await updatePost(boardType, id, {
+        const updated = await updatePost(boardType, id, {
           title,
           content: finalContent,
           files,
           keepExistingFiles: true,
           deletedFileNames,
+          targetBoardType: targetBoard,
           ...secretFields,
         });
+        // 게시판 이동 시 응답의 새 boardType을 기준으로 태그 저장·이동(URL 정합)
+        const finalBoardType = updated?.boardType || targetBoard || boardType;
         try {
           await savePostTags(
-            boardType,
+            finalBoardType,
             id,
             selectedTags.map(t => t.id)
           );
@@ -366,7 +375,7 @@ const PostEditor = ({ mode }: Props) => {
         logger.success('게시글 수정 완료');
         localStorage.removeItem('post_draft'); // ✅ 수정 완료 시 임시저장 삭제
         window.dispatchEvent(new Event('post-updated'));
-        navigate(`/dashboard/posts/${boardType}/${id}`);
+        navigate(`/dashboard/posts/${finalBoardType}/${id}`);
       } else if (mode === 'create') {
         const res = await createPost({
           title,
@@ -510,6 +519,40 @@ const PostEditor = ({ mode }: Props) => {
           )}
 
           <PostTitleInput value={title} onChange={setTitle} maxLength={MAX_TITLE_LENGTH} />
+
+          {/* 게시판 이동 (수정 모드 + 이동 가능한 다른 게시판이 있을 때만) */}
+          {isEditMode && moveTargets.some(b => b.id !== boardType) && (
+            <div>
+              <label
+                htmlFor="board-move-select"
+                className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1"
+              >
+                게시판
+              </label>
+              <select
+                id="board-move-select"
+                value={targetBoard}
+                onChange={e => setTargetBoard(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-primary-500/40 focus:outline-none"
+              >
+                {/* 현재 게시판이 쓰기권한 목록에 없을 수 있으므로 항상 선택지로 포함 */}
+                {boardType && !moveTargets.some(b => b.id === boardType) && (
+                  <option value={boardType}>{getBoardTitle(boardType)} (현재)</option>
+                )}
+                {moveTargets.map(b => (
+                  <option key={b.id} value={b.id}>
+                    {b.name || getBoardTitle(b.id)}
+                    {b.id === boardType ? ' (현재)' : ''}
+                  </option>
+                ))}
+              </select>
+              {targetBoard !== boardType && (
+                <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                  저장 시 「{getBoardTitle(targetBoard)}」(으)로 이동합니다.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* 태그 선택 */}
           <div>
