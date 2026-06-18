@@ -11,6 +11,7 @@ import {
   DEFAULT_ALLOWED_EXTENSIONS,
 } from '../utils/settingsCache';
 import { refreshUploaders } from '../middlewares/upload/refresh';
+import { invalidateIndexHtmlCache } from '../utils/indexHtml';
 import { auditLogService } from '../services/auditLog.service';
 
 /** All fields we expose / accept */
@@ -467,6 +468,8 @@ export const updateSiteSettings = async (req: Request, res: Response) => {
     await refreshSettingsCache();
     // 파일 크기·허용 확장자·이미지 개수가 변경될 수 있으므로 multer 인스턴스 재빌드
     refreshUploaders();
+    // 사이트 이름/타이틀/설명 변경 시 링크 미리보기 OG 메타 재주입을 위해 캐시 무효화
+    invalidateIndexHtmlCache();
 
     // ── 감사 로그 ─────────────────────────────────────────────────────────────
     const authReq = req as unknown as AuthRequest;

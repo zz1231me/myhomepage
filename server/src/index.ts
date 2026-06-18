@@ -63,6 +63,9 @@ import {
   checkDatabaseHealth,
 } from './config/sequelize';
 
+// ✅ SPA index.html OG 메타 주입(링크 미리보기용)
+import { renderIndexHtml } from './utils/indexHtml';
+
 // ✅ 모든 모델 import (관계 설정 포함)
 import './models';
 // ✅ 디버그 엔드포인트에서 직접 참조하기 위한 모델 import
@@ -614,12 +617,15 @@ if (clientBuildExists) {
       return;
     }
     res.set('Cache-Control', 'no-store');
-    res.sendFile(clientIndexPath, err => {
-      if (err) {
-        logError('index.html 전송 실패', err);
-        sendError(res, 500, '클라이언트 파일을 불러올 수 없습니다.');
-      }
-    });
+    // 현재 사이트 설정을 OG/타이틀 메타에 주입해 응답 (링크 미리보기 크롤러 대응)
+    void renderIndexHtml(clientIndexPath)
+      .then(html => res.type('html').send(html))
+      .catch(err => {
+        logError('index.html 렌더 실패 — sendFile 폴백', err);
+        res.sendFile(clientIndexPath, sendErr => {
+          if (sendErr) sendError(res, 500, '클라이언트 파일을 불러올 수 없습니다.');
+        });
+      });
   });
   logger.info(`✅ 클라이언트 빌드 서빙 활성화: ${clientDistPath}`);
 } else {
