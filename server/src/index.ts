@@ -196,6 +196,28 @@ async function ensureAllModelColumns(): Promise<void> {
   }
 }
 
+// site_settings는 싱글턴이어야 하지만 모델에 unique 제약이 없어, 과거 race(빈 테이블에 동시 요청 등)로
+// 중복 행이 생겼을 수 있다. 코드 전반은 ORDER BY 없는 SiteSettings.findOne()으로 설정을 읽는데,
+// 행이 2개 이상이면 DB(특히 MySQL/MariaDB)가 호출마다 다른 행을 반환할 수 있다 → 저장한 행과
+// 읽는 행이 달라 "새 사이트 이름을 저장해도 옛 값이 계속 보이는" 문제가 발생한다.
+// 시작 시 가장 최근 수정된 행 1개만 남기고 정리해 싱글턴을 보장한다(읽기가 결정적이 됨).
+async function consolidateSiteSettings(): Promise<void> {
+  const { SiteSettings } = await import('./models/SiteSettings');
+  const rows = await SiteSettings.findAll({
+    order: [
+      ['updatedAt', 'DESC'],
+      ['id', 'ASC'],
+    ],
+  });
+  if (rows.length <= 1) return; // 정상(0 또는 1행)이면 아무것도 하지 않음
+  const [keep, ...extras] = rows;
+  const extraIds = extras.map(r => r.id);
+  await SiteSettings.destroy({ where: { id: extraIds } });
+  logger.warn(
+    `⚙️ 중복 site_settings 행 정리: 가장 최근 수정 행(id=${keep.id}) 유지, 나머지 ${extras.length}개 삭제(id=[${extraIds.join(', ')}])`
+  );
+}
+
 // ============================================================================
 // ✅ 초기 데이터 자동 생성
 // ============================================================================
@@ -777,6 +799,9 @@ const startServer = async () => {
     // 모델에 추가된 신규 컬럼 보강 — 모든 DB(sqlite/mysql/mariadb/postgres) + 모든 테이블.
     // sync alter가 컬럼을 못 붙인 경우의 안전망(QueryInterface로 dialect 자동 처리).
     await ensureAllModelColumns();
+
+    // 중복 site_settings 행 정리(싱글턴 보장) — 비결정적 읽기로 옛 설정값이 보이는 문제 방지
+    await consolidateSiteSettings();
 
     await initializeDefaultData();
 
