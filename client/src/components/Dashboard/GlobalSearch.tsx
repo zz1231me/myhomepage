@@ -149,9 +149,19 @@ export function GlobalSearch() {
   const navigate = useNavigate();
 
   const user = useAuthStore(state => state.user);
-  const { history, addSearch, removeSearch, clearAll } = useSearchHistory(user?.id);
+  const {
+    history,
+    addSearch,
+    removeSearch,
+    clearAll,
+    viewedResults,
+    addViewedResult,
+    removeViewed,
+    clearViewed,
+  } = useSearchHistory(user?.id);
 
   const showHistory = isOpen && searchTerm === '' && history.length > 0;
+  const showViewed = isOpen && searchTerm === '' && viewedResults.length > 0;
 
   // ⌘K / Ctrl+K 전역 단축키
   useEffect(() => {
@@ -296,6 +306,14 @@ export function GlobalSearch() {
 
   const handleResultClick = (result: SearchResult) => {
     addSearch(searchTerm);
+    addViewedResult({
+      id: result.id,
+      type: result.type,
+      title: result.title,
+      boardType: result.boardType,
+      url: getResultUrl(result),
+      query: searchTerm,
+    });
     navigate(getResultUrl(result));
     setIsOpen(false);
     setSearchTerm('');
@@ -348,12 +366,20 @@ export function GlobalSearch() {
   useEffect(() => {
     handleResultClickRef.current = (result: SearchResult) => {
       addSearch(searchTerm);
+      addViewedResult({
+        id: result.id,
+        type: result.type,
+        title: result.title,
+        boardType: result.boardType,
+        url: getResultUrl(result),
+        query: searchTerm,
+      });
       navigate(getResultUrl(result));
       setIsOpen(false);
       setSearchTerm('');
       setResults([]);
     };
-  }, [searchTerm, addSearch, navigate, setIsOpen]);
+  }, [searchTerm, addSearch, addViewedResult, navigate, setIsOpen]);
 
   // 타입별로 그룹화
   const groupedResults = useMemo(
@@ -628,6 +654,86 @@ export function GlobalSearch() {
                         <button
                           onClick={() => removeSearch(query)}
                           aria-label={`'${query}' 검색 기록 삭제`}
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-200 dark:hover:bg-slate-600 rounded transition-all flex-shrink-0"
+                        >
+                          <svg
+                            aria-hidden="true"
+                            focusable="false"
+                            className="w-3 h-3 text-slate-400"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M6 18L18 6M6 6l12 12"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 최근 본 게시물 (검색으로 클릭한 결과) */}
+              {showViewed && (
+                <div className="py-2 border-t border-slate-100 dark:border-slate-700">
+                  <div className="px-4 py-2.5 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                      최근 본 게시물
+                    </span>
+                    <button
+                      onClick={clearViewed}
+                      className="text-xs text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                    >
+                      전체 삭제
+                    </button>
+                  </div>
+                  <div className="space-y-0.5">
+                    {viewedResults.map(v => (
+                      <div
+                        key={`${v.type}-${v.id}`}
+                        className="flex items-center gap-2 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors group"
+                      >
+                        <svg
+                          aria-hidden="true"
+                          focusable="false"
+                          className="w-4 h-4 text-slate-300 dark:text-slate-600 flex-shrink-0"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                          />
+                        </svg>
+                        <button
+                          onClick={() => {
+                            navigate(v.url);
+                            setIsOpen(false);
+                            setSearchTerm('');
+                            setResults([]);
+                          }}
+                          className="flex-1 min-w-0 text-left"
+                        >
+                          <span className="block text-sm text-slate-700 dark:text-slate-300 truncate">
+                            {v.title}
+                          </span>
+                          {v.query && (
+                            <span className="block text-xs text-slate-400 dark:text-slate-500 truncate">
+                              ‘{v.query}’ 검색에서
+                            </span>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => removeViewed(v.id, v.type)}
+                          aria-label={`'${v.title}' 기록 삭제`}
                           className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-200 dark:hover:bg-slate-600 rounded transition-all flex-shrink-0"
                         >
                           <svg
