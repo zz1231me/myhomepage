@@ -262,10 +262,6 @@ const UppyFileUpload: React.FC<UppyFileUploadProps> = ({
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onClick={() => inputRef.current?.click()}
-          role="button"
-          tabIndex={0}
-          onKeyDown={e => e.key === 'Enter' && inputRef.current?.click()}
-          aria-label="파일 선택 또는 드래그"
           className={`relative border-2 border-dashed rounded-lg px-6 py-8 text-center cursor-pointer transition-colors ${
             isDragOver
               ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
@@ -304,6 +300,16 @@ const UppyFileUpload: React.FC<UppyFileUploadProps> = ({
                 현재: {totalFiles}/{maxFiles}개
               </p>
             </div>
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                inputRef.current?.click();
+              }}
+              className="px-3 py-1.5 text-sm font-medium rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors"
+            >
+              파일 선택
+            </button>
           </div>
         </div>
 
