@@ -498,6 +498,13 @@ export function extractTextFromTiptap(
   }
 }
 
+// 검색 인덱싱용: content(CKEditor HTML 또는 Tiptap JSON)를 길이 제한 없이 평문으로 변환.
+// Post.contentText 컬럼을 이 값으로 채워, 검색이 태그가 낀 원본 HTML이 아니라
+// 평문에 매칭되도록 한다(예: "<strong>볼드</strong> <i>이탤릭</i>" → "볼드 이탤릭").
+export function extractSearchText(content: string): string {
+  return extractTextFromTiptap(content, Number.MAX_SAFE_INTEGER);
+}
+
 // ✅ 노드에서 텍스트만 추출
 function extractText(nodes: TiptapNode[]): string {
   let result = '';

@@ -11,6 +11,7 @@ import {
 import { sequelize } from '../config/sequelize';
 import { generateRandomId } from '../utils/generateId';
 import { logError } from '../utils/logger';
+import { extractSearchText } from '../utils/tiptapRenderer';
 
 // 타입 전용 import
 import type { UserInstance } from './User';
@@ -48,6 +49,7 @@ export interface PostInstance extends Model<
   id: CreationOptional<string>;
   title: string;
   content: string; // JSON 문자열로 저장 (TiptapContent)
+  contentText: CreationOptional<string | null>; // 검색용 평문(content에서 태그 제거)
   author: string;
   attachments: Attachment[] | null;
   boardType: ForeignKey<string>;
@@ -84,6 +86,7 @@ class PostModel
   declare public id: CreationOptional<string>;
   declare public title: string;
   declare public content: string;
+  declare public contentText: CreationOptional<string | null>;
   declare public author: string;
   declare public boardType: ForeignKey<string>;
   declare public viewCount: CreationOptional<number>;
@@ -173,6 +176,11 @@ PostModel.init(
       type: DataTypes.TEXT,
       allowNull: false,
       comment: 'JSON format (Tiptap document structure)',
+    },
+    contentText: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: '검색용 평문 — content에서 HTML 태그를 제거한 텍스트(beforeSave 훅에서 자동 생성)',
     },
     author: {
       type: DataTypes.STRING(50),
@@ -358,6 +366,13 @@ PostModel.init(
       },
     },
     hooks: {
+      // content가 바뀔 때마다 검색용 평문(contentText)을 자동 갱신.
+      // 생성·수정 모두에서 동작(beforeSave)하여, 검색이 원본 HTML이 아닌 평문에 매칭된다.
+      beforeSave: async post => {
+        if (post.isNewRecord || post.changed('content')) {
+          post.contentText = extractSearchText(post.content || '');
+        }
+      },
       beforeCreate: async post => {
         if (post.status === 'published' && !post.publishedAt) {
           post.publishedAt = new Date();

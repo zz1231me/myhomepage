@@ -228,9 +228,11 @@ export class PostService extends BaseService {
             [Op.or]: [{ isSecret: false }, { isSecret: true, UserId: userId }],
           },
           {
+            // contentText(평문)로 검색 — 원본 HTML에 LIKE를 걸면 서식 태그가 단어 사이에
+            // 끼어 "볼드 이탤릭" 같은 구절이 매치되지 않으므로 평문 컬럼을 사용한다.
             [Op.or]: [
               { title: { [Op.like]: `%${escapedSearchTerm}%` } },
-              { content: { [Op.like]: `%${escapedSearchTerm}%` } },
+              { contentText: { [Op.like]: `%${escapedSearchTerm}%` } },
             ],
           },
         ],
@@ -414,7 +416,8 @@ export class PostService extends BaseService {
       const escapedSearch = search.replace(/[%_\\]/g, '\\$&');
       whereCondition[Op.or] = [
         { title: { [Op.like]: `%${escapedSearch}%` } },
-        { content: { [Op.like]: `%${escapedSearch}%` } },
+        // contentText(평문) 검색 — 원본 HTML 태그로 인한 매칭 누락 방지
+        { contentText: { [Op.like]: `%${escapedSearch}%` } },
       ];
     }
 
