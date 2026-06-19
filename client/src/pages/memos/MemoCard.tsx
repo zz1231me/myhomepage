@@ -34,8 +34,12 @@ export const MemoCard: React.FC<MemoCardProps> = ({
       role="button"
       tabIndex={0}
       onKeyDown={e => {
-        if (e.key === 'Enter') onEdit(memo);
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onEdit(memo);
+        }
       }}
+      aria-label="메모 편집"
     >
       {/* Pin button */}
       <button

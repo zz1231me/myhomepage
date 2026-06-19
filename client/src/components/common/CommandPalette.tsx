@@ -28,7 +28,16 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onOpenChan
   return (
     <div className="command-palette-overlay" onClick={() => onOpenChange(false)}>
       <div className="command-palette-container" onClick={e => e.stopPropagation()}>
-        <Command label="명령어 팔레트">
+        <Command
+          label="명령어 팔레트"
+          onKeyDown={e => {
+            // cmdk bare <Command>는 Escape 닫기 로직이 없어 직접 처리 (푸터 "Esc 닫기" 안내와 일치)
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              onOpenChange(false);
+            }
+          }}
+        >
           <div className="command-input-wrapper">
             <svg
               className="command-search-icon"
