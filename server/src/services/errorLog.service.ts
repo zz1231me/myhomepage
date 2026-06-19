@@ -41,6 +41,9 @@ export class ErrorLogService extends BaseService {
       if (filters.dateTo) {
         const d = new Date(filters.dateTo);
         if (isNaN(d.getTime())) throw new AppError(400, 'dateTo가 유효한 날짜 형식이 아닙니다.');
+        // 날짜만 지정(YYYY-MM-DD)한 경우 해당 일자 끝까지 포함 — Op.lte가 자정을 가리켜
+        // 종료일 당일 레코드가 통째로 빠지는 문제 방지
+        if (/^\d{4}-\d{2}-\d{2}$/.test(filters.dateTo.trim())) d.setUTCHours(23, 59, 59, 999);
         where.createdAt[Op.lte] = d;
       }
     }
