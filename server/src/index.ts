@@ -28,7 +28,7 @@ import { swaggerSpec } from './config/swagger';
 
 // ✅ 미들웨어
 import { authenticate } from './middlewares/auth.middleware';
-import { errorHandler, notFoundHandler } from './middlewares/error.middleware';
+import { errorHandler, notFoundHandler, AppError } from './middlewares/error.middleware';
 import { dynamicRateLimit } from './middlewares/dynamicRateLimit';
 import { maintenanceMiddleware } from './middlewares/maintenance.middleware';
 import { csrfProtection } from './middlewares/csrf.middleware';
@@ -460,8 +460,10 @@ app.use(
       }
 
       // 차단 — 로그에 origin 명시하여 디버깅 용이하게
+      // AppError(403)로 전달해야 errorHandler가 클라이언트 오류(4xx)로 처리한다.
+      // plain Error는 statusCode가 없어 500 + critical 에러로그로 오인된다.
       logger.warn(`CORS 차단: ${origin}`);
-      callback(new Error(`CORS 차단: ${origin}`));
+      callback(new AppError(403, `CORS 차단: ${origin}`));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
