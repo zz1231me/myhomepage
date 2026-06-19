@@ -107,6 +107,26 @@ export class ReportService extends BaseService {
       commentsData.map(c => [String(c.id), c.get({ plain: true }) as { content: string }])
     );
 
+    // 처리자(reviewedBy) 이름 배치 조회 — 목록에 내부 ID 대신 사람 이름을 표시 (N+1 방지)
+    const reviewerIds = [
+      ...new Set(
+        plains
+          .map(r => (r as { reviewedBy?: string | null }).reviewedBy)
+          .filter((x): x is string => !!x)
+      ),
+    ];
+    const reviewersData =
+      reviewerIds.length > 0
+        ? await User.findAll({
+            where: { id: { [Op.in]: reviewerIds } },
+            attributes: ['id', 'name'],
+            paranoid: false,
+          })
+        : [];
+    const reviewerMap = new Map(
+      reviewersData.map(u => [String(u.id), (u.get({ plain: true }) as { name: string }).name])
+    );
+
     const enriched = plains.map(plain => {
       let targetInfo: { title?: string; content?: string } = {};
       if (plain.targetType === 'post') {
@@ -116,7 +136,9 @@ export class ReportService extends BaseService {
         const c = commentMap.get(plain.targetId);
         if (c) targetInfo = { content: c.content?.substring(0, 100) };
       }
-      return { ...plain, targetInfo };
+      const reviewedBy = (plain as { reviewedBy?: string | null }).reviewedBy;
+      const reviewedByName = reviewedBy ? (reviewerMap.get(reviewedBy) ?? reviewedBy) : null;
+      return { ...plain, targetInfo, reviewedByName };
     });
 
     return this.buildPagedResponse(enriched, count, pagination);
