@@ -8,6 +8,7 @@ import {
   NonAttribute,
 } from 'sequelize';
 import { sequelize } from '../config/sequelize';
+import { extractSearchText } from '../utils/tiptapRenderer';
 
 // 타입 전용 import
 import type { UserInstance } from './User';
@@ -21,6 +22,7 @@ export interface EventInstance extends Model<
   calendarId: string;
   title: string;
   body?: string;
+  bodyText?: string | null; // 검색용 평문(body에서 태그 제거)
   isAllday: boolean;
   start: Date;
   end: Date;
@@ -56,6 +58,7 @@ export class Event
   declare public calendarId: string;
   declare public title: string;
   declare public body?: string;
+  declare public bodyText?: string | null;
   declare public isAllday: boolean;
   declare public start: Date;
   declare public end: Date;
@@ -102,6 +105,11 @@ Event.init(
     body: {
       type: DataTypes.TEXT,
       allowNull: true,
+    },
+    bodyText: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: '검색용 평문 — body에서 HTML 태그를 제거한 텍스트(beforeSave 훅에서 자동 생성)',
     },
     isAllday: {
       type: DataTypes.BOOLEAN,
@@ -194,6 +202,14 @@ Event.init(
     modelName: 'Event',
     tableName: 'Events',
     timestamps: true,
+    hooks: {
+      // body가 바뀔 때 검색용 평문(bodyText)을 자동 갱신 — 검색이 원본 HTML이 아닌 평문에 매칭
+      beforeSave: async (event: Event) => {
+        if (event.isNewRecord || event.changed('body')) {
+          event.bodyText = extractSearchText(event.body || '');
+        }
+      },
+    },
   }
 );
 
