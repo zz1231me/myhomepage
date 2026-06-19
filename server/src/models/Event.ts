@@ -84,6 +84,12 @@ export class Event
   // 관계 데이터
   // 관계 데이터
   declare public user?: NonAttribute<UserInstance>;
+
+  // bodyText는 검색 전용 내부 컬럼이라 API 응답에서 제외(body와 중복 페이로드 방지)
+  public override toJSON(): object {
+    const { bodyText: _bt, ...rest } = { ...this.get() } as Record<string, unknown>;
+    return rest;
+  }
 }
 
 // 모델 초기화

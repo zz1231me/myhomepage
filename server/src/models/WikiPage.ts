@@ -28,6 +28,12 @@ class WikiPageModel extends Model<
   declare public readonly updatedAt: CreationOptional<Date>;
   // virtual associations
   declare public children?: NonAttribute<WikiPageModel[]>;
+
+  // contentText는 검색 전용 내부 컬럼이라 API 응답에서 제외(content와 중복 페이로드 방지)
+  public override toJSON(): object {
+    const { contentText: _ct, ...rest } = { ...this.get() } as Record<string, unknown>;
+    return rest;
+  }
 }
 
 WikiPageModel.init(

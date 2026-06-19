@@ -115,7 +115,8 @@ class PostModel
   public override toJSON(): Partial<PostInstance> {
     const values = { ...this.get() } as any;
     // secretPassword는 항상 제거; secretSalt는 E2EE 게시글에서만 노출 (컨트롤러에서 추가 필터링됨)
-    const { secretPassword: _sp, secretSalt: _ss, ...safeValues } = values;
+    // contentText는 검색 전용 내부 컬럼이라 API 응답에서 제외(content와 중복 페이로드 방지)
+    const { secretPassword: _sp, secretSalt: _ss, contentText: _ct, ...safeValues } = values;
     // E2EE 게시글이면 secretSalt를 다시 포함 (클라이언트가 복호화에 필요)
     if (values.isEncrypted) {
       return { ...safeValues, secretSalt: _ss };
