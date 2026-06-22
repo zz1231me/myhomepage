@@ -194,6 +194,10 @@ Event.init(
     modelName: 'Event',
     tableName: 'Events',
     timestamps: true,
+    // 캘린더 조회 최적화 — 기간(start/end) 범위 조회, 사용자별 조회, 반복 인스턴스 조회가
+    // 인덱스 없이 풀스캔되던 것을 방지. (SQLite는 alter:false라 기존 테이블엔 add-indexes
+    // 스크립트로 적용; 신규 생성 시 자동)
+    indexes: [{ fields: ['start', 'end'] }, { fields: ['UserId'] }, { fields: ['parentEventId'] }],
   }
 );
 

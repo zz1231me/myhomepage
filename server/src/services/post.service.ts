@@ -22,6 +22,7 @@ import { Comment } from '../models/Comment';
 import { PostLike } from '../models/PostLike';
 import { PostTag } from '../models/PostTag';
 import { PostRead } from '../models/PostRead';
+import { PostBookmark } from '../models/PostBookmark';
 import { BaseService } from './base.service';
 import { AppError } from '../middlewares/error.middleware';
 import { extractTextFromTiptap } from '../utils/tiptapRenderer';
@@ -1037,6 +1038,7 @@ export class PostService extends BaseService {
       // 파생 데이터는 hard-delete (복구 가치 없음)
       await PostLike.destroy({ where: { PostId: post.id }, transaction: t });
       await PostRead.destroy({ where: { PostId: post.id }, transaction: t });
+      await PostBookmark.destroy({ where: { PostId: post.id }, transaction: t });
       await PostTag.destroy({ where: { PostId: post.id }, transaction: t });
       await post.destroy({ transaction: t });
     });
