@@ -59,29 +59,12 @@ export const useUserManagement = () => {
     await fetchUsers();
   };
 
-  const resetPassword = async (id: string) => {
-    const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    const lower = 'abcdefghijklmnopqrstuvwxyz';
-    const digits = '0123456789';
-    const pool = upper + lower + digits;
-
-    // crypto.getRandomValues 기반 rejection sampling — 모듈러 편향 방지
-    const cryptoRand = (s: string) => {
-      const threshold = 256 - (256 % s.length); // 편향 없는 최대값
-      const buf = new Uint8Array(1);
-      do {
-        crypto.getRandomValues(buf);
-      } while (buf[0] >= threshold);
-      return s[buf[0] % s.length];
-    };
-
-    const pw =
-      cryptoRand(upper) +
-      cryptoRand(lower) +
-      cryptoRand(digits) +
-      Array.from({ length: 5 }, () => cryptoRand(pool)).join('');
-    await api.post(`/admin/users/${id}/reset-password`, { newPassword: pw });
-    return pw;
+  // 서버가 고정 임시 비밀번호를 설정하고 mustChangePassword 플래그를 켠다(사용자는 로그인 후
+  // 강제 변경). 클라가 비밀번호를 만들지 않고 서버가 반환한 임시 비번을 표시한다.
+  const resetPassword = async (id: string): Promise<string> => {
+    const res = await api.post(`/admin/users/${id}/reset-password`);
+    const data = res.data?.data ?? res.data;
+    return data?.tempPassword ?? '';
   };
 
   return {

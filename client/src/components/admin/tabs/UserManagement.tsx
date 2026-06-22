@@ -158,7 +158,9 @@ export const UserManagement = () => {
   const handleResetPassword = async (id: string) => {
     try {
       const pw = await resetPassword(id);
-      toast.success(`비밀번호가 초기화되었습니다. 임시 비밀번호: ${pw}`);
+      toast.success(
+        `비밀번호가 '${pw}'(으)로 초기화되었습니다. 사용자는 로그인 후 비밀번호를 변경해야 합니다.`
+      );
     } catch {
       toast.error('비밀번호 초기화에 실패했습니다.');
     } finally {

@@ -101,7 +101,10 @@ function Login() {
       if (payload.user?.theme) setTheme(payload.user.theme);
       if (payload.tokenInfo) setUser(payload.user, payload.tokenInfo);
       else setUser(payload.user);
-      navigate('/dashboard', { replace: true });
+      // 관리자 초기화 임시 비번으로 로그인한 경우 강제 비밀번호 변경 페이지로
+      navigate(payload.user?.mustChangePassword ? '/change-password' : '/dashboard', {
+        replace: true,
+      });
     } catch (err) {
       const message =
         err instanceof Error ? err.message : '아이디 또는 비밀번호가 올바르지 않습니다.';

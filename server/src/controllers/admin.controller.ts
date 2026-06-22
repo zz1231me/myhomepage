@@ -284,7 +284,6 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
 export const resetPassword = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { newPassword } = req.body;
     const adminId = (req as unknown as AuthRequest).user?.id;
 
     // 자기 자신의 비밀번호를 초기화하면 즉시 세션이 무효화되어 로그아웃됨
@@ -298,24 +297,15 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    if (!newPassword || typeof newPassword !== 'string') {
-      sendError(res, 400, '새 비밀번호를 입력해주세요.');
-      return;
-    }
-    const pwValidation = AuthValidator.validatePassword(newPassword.trim(), true);
-    if (!pwValidation.valid) {
-      sendError(res, 400, pwValidation.error!);
-      return;
-    }
-
-    await userService.resetPassword(id, newPassword.trim());
+    // 고정 임시 비밀번호로 초기화 + 강제 변경 플래그 설정(서버가 비밀번호를 정함)
+    const tempPassword = await userService.resetPassword(id);
     invalidateAllUserCaches(id);
     logAudit(req, 'reset_password', {
       targetType: 'user',
       targetId: id,
-      afterValue: { changed: true },
+      afterValue: { changed: true, mustChangePassword: true },
     });
-    sendSuccess(res, null, '비밀번호 재설정 완료');
+    sendSuccess(res, { tempPassword }, '비밀번호가 초기화되었습니다.');
   } catch (error: unknown) {
     const appErr = toAppError(error);
     logError('비밀번호 재설정 실패', error);

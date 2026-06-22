@@ -23,6 +23,7 @@ interface CachedUser {
   isActive: boolean;
   isDeleted: boolean;
   tokenVersion: number;
+  mustChangePassword: boolean;
   roleInfo: { id: string; name: string; description: string | null; isActive: boolean } | null;
   cachedAt: number;
 }
@@ -84,7 +85,16 @@ export const authenticate = async (
             attributes: ['id', 'name', 'description', 'isActive'],
           },
         ],
-        attributes: ['id', 'name', 'roleId', 'email', 'isActive', 'isDeleted', 'tokenVersion'],
+        attributes: [
+          'id',
+          'name',
+          'roleId',
+          'email',
+          'isActive',
+          'isDeleted',
+          'tokenVersion',
+          'mustChangePassword',
+        ],
       });
 
       if (!dbUser) {
@@ -101,6 +111,7 @@ export const authenticate = async (
         isActive: dbUser.isActive,
         isDeleted: dbUser.isDeleted,
         tokenVersion: dbUser.tokenVersion ?? 0,
+        mustChangePassword: dbUser.mustChangePassword ?? false,
         roleInfo: dbUser.roleInfo
           ? {
               id: dbUser.roleInfo.id,
@@ -147,6 +158,13 @@ export const authenticate = async (
     if (!cachedUser.roleInfo.isActive) {
       logWarning(`인증 실패: 비활성화된 역할 (role: ${cachedUser.roleInfo.name})`);
       sendForbidden(res, '비활성화된 역할입니다.');
+      return;
+    }
+
+    // 강제 비밀번호 변경(관리자 초기화 후): 임시 비번으로 로그인한 사용자는 비밀번호 변경/세션
+    // 관련 엔드포인트(/api/auth/*) 외 모든 요청을 차단한다. 클라이언트 강제 이동의 서버측 방어선.
+    if (cachedUser.mustChangePassword && !req.originalUrl.includes('/api/auth/')) {
+      sendForbidden(res, '비밀번호를 먼저 변경해야 합니다.');
       return;
     }
 

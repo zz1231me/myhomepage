@@ -22,6 +22,7 @@ export interface UserPayload {
   id: string;
   name: string;
   role: string;
+  mustChangePassword?: boolean;
   permissions: {
     events: {
       canCreate: boolean;
@@ -93,6 +94,7 @@ export class AuthService extends BaseService {
       id: user.id,
       name: user.name,
       role: user.roleId, // Consistent with payload structure
+      mustChangePassword: user.mustChangePassword ?? false,
       permissions: {
         events: eventPermission
           ? {
