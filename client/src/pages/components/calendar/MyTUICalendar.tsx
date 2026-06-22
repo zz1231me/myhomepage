@@ -147,13 +147,24 @@ const MyTUICalendar: React.FC = () => {
       try {
         const startDate = event.start!;
         const endDate = dateUtils.ensureMinimumDuration(startDate, event.end);
+        const isAllday = originalEvent.isAllday ?? true;
+        // 종일 이벤트는 생성/모달 수정 경로와 동일하게 "로컬 날짜 → UTC 자정"으로 정규화한다.
+        // FullCalendar의 drag/resize는 event.start를 로컬 자정 Date로 주므로 그대로 toISOString()하면
+        // 15:00Z 같은 비정규 값으로 저장돼(생성 경로의 00:00Z와 불일치) 관리자 표시/기간필터가 어긋난다.
+        // 시간 지정 이벤트는 시각이 의미 있으므로 그대로 둔다.
+        const startISO = isAllday
+          ? new Date(dateUtils.toLocalDateString(startDate) + 'T00:00:00Z').toISOString()
+          : startDate.toISOString();
+        const endISO = isAllday
+          ? new Date(dateUtils.toLocalDateString(endDate) + 'T00:00:00Z').toISOString()
+          : endDate.toISOString();
         await updateEvent(originalEvent.id, {
           calendarId: originalEvent.calendarId,
           title: originalEvent.title,
           body: originalEvent.body || '',
-          isAllday: originalEvent.isAllday ?? true,
-          start: startDate.toISOString(),
-          end: endDate.toISOString(),
+          isAllday,
+          start: startISO,
+          end: endISO,
           category: originalEvent.category,
           location: originalEvent.location || '',
           isReadOnly: originalEvent.isReadOnly,
