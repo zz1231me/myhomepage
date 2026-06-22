@@ -16,6 +16,15 @@ import { checkSecretPostAccess } from '../utils/postAccess';
 import { Post } from '../models/Post';
 import { Comment } from '../models/Comment';
 
+// 댓글 길이는 클라이언트(useCommentOperations.getTextLength)와 동일하게 태그·&nbsp; 제거 후
+// 텍스트 길이로 센다. raw HTML 길이로 세면 서식이 많은 댓글이 클라 카운터(950/1000)와 다르게
+// 서버에서 거부되는 불일치가 생긴다.
+const commentTextLength = (content: string): number =>
+  content
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .trim().length;
+
 // ✅ 댓글 작성
 export const createComment = async (
   req: AuthRequest,
@@ -37,13 +46,13 @@ export const createComment = async (
       return;
     }
 
-    if (!content || content.trim().length === 0) {
+    if (!content || commentTextLength(content) === 0) {
       sendValidationError(res, 'content', '댓글 내용을 입력해주세요.');
       return;
     }
 
     const commentMaxLen = getSettings().commentContentMaxLength;
-    if (content.trim().length > commentMaxLen) {
+    if (commentTextLength(content) > commentMaxLen) {
       sendValidationError(res, 'content', `댓글은 ${commentMaxLen}자 이내로 작성해주세요.`);
       return;
     }
@@ -195,13 +204,13 @@ export const updateComment = async (
       return;
     }
 
-    if (!content || content.trim().length === 0) {
+    if (!content || commentTextLength(content) === 0) {
       sendValidationError(res, 'content', '댓글 내용을 입력해주세요.');
       return;
     }
 
     const commentMaxLen = getSettings().commentContentMaxLength;
-    if (content.trim().length > commentMaxLen) {
+    if (commentTextLength(content) > commentMaxLen) {
       sendValidationError(res, 'content', `댓글은 ${commentMaxLen}자 이내로 작성해주세요.`);
       return;
     }
