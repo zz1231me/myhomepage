@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { stagger, listItem, scaleIn } from '../../utils/animations';
 import { useUIOverlays } from '../../store/uiOverlays';
 import { useNotificationStore } from '../../store/notifications';
+import { toast } from '../../utils/toast';
 import {
   getNotifications,
   markAsRead,
@@ -172,7 +173,9 @@ export function NotificationBell() {
       setStoreUnread(0);
       setConfirmClear(false);
     } catch {
-      /* 알림 API 에러 무시 */
+      // 파괴적 일괄 작업은 무음 실패 시 사용자가 성공으로 오인하므로 명시적 피드백 제공
+      // (목록은 유지되어 재시도 가능)
+      toast.error('알림 전체 삭제에 실패했습니다. 잠시 후 다시 시도해주세요.');
     } finally {
       setClearing(false);
     }
