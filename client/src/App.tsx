@@ -40,6 +40,7 @@ const WikiPageRoute = lazy(() => import('./pages/wiki/WikiPage'));
 const LoginTwoFactor = lazy(() => import('./pages/LoginTwoFactor'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
+const ChangePassword = lazy(() => import('./pages/ChangePassword'));
 
 function App() {
   const { setSettings } = useSiteSettings();
@@ -132,6 +133,16 @@ function App() {
               <Route path="/register" element={<Register />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
+
+              {/* ✅ 강제 비밀번호 변경 (관리자 초기화 후) — ProtectedRoute가 여기로 강제 이동 */}
+              <Route
+                path="/change-password"
+                element={
+                  <ProtectedRoute>
+                    <ChangePassword />
+                  </ProtectedRoute>
+                }
+              />
 
               {/* ✅ 프로필 페이지 - 독립적인 보호된 라우트 */}
               <Route

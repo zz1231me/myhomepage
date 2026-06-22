@@ -9,6 +9,7 @@ interface User {
   theme?: string; // ✅ 테마 필드 추가
   avatar?: string | null; // ✅ 아바타 필드 추가
   createdAt: string; // ✅ 계정 생성일 추가
+  mustChangePassword?: boolean; // 관리자 초기화 후 강제 비밀번호 변경 필요
   roleInfo: {
     id: string;
     name: string;

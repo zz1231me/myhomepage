@@ -45,6 +45,7 @@ export interface UserInstance extends Model<
 
   // ✅ 보안 필드
   isActive: CreationOptional<boolean>;
+  mustChangePassword: CreationOptional<boolean>;
   isEmailVerified: CreationOptional<boolean>;
   emailVerificationToken: CreationOptional<string | null>;
   passwordResetToken: CreationOptional<string | null>;
@@ -91,6 +92,7 @@ class UserModel
   declare public anonymizedName: CreationOptional<string | null>;
 
   declare public isActive: CreationOptional<boolean>;
+  declare public mustChangePassword: CreationOptional<boolean>;
   declare public isEmailVerified: CreationOptional<boolean>;
   declare public emailVerificationToken: CreationOptional<string | null>;
   declare public passwordResetToken: CreationOptional<string | null>;
@@ -305,6 +307,13 @@ UserModel.init(
       allowNull: false,
       defaultValue: true,
       comment: '계정 활성화 상태',
+    },
+    mustChangePassword: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      field: 'must_change_password',
+      comment: '관리자 초기화 후 강제 비밀번호 변경 필요 여부',
     },
     isEmailVerified: {
       type: DataTypes.BOOLEAN,

@@ -284,7 +284,7 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
 export const resetPassword = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { newPassword } = req.body;
+    const { tempPassword: rawTemp } = req.body as { tempPassword?: unknown };
     const adminId = (req as unknown as AuthRequest).user?.id;
 
     // 자기 자신의 비밀번호를 초기화하면 즉시 세션이 무효화되어 로그아웃됨
@@ -298,24 +298,22 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    if (!newPassword || typeof newPassword !== 'string') {
-      sendError(res, 400, '새 비밀번호를 입력해주세요.');
-      return;
-    }
-    const pwValidation = AuthValidator.validatePassword(newPassword.trim(), true);
-    if (!pwValidation.valid) {
-      sendError(res, 400, pwValidation.error!);
+    // 관리자가 입력한 6자리 숫자 임시 비밀번호 (서버에서도 형식 검증 — 클라 신뢰 안 함)
+    const tempCode = String(rawTemp ?? '');
+    if (!/^\d{6}$/.test(tempCode)) {
+      sendError(res, 400, '임시 비밀번호는 6자리 숫자로 입력해주세요.');
       return;
     }
 
-    await userService.resetPassword(id, newPassword.trim());
+    // 임시 비번 설정 + 강제 변경 플래그
+    const tempPassword = await userService.resetPassword(id, tempCode);
     invalidateAllUserCaches(id);
     logAudit(req, 'reset_password', {
       targetType: 'user',
       targetId: id,
-      afterValue: { changed: true },
+      afterValue: { changed: true, mustChangePassword: true },
     });
-    sendSuccess(res, null, '비밀번호 재설정 완료');
+    sendSuccess(res, { tempPassword }, '비밀번호가 초기화되었습니다.');
   } catch (error: unknown) {
     const appErr = toAppError(error);
     logError('비밀번호 재설정 실패', error);

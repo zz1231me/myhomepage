@@ -64,6 +64,7 @@ const buildAuthData = (
     avatar?: string | null;
     roleInfo?: object | null;
     createdAt?: Date | string;
+    mustChangePassword?: boolean;
   },
   permissions: object | null
 ) => {
@@ -78,6 +79,7 @@ const buildAuthData = (
       roleInfo: user.roleInfo || null,
       permissions,
       createdAt: user.createdAt,
+      mustChangePassword: user.mustChangePassword ?? false,
     },
     tokenInfo: {
       accessTokenExpiry: new Date(Date.now() + jwtAccessTokenHours * 60 * 60 * 1000).getTime(),
