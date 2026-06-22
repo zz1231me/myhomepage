@@ -208,6 +208,16 @@ export const getEvents = async (
   const start = typeof req.query.start === 'string' ? req.query.start : undefined;
   const end = typeof req.query.end === 'string' ? req.query.end : undefined;
 
+  // 날짜 파라미터 검증 — 잘못된 값을 그대로 비교에 넣으면 일부 DB(PostgreSQL/MySQL)에서
+  // 캐스팅 에러로 500이 난다(SQLite는 빈 결과). createEvent와 동일하게 400으로 거른다.
+  if (
+    (start !== undefined && isNaN(new Date(start).getTime())) ||
+    (end !== undefined && isNaN(new Date(end).getTime()))
+  ) {
+    sendError(res, 400, 'start/end는 유효한 날짜(ISO) 형식이어야 합니다.');
+    return;
+  }
+
   try {
     const whereClause = start && end ? { start: { [Op.lte]: end }, end: { [Op.gte]: start } } : {};
 
