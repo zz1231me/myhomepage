@@ -166,11 +166,16 @@ export class RoleService extends BaseService {
           if (invalid) {
             throw new AppError(400, `역할 '${invalid}'을(를) 찾을 수 없습니다.`);
           }
-        }
 
-        await BoardAccess.destroy({ where: { boardId }, transaction: t });
+          // ⚠️ 전달된 역할의 권한만 교체하고, payload에 없는 역할의 권한은 보존한다.
+          //    예전엔 보드의 모든 BoardAccess를 destroy 후 재생성해서, 관리자 UI가 권한 로드
+          //    실패(429/네트워크) 등으로 부분 매트릭스를 보내면 다른 역할 권한이 통째로 사라졌다
+          //    ("권한을 줘도 새로고침하면 안 들어가는" 버그). 전달된 roleId만 scoped destroy.
+          await BoardAccess.destroy({
+            where: { boardId, roleId: { [Op.in]: roleIds } },
+            transaction: t,
+          });
 
-        if (permissions.length > 0) {
           await BoardAccess.bulkCreate(
             permissions.map(perm => {
               const canWrite = perm.canWrite ?? false;
