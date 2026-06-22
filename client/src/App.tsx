@@ -73,6 +73,17 @@ function App() {
         link.href = settings.faviconUrl;
       }
 
+      // 다음 새로고침 때 깜빡임 없이 즉시 적용되도록 캐시 — index.html의 인라인 스크립트가
+      // 첫 페인트 전에 이 값을 읽어 적용한다. (이전엔 설정 fetch 완료 전까지 index.html의
+      // 기본 title "Myhome..."이 잠깐 보였다가 교체되는 깜빡임이 있었음)
+      try {
+        if (settings.siteTitle) localStorage.setItem('siteTitle', settings.siteTitle);
+        if (settings.faviconUrl) localStorage.setItem('faviconUrl', settings.faviconUrl);
+        else localStorage.removeItem('faviconUrl');
+      } catch {
+        // localStorage 불가(프라이빗 모드 등) — 캐시 없이 진행, 다음 로드 때 깜빡임만 남음
+      }
+
       // 메타 설명 업데이트
       if (settings.description) {
         let meta = document.querySelector("meta[name='description']") as HTMLMetaElement;
