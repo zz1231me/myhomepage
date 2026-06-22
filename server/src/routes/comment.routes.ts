@@ -11,7 +11,9 @@ import {
   getCommentsByPost,
   updateComment,
   deleteComment,
+  likeComment,
 } from '../controllers/comment.controller';
+import { apiLimiter } from '../middlewares/rate-limit.middleware';
 
 const router = express.Router();
 
@@ -187,6 +189,42 @@ router.delete(
   authenticate as RequestHandler,
   checkDeleteAccess as RequestHandler,
   deleteComment as RequestHandler
+);
+
+/**
+ * @swagger
+ * /api/comments/{boardType}/{commentId}/like:
+ *   post:
+ *     summary: 댓글 좋아요 토글
+ *     description: 좋아요가 없으면 추가, 있으면 취소 (게시판 읽기 권한 필요)
+ *     tags: [Comments]
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: boardType
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: commentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: '{ liked, likeCount }'
+ *       403:
+ *         description: 게시판 읽기 권한 없음
+ *       404:
+ *         description: 댓글 없음
+ */
+router.post(
+  '/:boardType/:commentId/like',
+  apiLimiter as RequestHandler,
+  authenticate as RequestHandler,
+  checkReadAccess as RequestHandler,
+  likeComment as RequestHandler
 );
 
 export default router;

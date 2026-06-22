@@ -157,6 +157,8 @@ const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
   // 'popular'(추천순)은 댓글 좋아요 기능이 없어 항상 등록순과 동일하므로 옵션에서 제외
   const [sortBy, setSortBy] = useState<'oldest' | 'newest'>('oldest');
   const [copied, setCopied] = useState(false);
+  // 좋아요 토글 in-flight 가드 (댓글 id별 1요청 — 더블클릭으로 인한 토글 꼬임 방지)
+  const likeInFlight = useRef<Set<number>>(new Set());
 
   const { isAuthenticated, getUserId, getUser, isAdmin } = useAuth();
   const currentUserId = getUserId();
@@ -236,6 +238,50 @@ const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
       toast.error('댓글 복사에 실패했습니다.');
     }
   }, [commentTree]);
+
+  // 댓글 좋아요 토글 — 낙관적 업데이트 + 서버 권위값 보정 + 실패 시 롤백.
+  // comments는 평면 배열이고 트리는 파생되므로 평면 배열에서 id로 찾아 갱신하면 트리에도 반영된다.
+  const handleToggleCommentLike = useCallback(
+    async (comment: Comment) => {
+      if (comment.isDeleted) return;
+      if (!isAuthenticated) {
+        toast.error('로그인이 필요합니다.');
+        return;
+      }
+      if (!boardType) return;
+      const id = comment.id;
+      if (id < 0) return; // 아직 서버 저장 전(낙관적 임시) 댓글은 좋아요 불가
+      if (likeInFlight.current.has(id)) return; // 진행 중이면 무시 (토글 꼬임 방지)
+      likeInFlight.current.add(id);
+
+      const prevLiked = !!comment.liked;
+      const prevCount = comment.likeCount ?? 0;
+      setComments(prev =>
+        prev.map(c =>
+          c.id === id ? { ...c, liked: !prevLiked, likeCount: prevCount + (prevLiked ? -1 : 1) } : c
+        )
+      );
+
+      try {
+        const res = await axios.post(`/comments/${boardType}/${id}/like`);
+        const data = res.data?.data ?? res.data;
+        setComments(prev =>
+          prev.map(c =>
+            c.id === id ? { ...c, liked: !!data?.liked, likeCount: data?.likeCount ?? 0 } : c
+          )
+        );
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } catch (err: any) {
+        setComments(prev =>
+          prev.map(c => (c.id === id ? { ...c, liked: prevLiked, likeCount: prevCount } : c))
+        );
+        toast.error(err.response?.data?.message || '좋아요 처리에 실패했습니다.');
+      } finally {
+        likeInFlight.current.delete(id);
+      }
+    },
+    [boardType, isAuthenticated]
+  );
 
   const newCommentLen = getTextLength(ops.newComment);
   const editCommentLen = getTextLength(ops.editContent);
@@ -459,7 +505,44 @@ const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
                     </div>
                   </div>
                 ) : (
-                  <CommentContent content={comment.content} />
+                  <>
+                    <CommentContent content={comment.content} />
+                    {/* 좋아요 */}
+                    <div className="mt-2 flex items-center">
+                      <button
+                        onClick={() => handleToggleCommentLike(comment)}
+                        disabled={!isAuthenticated}
+                        aria-pressed={!!comment.liked}
+                        title={
+                          isAuthenticated
+                            ? comment.liked
+                              ? '좋아요 취소'
+                              : '좋아요'
+                            : '로그인이 필요합니다'
+                        }
+                        className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg transition-colors disabled:cursor-not-allowed ${
+                          comment.liked
+                            ? 'text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
+                            : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <svg
+                          className="w-3.5 h-3.5"
+                          fill={comment.liked ? 'currentColor' : 'none'}
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                          />
+                        </svg>
+                        {(comment.likeCount ?? 0) > 0 && <span>{comment.likeCount}</span>}
+                      </button>
+                    </div>
+                  </>
                 )}
               </div>
             </div>
@@ -585,6 +668,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
       replyCommentLen,
       editConfig,
       replyConfig,
+      handleToggleCommentLike,
     ]
   );
 
