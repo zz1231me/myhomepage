@@ -176,7 +176,7 @@ export class PostService extends BaseService {
     const escapedSearchTerm = searchTerm.replace(/[%_\\]/g, '\\$&');
 
     // 병렬로 접근 가능한 게시판 조회
-    const [generalBoards, personalBoard] = await Promise.all([
+    const [generalBoards, managedBoards, personalBoard] = await Promise.all([
       // 일반 게시판: 단일 JOIN 쿼리
       BoardAccess.findAll({
         where: {
@@ -197,6 +197,21 @@ export class PostService extends BaseService {
         ],
         attributes: ['boardId'],
       }),
+      // 담당자(BoardManager)로 지정된 게시판 — 역할 권한이 없어도 읽을 수 있으므로 검색에 포함
+      // (getUserAccessibleBoards/사이드바와 동일 기준. 비활성 게시판은 제외)
+      BoardManager.findAll({
+        where: { userId },
+        include: [
+          {
+            model: Board,
+            as: 'board',
+            where: { isActive: true, isPersonal: false },
+            required: true,
+            attributes: ['id'],
+          },
+        ],
+        attributes: ['boardId'],
+      }),
       // 개인 폴더
       Board.findOne({
         where: {
@@ -208,10 +223,14 @@ export class PostService extends BaseService {
       }),
     ]);
 
-    const accessibleBoardTypes = generalBoards.map(access => access.boardId);
-    if (personalBoard) {
-      accessibleBoardTypes.push(personalBoard.id);
-    }
+    // 역할 기반 + 담당자 게시판 + 개인 폴더를 합쳐 중복 제거
+    const accessibleBoardTypes = [
+      ...new Set([
+        ...generalBoards.map(access => access.boardId),
+        ...managedBoards.map(rec => rec.boardId),
+        ...(personalBoard ? [personalBoard.id] : []),
+      ]),
+    ];
 
     if (accessibleBoardTypes.length === 0) {
       return { results: [], count: 0, query: searchTerm };
@@ -228,9 +247,11 @@ export class PostService extends BaseService {
             [Op.or]: [{ isSecret: false }, { isSecret: true, UserId: userId }],
           },
           {
+            // contentText(평문)로 검색 — 원본 HTML에 LIKE를 걸면 서식 태그가 단어 사이에
+            // 끼어 "볼드 이탤릭" 같은 구절이 매치되지 않으므로 평문 컬럼을 사용한다.
             [Op.or]: [
               { title: { [Op.like]: `%${escapedSearchTerm}%` } },
-              { content: { [Op.like]: `%${escapedSearchTerm}%` } },
+              { contentText: { [Op.like]: `%${escapedSearchTerm}%` } },
             ],
           },
         ],
@@ -278,9 +299,10 @@ export class PostService extends BaseService {
     const wikiPages = await WikiPage.findAll({
       where: {
         isPublished: true,
+        // contentText(평문) 검색 — 원본 HTML 태그로 인한 매칭 누락 방지
         [Op.or]: [
           { title: { [Op.like]: `%${escapedSearchTerm}%` } },
-          { content: { [Op.like]: `%${escapedSearchTerm}%` } },
+          { contentText: { [Op.like]: `%${escapedSearchTerm}%` } },
         ],
       },
       attributes: ['id', 'slug', 'title', 'content', 'createdAt'],
@@ -314,9 +336,10 @@ export class PostService extends BaseService {
     const events = canReadEvents
       ? await Event.findAll({
           where: {
+            // bodyText(평문) 검색 — 원본 HTML 태그로 인한 매칭 누락 방지
             [Op.or]: [
               { title: { [Op.like]: `%${escapedSearchTerm}%` } },
-              { body: { [Op.like]: `%${escapedSearchTerm}%` } },
+              { bodyText: { [Op.like]: `%${escapedSearchTerm}%` } },
             ],
           },
           include: [
@@ -414,7 +437,8 @@ export class PostService extends BaseService {
       const escapedSearch = search.replace(/[%_\\]/g, '\\$&');
       whereCondition[Op.or] = [
         { title: { [Op.like]: `%${escapedSearch}%` } },
-        { content: { [Op.like]: `%${escapedSearch}%` } },
+        // contentText(평문) 검색 — 원본 HTML 태그로 인한 매칭 누락 방지
+        { contentText: { [Op.like]: `%${escapedSearch}%` } },
       ];
     }
 

@@ -66,6 +66,9 @@ import {
 // ✅ SPA index.html OG 메타 주입(링크 미리보기용)
 import { renderIndexHtml } from './utils/indexHtml';
 
+// ✅ 검색용 평문 추출(contentText 백필)
+import { extractSearchText } from './utils/tiptapRenderer';
+
 // ✅ 모든 모델 import (관계 설정 포함)
 import './models';
 // ✅ 디버그 엔드포인트에서 직접 참조하기 위한 모델 import
@@ -77,6 +80,7 @@ import Board from './models/Board';
 import BoardAccess from './models/BoardAccess';
 import Event from './models/Event';
 import EventPermission from './models/EventPermission';
+import { WikiPage as WikiPageModel } from './models/WikiPage';
 import Bookmark from './models/Bookmark';
 import { SiteSettings as SiteSettingsModel } from './models/SiteSettings';
 
@@ -196,6 +200,55 @@ async function ensureAllModelColumns(): Promise<void> {
       const msg = err instanceof Error ? err.message : String(err);
       logger.warn(`[${model.name}] 컬럼 보강 중 오류: ${msg}`);
     }
+  }
+}
+
+// 검색용 평문 백필 — 게시글(content→contentText)/위키(content→contentText)/이벤트(body→bodyText).
+// 신규 컬럼 추가 직후 기존 행은 NULL이라 검색에 잡히지 않으므로 1회 채운다.
+// 원본을 건드리지 않으므로 silent(updatedAt 유지)+hooks:false로 개별 업데이트한다.
+// 평문 컬럼이 NULL인 행만 대상이라 idempotent(다음 기동 시 0건).
+async function backfillSearchText(): Promise<void> {
+  try {
+    const posts = await PostModel.findAll({
+      where: { contentText: null },
+      attributes: ['id', 'content'],
+    });
+    for (const post of posts) {
+      await PostModel.update(
+        { contentText: extractSearchText(post.content || '') },
+        { where: { id: post.id }, silent: true, hooks: false }
+      );
+    }
+
+    const wikis = await WikiPageModel.findAll({
+      where: { contentText: null },
+      attributes: ['id', 'content'],
+    });
+    for (const wiki of wikis) {
+      await WikiPageModel.update(
+        { contentText: extractSearchText(wiki.content || '') },
+        { where: { id: wiki.id }, silent: true, hooks: false }
+      );
+    }
+
+    const events = await Event.findAll({
+      where: { bodyText: null },
+      attributes: ['id', 'body'],
+    });
+    for (const event of events) {
+      await Event.update(
+        { bodyText: extractSearchText(event.body || '') },
+        { where: { id: event.id }, silent: true, hooks: false }
+      );
+    }
+
+    if (posts.length + wikis.length + events.length > 0) {
+      logger.info(
+        `🔎 검색용 평문 백필 완료 — 게시글 ${posts.length} / 위키 ${wikis.length} / 이벤트 ${events.length}건`
+      );
+    }
+  } catch (error) {
+    logger.error('검색용 평문 백필 실패:', error);
   }
 }
 
@@ -807,6 +860,9 @@ const startServer = async () => {
     // 모델에 추가된 신규 컬럼 보강 — 모든 DB(sqlite/mysql/mariadb/postgres) + 모든 테이블.
     // sync alter가 컬럼을 못 붙인 경우의 안전망(QueryInterface로 dialect 자동 처리).
     await ensureAllModelColumns();
+
+    // 기존 게시글/위키/이벤트의 검색용 평문 백필 — 신규 컬럼이 추가된 직후 1회 실행
+    await backfillSearchText();
 
     // 중복 site_settings 행 정리(싱글턴 보장) — 비결정적 읽기로 옛 설정값이 보이는 문제 방지
     await consolidateSiteSettings();
