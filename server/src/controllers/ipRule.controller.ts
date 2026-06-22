@@ -10,8 +10,9 @@ import {
   updateIpRule,
   deleteIpRule,
   getIpRuleStats,
+  matchesIpRule,
 } from '../services/ipRule.service';
-import { IpRuleType } from '../models/IpRule';
+import { IpRule, IpRuleType } from '../models/IpRule';
 import { AppError } from '../middlewares/error.middleware';
 import { auditLogService } from '../services/auditLog.service';
 
@@ -97,6 +98,12 @@ export const addIpRule = async (req: AuthRequest, res: Response): Promise<void> 
     return;
   }
 
+  // self-lockout 방지 — 현재 접속 중인 본인 IP를 차단 목록에 추가하면 즉시 관리 화면 접근 불가
+  if (type === 'blacklist' && req.ip && matchesIpRule(req.ip, ipTrimmed)) {
+    sendError(res, 400, '현재 접속 중인 본인 IP는 차단(blacklist) 목록에 추가할 수 없습니다.');
+    return;
+  }
+
   try {
     const rule = await createIpRule({
       type: type as IpRuleType,
@@ -128,6 +135,15 @@ export const patchIpRule = async (req: AuthRequest, res: Response): Promise<void
     description?: string | null;
     isActive?: boolean;
   };
+
+  // self-lockout 방지 — 본인 IP에 매칭되는 차단 규칙을 활성화하려는 경우 거부
+  if (isActive === true && req.ip) {
+    const existing = await IpRule.findByPk(id);
+    if (existing && existing.type === 'blacklist' && matchesIpRule(req.ip, existing.ip)) {
+      sendError(res, 400, '현재 접속 중인 본인 IP에 매칭되는 차단 규칙은 활성화할 수 없습니다.');
+      return;
+    }
+  }
 
   try {
     const rule = await updateIpRule(id, { description, isActive });

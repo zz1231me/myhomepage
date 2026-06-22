@@ -91,7 +91,13 @@ export const ReportManagement = React.memo(() => {
       toast.success('신고가 처리되었습니다.');
       setReviewTarget(null);
       setReviewNote('');
-      await fetchReports();
+      // 현재 페이지의 마지막 항목을 처리했고 1페이지가 아니면 이전 페이지로 이동(빈 페이지 stale 방지).
+      // setPage가 page 의존 useEffect로 refetch를 트리거하므로 여기선 명시 refetch 생략.
+      if (reports.length === 1 && page > 1) {
+        setPage(p => p - 1);
+      } else {
+        await fetchReports();
+      }
       await fetchStats();
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } } };
@@ -222,7 +228,7 @@ export const ReportManagement = React.memo(() => {
                     {report.reviewedBy && (
                       <>
                         <span>·</span>
-                        <span>처리자: {report.reviewedBy}</span>
+                        <span>처리자: {report.reviewedByName || report.reviewedBy}</span>
                       </>
                     )}
                   </div>
