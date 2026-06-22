@@ -274,6 +274,8 @@ export const createPost = async (req: AuthRequest, res: Response): Promise<void>
   // 타입 방어: title/content가 문자열이 아니면(배열/객체 주입 등) 서비스의 .trim()에서
   // 크래시(500)가 나므로 400으로 차단한다.
   if (typeof title !== 'string' || typeof content !== 'string') {
+    // 이미 디스크에 기록된 업로드 파일을 정리(early-return이 try/catch 정리 경로를 우회하므로)
+    if (files?.length) await Promise.all(files.map(f => fs.unlink(f.path).catch(() => {})));
     return sendValidationError(res, 'title', '제목과 내용은 문자열이어야 합니다.');
   }
 
@@ -335,6 +337,8 @@ export const updatePost = async (req: AuthRequest, res: Response): Promise<void>
 
   // 타입 방어: title/content가 문자열이 아니면 서비스의 .trim()에서 크래시(500) → 400 차단
   if (typeof body.title !== 'string' || typeof body.content !== 'string') {
+    // 이미 디스크에 기록된 업로드 파일을 정리(early-return이 try/catch 정리 경로를 우회하므로)
+    if (files?.length) await Promise.all(files.map(f => fs.unlink(f.path).catch(() => {})));
     return sendValidationError(res, 'title', '제목과 내용은 문자열이어야 합니다.');
   }
 

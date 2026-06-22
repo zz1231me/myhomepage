@@ -80,6 +80,12 @@ export const BLOCKED_EXTENSIONS_FLOOR = [
   '.shtm',
   '.shtml',
   '.stm',
+  // 인라인 렌더링 시 저장형 XSS 벡터 (uploads에서 직접 서빙될 경우 스크립트 실행) — 항상 차단
+  '.htm',
+  '.html',
+  '.xhtml',
+  '.svg',
+  '.svgz',
   '.htaccess',
   '.htpasswd',
   '.htgroup',
