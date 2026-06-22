@@ -1,6 +1,7 @@
 import { Op } from 'sequelize';
 import { BaseService } from './base.service';
 import { Comment, CommentInstance } from '../models/Comment';
+import { CommentLike } from '../models/CommentLike';
 import { User } from '../models/User';
 import { AppError } from '../middlewares/error.middleware';
 import { isAdminOrManager } from '../config/constants';
@@ -116,7 +117,8 @@ export class CommentService extends BaseService {
    */
   async getCommentsByPost(
     postId: string,
-    sortBy: 'oldest' | 'newest' | 'popular' = 'oldest'
+    sortBy: 'oldest' | 'newest' | 'popular' = 'oldest',
+    userId?: string
   ): Promise<Array<Record<string, unknown>>> {
     const ATTRS = [
       'id',
@@ -194,6 +196,28 @@ export class CommentService extends BaseService {
           result.push({ ...plain, deletedAt: undefined, isDeleted: false });
         }
       }
+    }
+
+    // 2.5) 현재 사용자의 좋아요 여부 — 표시된 댓글 id에 대해 1쿼리로 일괄 조회 후 liked 플래그 부여
+    //      (삭제 placeholder는 항상 false. 비로그인은 모두 false)
+    if (userId) {
+      const likableIds = result.filter(c => !c.isDeleted).map(c => c.id as number);
+      const likedIds =
+        likableIds.length > 0
+          ? new Set(
+              (
+                await CommentLike.findAll({
+                  where: { CommentId: likableIds, UserId: userId },
+                  attributes: ['CommentId'],
+                })
+              ).map(r => r.CommentId as number)
+            )
+          : new Set<number>();
+      for (const c of result) {
+        c.liked = !c.isDeleted && likedIds.has(c.id as number);
+      }
+    } else {
+      for (const c of result) c.liked = false;
     }
 
     // 3) 정렬 — 마스킹 부모를 끼워넣었으므로 정렬 기준에 맞춰 다시 정렬(클라 트리 빌더의 root 순서 보존)

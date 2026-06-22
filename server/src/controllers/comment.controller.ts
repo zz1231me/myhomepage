@@ -2,6 +2,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../types/auth-request';
 import { commentService } from '../services/comment.service';
+import { commentLikeService } from '../services/commentLike.service';
 import { notificationService } from '../services/notification.service';
 import {
   sendSuccess,
@@ -180,7 +181,7 @@ export const getCommentsByPost = async (
       }
     }
 
-    const comments = await commentService.getCommentsByPost(postId, sort);
+    const comments = await commentService.getCommentsByPost(postId, sort, userId);
     sendSuccess(res, comments, '댓글 목록 조회 성공');
   } catch (err) {
     next(err);
@@ -287,6 +288,48 @@ export const deleteComment = async (
     await commentService.deleteComment(numericCommentId, userId, userRole || 'guest');
 
     sendSuccess(res, { deletedCommentId: numericCommentId }, '댓글이 삭제되었습니다.');
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ✅ 댓글 좋아요 토글
+export const likeComment = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { boardType, commentId } = req.params;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      sendUnauthorized(res, '로그인이 필요합니다.');
+      return;
+    }
+
+    const numericCommentId = parseInt(commentId, 10);
+    if (isNaN(numericCommentId)) {
+      sendValidationError(res, 'commentId', '잘못된 댓글 ID입니다.');
+      return;
+    }
+
+    // boardType 교차 검증: 댓글이 올바른 게시판 소속인지 확인 (URL 조작 차단)
+    const comment = await Comment.findByPk(numericCommentId, {
+      include: [{ model: Post, as: 'post', attributes: ['boardType'] }],
+    });
+    if (!comment) {
+      sendNotFound(res, '댓글');
+      return;
+    }
+    const post = (comment as Comment & { post?: { boardType: string } }).post;
+    if (!post || post.boardType !== boardType) {
+      sendNotFound(res, '댓글');
+      return;
+    }
+
+    const result = await commentLikeService.toggleLike(numericCommentId, userId);
+    sendSuccess(res, result, result.liked ? '좋아요를 눌렀습니다.' : '좋아요를 취소했습니다.');
   } catch (err) {
     next(err);
   }
