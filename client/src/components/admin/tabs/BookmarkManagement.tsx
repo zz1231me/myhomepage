@@ -100,12 +100,15 @@ export function BookmarkManagement() {
   const move = async (index: number, direction: -1 | 1) => {
     const next = index + direction;
     if (next < 0 || next >= bookmarks.length) return;
+    const prev = bookmarks;
     const reordered = [...bookmarks];
     [reordered[index], reordered[next]] = [reordered[next], reordered[index]];
+    // 낙관적 업데이트: 연속 클릭이 갱신된 순서를 기준으로 계산되도록 await 이전에 반영
+    setBookmarks(reordered);
     try {
       await reorderBookmarks(reordered.map((b, i) => ({ id: b.id, order: i })));
-      setBookmarks(reordered);
     } catch {
+      setBookmarks(prev); // 실패 시 롤백
       toast.error('순서 변경에 실패했습니다.');
     }
   };

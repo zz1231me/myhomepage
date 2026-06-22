@@ -61,6 +61,7 @@ export function NotificationBell() {
   // unreadCount는 단일 폴링 스토어에서 구독(중복 폴링 제거). 뱃지 표시 및 액션 후 동기화에 사용.
   const unreadCount = useNotificationStore(s => s.unreadCount);
   const setStoreUnread = useNotificationStore(s => s.setUnreadCount);
+  const decrementUnread = useNotificationStore(s => s.decrementUnread);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -131,7 +132,7 @@ export function NotificationBell() {
       await markAsRead(n.id);
       setNotifications(prev => prev.map(x => (x.id === n.id ? { ...x, isRead: true } : x)));
       // 이미 읽은 알림은 카운트를 감소시키지 않음
-      if (!n.isRead) setStoreUnread(unreadCount - 1);
+      if (!n.isRead) decrementUnread();
     } catch {
       /* 알림 API 에러 무시 */
     }
@@ -161,7 +162,7 @@ export function NotificationBell() {
       await deleteNotification(id);
       setNotifications(prev => prev.filter(x => x.id !== id));
       const deleted = notifications.find(x => x.id === id);
-      if (deleted && !deleted.isRead) setStoreUnread(unreadCount - 1);
+      if (deleted && !deleted.isRead) decrementUnread();
     } catch {
       /* 알림 API 에러 무시 */
     }
