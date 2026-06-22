@@ -4,6 +4,7 @@ import { useAuth } from '../store/auth';
 import { useAuthInit } from '../hooks/useAuthInit';
 import { refreshToken } from '../api/auth';
 import { formatDateTime, formatDate } from '../utils/date';
+import { flagSessionExpired } from '../utils/sessionExpiry';
 
 interface AuthProviderProps {
   children: React.ReactNode;
@@ -64,6 +65,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         // Refresh Token 만료 체크
         if (isRefreshTokenExpired()) {
           if (import.meta.env.DEV) console.info('❌ Refresh Token 만료, 로그아웃 처리');
+          flagSessionExpired();
           clearUser();
           window.location.href = '/';
           return;
@@ -91,6 +93,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             // ✅ Access Token이 실제로 만료되었는지 재확인
             if (isAccessTokenExpired()) {
               if (import.meta.env.DEV) console.info('🚪 Access Token 만료로 인한 자동 로그아웃');
+              flagSessionExpired();
               clearUser();
               window.location.href = '/';
             }
