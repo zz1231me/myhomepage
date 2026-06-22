@@ -22,6 +22,7 @@ import { Comment } from '../models/Comment';
 import { PostLike } from '../models/PostLike';
 import { PostTag } from '../models/PostTag';
 import { PostRead } from '../models/PostRead';
+import { Notification } from '../models/Notification';
 import { BaseService } from './base.service';
 import { AppError } from '../middlewares/error.middleware';
 import { extractTextFromTiptap } from '../utils/tiptapRenderer';
@@ -1054,7 +1055,7 @@ export class PostService extends BaseService {
 
     // DB 레코드를 먼저 삭제한 뒤 파일 삭제 (DB 실패 시 파일은 유지됨)
     // ✅ 게시글은 paranoid(soft-delete)이므로 destroy 시 자식이 cascade되지 않는다.
-    //    자식 정리를 하나의 트랜잭션으로 묶어 orphan(댓글/리액션/조회기록/태그) 누적을 방지.
+    //    자식 정리를 하나의 트랜잭션으로 묶어 orphan(댓글/리액션/조회기록/태그/알림) 누적을 방지.
     await sequelize.transaction(async t => {
       // 댓글도 paranoid → soft-delete (감사 추적 유지하되 '살아있는' 쿼리에서 제외)
       await Comment.destroy({ where: { PostId: post.id }, transaction: t });
@@ -1062,6 +1063,9 @@ export class PostService extends BaseService {
       await PostLike.destroy({ where: { PostId: post.id }, transaction: t });
       await PostRead.destroy({ where: { PostId: post.id }, transaction: t });
       await PostTag.destroy({ where: { PostId: post.id }, transaction: t });
+      // 이 글을 가리키는 알림(댓글/좋아요/멘션)은 링크가 죽으므로 정리 — 사용자 알림이라 감사가치 없음.
+      // (신고(Report)는 모더레이션/감사 기록이고 글은 soft-delete라 paranoid:false로 계속 조회되므로 보존)
+      await Notification.destroy({ where: { relatedId: post.id }, transaction: t });
       await post.destroy({ transaction: t });
     });
 
