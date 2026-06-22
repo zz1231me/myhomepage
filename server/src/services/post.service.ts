@@ -1052,6 +1052,51 @@ export class PostService extends BaseService {
     }
   }
 
+  /**
+   * 보관 기간이 지난 soft-deleted 게시글을 DB에서 영구 삭제(purge)한다.
+   * 게시글 삭제는 1차로 soft-delete(deletedAt 기록, 숨김)되고, retentionDays가 지나면
+   * 주기 작업이 이 메서드로 게시글 + 댓글 + 잔여 파생데이터를 hard-delete한다.
+   * @returns 영구 삭제된 게시글 수
+   */
+  async purgeExpiredPosts(retentionDays: number): Promise<number> {
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+
+    // paranoid 해제하고 보관 기간이 지난 soft-deleted 게시글만 조회
+    const expired = await Post.findAll({
+      where: { deletedAt: { [Op.ne]: null, [Op.lte]: cutoff } },
+      attributes: ['id', 'attachments'],
+      paranoid: false,
+    });
+    if (expired.length === 0) return 0;
+
+    const postIds = expired.map(p => p.id);
+
+    // 게시글 + 자식을 한 트랜잭션에서 hard-delete (force:true는 soft-deleted 행도 실제 삭제)
+    await sequelize.transaction(async t => {
+      const childWhere = { PostId: { [Op.in]: postIds } };
+      await Comment.destroy({ where: childWhere, transaction: t, force: true });
+      await PostLike.destroy({ where: childWhere, transaction: t });
+      await PostRead.destroy({ where: childWhere, transaction: t });
+      await PostBookmark.destroy({ where: childWhere, transaction: t });
+      await PostTag.destroy({ where: childWhere, transaction: t });
+      await Post.destroy({ where: { id: { [Op.in]: postIds } }, transaction: t, force: true });
+    });
+
+    // 첨부파일 정리 — deletePost에서 이미 삭제됐지만, 다른 경로로 soft-delete된 경우까지
+    // 방어적으로 처리(deleteFileIfExists는 파일이 없으면 무시).
+    for (const post of expired) {
+      for (const att of this.parseAttachments(post.attachments)) {
+        try {
+          this.deleteFileIfExists(att.filename, att.path);
+        } catch (fileErr) {
+          logError(`만료 게시글 첨부파일 삭제 실패: ${att.filename}`, fileErr);
+        }
+      }
+    }
+
+    return expired.length;
+  }
+
   // ✅ 게시글 고정/해제 (admin 또는 해당 게시판 담당자만 가능)
   async togglePin(
     postId: string,

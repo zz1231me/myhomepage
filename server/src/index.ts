@@ -90,6 +90,8 @@ import { loginHistoryService } from './services/loginHistory.service';
 import { auditLogService } from './services/auditLog.service';
 import { userSessionService } from './services/userSession.service';
 import { getIpRuleCache } from './services/ipRule.service';
+import { postService } from './services/post.service';
+import { DELETED_POST_RETENTION_DAYS } from './config/constants';
 import { loadSettingsCache, getSettings } from './utils/settingsCache';
 
 /**
@@ -101,27 +103,31 @@ async function runLogCleanup(): Promise<void> {
   try {
     const { securityLogRetentionDays, errorLogRetentionDays } = getSettings();
 
-    const [secDeleted, errDeleted, loginDeleted, auditDeleted, sessionDeleted] = await Promise.all([
-      securityLogService.deleteOldLogs(securityLogRetentionDays),
-      errorLogService.deleteOldLogs(errorLogRetentionDays),
-      loginHistoryService.deleteOldRecords(90),
-      auditLogService.deleteOldLogs(365),
-      userSessionService.cleanExpiredSessions(),
-    ]);
+    const [secDeleted, errDeleted, loginDeleted, auditDeleted, sessionDeleted, postsPurged] =
+      await Promise.all([
+        securityLogService.deleteOldLogs(securityLogRetentionDays),
+        errorLogService.deleteOldLogs(errorLogRetentionDays),
+        loginHistoryService.deleteOldRecords(90),
+        auditLogService.deleteOldLogs(365),
+        userSessionService.cleanExpiredSessions(),
+        // 삭제된 게시글: soft-delete 후 보관 기간(기본 7일)이 지나면 DB에서 영구 삭제
+        postService.purgeExpiredPosts(DELETED_POST_RETENTION_DAYS),
+      ]);
 
     if (
       secDeleted > 0 ||
       errDeleted > 0 ||
       loginDeleted > 0 ||
       auditDeleted > 0 ||
-      sessionDeleted > 0
+      sessionDeleted > 0 ||
+      postsPurged > 0
     ) {
       logger.info(
-        `🗑️ 로그 자동 정리 완료 — 보안로그: ${secDeleted}건, 에러로그: ${errDeleted}건, 로그인이력: ${loginDeleted}건, 감사로그: ${auditDeleted}건, 세션: ${sessionDeleted}건 삭제`
+        `🗑️ 자동 정리 완료 — 보안로그: ${secDeleted}건, 에러로그: ${errDeleted}건, 로그인이력: ${loginDeleted}건, 감사로그: ${auditDeleted}건, 세션: ${sessionDeleted}건, 만료게시글: ${postsPurged}건 삭제`
       );
     }
   } catch (error) {
-    logger.error('로그 자동 정리 실패:', error);
+    logger.error('자동 정리 실패:', error);
   }
 }
 
