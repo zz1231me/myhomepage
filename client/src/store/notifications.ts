@@ -22,6 +22,8 @@ interface NotificationStoreState {
   stop: () => void;
   clearToast: () => void;
   setUnreadCount: (n: number) => void;
+  /** 읽음/삭제 시 뱃지를 1 감소 (함수형 업데이트로 빠른 연속 동작의 stale-closure 누락 방지) */
+  decrementUnread: () => void;
 }
 
 export const useNotificationStore = create<NotificationStoreState>((set, get) => ({
@@ -77,4 +79,5 @@ export const useNotificationStore = create<NotificationStoreState>((set, get) =>
 
   clearToast: () => set({ toast: null }),
   setUnreadCount: n => set({ unreadCount: Math.max(0, n) }),
+  decrementUnread: () => set(s => ({ unreadCount: Math.max(0, s.unreadCount - 1) })),
 }));

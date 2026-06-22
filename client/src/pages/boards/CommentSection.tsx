@@ -154,7 +154,8 @@ const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState('');
-  const [sortBy, setSortBy] = useState<'oldest' | 'newest' | 'popular'>('oldest');
+  // 'popular'(추천순)은 댓글 좋아요 기능이 없어 항상 등록순과 동일하므로 옵션에서 제외
+  const [sortBy, setSortBy] = useState<'oldest' | 'newest'>('oldest');
   const [copied, setCopied] = useState(false);
   // 좋아요 토글 in-flight 가드 (댓글 id별 1요청 — 더블클릭으로 인한 토글 꼬임 방지)
   const likeInFlight = useRef<Set<number>>(new Set());
@@ -706,7 +707,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
             </p>
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1">
-                {(['oldest', 'newest', 'popular'] as const).map(option => (
+                {(['oldest', 'newest'] as const).map(option => (
                   <button
                     key={option}
                     onClick={() => setSortBy(option)}
@@ -716,7 +717,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
                         : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
                     }`}
                   >
-                    {option === 'oldest' ? '등록순' : option === 'newest' ? '최신순' : '추천순'}
+                    {option === 'oldest' ? '등록순' : '최신순'}
                   </button>
                 ))}
               </div>

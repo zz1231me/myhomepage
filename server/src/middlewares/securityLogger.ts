@@ -128,7 +128,7 @@ export const activityLogger = (req: Request, res: Response, next: NextFunction) 
         details: {
           statusCode: res.statusCode,
           duration: Date.now() - start,
-          query: req.query,
+          query: sanitize(req.query),
           body: sanitize(req.body),
           files: getFileDetails(req), // 파일 정보 추가
         },

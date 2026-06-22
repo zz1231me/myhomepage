@@ -127,11 +127,17 @@ export const UserManagement = () => {
   };
 
   const handleUpdateUserRole = async (userId: string, newRole: string) => {
+    // 본인 역할 변경은 서버에서 차단됨(자기 권한 박탈 방지) — 클라에서 먼저 안내해 무음 원복 방지
+    if (userId === currentUser?.id) {
+      toast.error('자신의 역할은 변경할 수 없습니다.');
+      return;
+    }
     try {
       await updateUserRole(userId, newRole);
       toast.success('역할이 변경되었습니다.');
-    } catch {
-      toast.error('역할 변경에 실패했습니다.');
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } };
+      toast.error(e.response?.data?.message ?? '역할 변경에 실패했습니다.');
     }
   };
 

@@ -20,23 +20,30 @@ export const BoardManagement = () => {
   const [editingBoard, setEditingBoard] = useState<string | null>(null);
   const [editBoardData, setEditBoardData] = useState<Partial<Board>>({});
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [togglingBoardId, setTogglingBoardId] = useState<string | null>(null);
 
   const handleAddBoard = async () => {
     try {
       await addBoard(boardForm);
       setBoardForm({ id: '', name: '', description: '', order: 0 });
       toast.success('게시판이 추가되었습니다.');
-    } catch {
-      toast.error('게시판 추가에 실패했습니다.');
+    } catch (err: unknown) {
+      // 서버 검증 메시지(ID 형식 등)를 그대로 노출해 사용자가 원인을 알 수 있게 함
+      const e = err as { response?: { data?: { message?: string } } };
+      toast.error(e.response?.data?.message ?? '게시판 추가에 실패했습니다.');
     }
   };
 
   const handleToggleActive = async (board: Board) => {
+    if (togglingBoardId === board.id) return; // 연속 클릭으로 인한 중복 PUT 방지
+    setTogglingBoardId(board.id);
     try {
       await updateBoard(board.id, { isActive: !board.isActive });
       toast.success(`게시판이 ${!board.isActive ? '활성화' : '비활성화'}되었습니다.`);
     } catch {
       toast.error('상태 변경에 실패했습니다.');
+    } finally {
+      setTogglingBoardId(null);
     }
   };
 
@@ -228,7 +235,8 @@ export const BoardManagement = () => {
                     <td className="px-3 py-3 text-center">
                       <button
                         onClick={() => handleToggleActive(board)}
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full transition-colors cursor-pointer ${
+                        disabled={togglingBoardId === board.id}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                           board.isActive
                             ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/50'
                             : 'bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-400 dark:hover:bg-slate-600'

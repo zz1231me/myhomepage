@@ -80,8 +80,9 @@ export const SecurityLogManagement = () => {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
+    // setPage(1)만 — 실제 조회는 디바운스된 값으로 useEffect가 수행한다.
+    // 여기서 fetchLogs()를 직접 부르면 디바운스 반영 전(직전) 값으로 조회되는 버그가 있었다.
     setPage(1); // Reset to first page on search
-    fetchLogs();
   };
 
   const toggleExpand = (id: string) => {

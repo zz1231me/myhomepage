@@ -498,6 +498,13 @@ export function extractTextFromTiptap(
   }
 }
 
+// 검색 인덱싱용: content(CKEditor HTML 또는 Tiptap JSON)를 길이 제한 없이 평문으로 변환.
+// Post.contentText 컬럼을 이 값으로 채워, 검색이 태그가 낀 원본 HTML이 아니라
+// 평문에 매칭되도록 한다(예: "<strong>볼드</strong> <i>이탤릭</i>" → "볼드 이탤릭").
+export function extractSearchText(content: string): string {
+  return extractTextFromTiptap(content, Number.MAX_SAFE_INTEGER);
+}
+
 // ✅ 노드에서 텍스트만 추출
 function extractText(nodes: TiptapNode[]): string {
   let result = '';
@@ -517,32 +524,3 @@ function extractText(nodes: TiptapNode[]): string {
 
   return result.replace(/\s+/g, ' ').trim();
 }
-
-// ✅ JSON 콘텐츠 유효성 검사
-export function validateTiptapJSON(json: string): { isValid: boolean; error?: string } {
-  try {
-    const parsed = JSON.parse(json);
-
-    if (!parsed || typeof parsed !== 'object') {
-      return { isValid: false, error: '유효하지 않은 JSON 객체입니다.' };
-    }
-
-    if (parsed.type !== 'doc') {
-      return { isValid: false, error: '문서 타입이 올바르지 않습니다.' };
-    }
-
-    if (parsed.content && !Array.isArray(parsed.content)) {
-      return { isValid: false, error: '콘텐츠가 배열 형태가 아닙니다.' };
-    }
-
-    return { isValid: true };
-  } catch (_error) {
-    return { isValid: false, error: 'JSON 파싱에 실패했습니다.' };
-  }
-}
-
-export default {
-  renderTiptapToHTML,
-  extractTextFromTiptap,
-  validateTiptapJSON,
-};

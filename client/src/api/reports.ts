@@ -14,6 +14,7 @@ export interface Report {
   description: string | null;
   status: ReportStatus;
   reviewedBy: string | null;
+  reviewedByName?: string | null;
   reviewedAt: string | null;
   reviewNote: string | null;
   createdAt: string;

@@ -89,7 +89,7 @@ function LoadingRows() {
 // ─── 메인 컴포넌트 ───────────────────────────────────────────────────────────
 export default function Profile() {
   const navigate = useNavigate();
-  const { getUser, updateUser } = useAuth();
+  const { getUser, updateUser, clearUser } = useAuth();
   const user = getUser();
   const { settings } = useSiteSettings();
 
@@ -275,8 +275,12 @@ export default function Profile() {
     setIsChangingPassword(true);
     try {
       await changePassword(currentPassword, newPassword);
-      toast.success('비밀번호가 변경되었습니다.');
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      // 서버가 비번 변경 시 tokenVersion 증가 + 전 세션 만료 → 현재 토큰도 무효화된다.
+      // 그대로 두면 다음 요청에서 401로 갑자기 로그인 화면으로 튕기므로, 명시적으로 로그아웃 안내 후 이동.
+      toast.success('비밀번호가 변경되었습니다. 새 비밀번호로 다시 로그인해주세요.');
+      clearUser();
+      navigate('/');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       toast.error(err?.message ?? '비밀번호 변경 중 오류가 발생했습니다.');

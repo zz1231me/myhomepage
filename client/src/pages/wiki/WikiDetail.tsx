@@ -16,11 +16,19 @@ interface WikiDetailProps {
   allPages: WikiPage[];
   canEdit: boolean;
   onEdit: () => void;
+  /** 특정 리비전 내용으로 현재 페이지를 복원 */
+  onRestore?: (content: string) => void;
 }
 
 // WikiDetail renders sanitized HTML content from the wiki page.
 // Content is processed through DOMPurify via sanitizeHTML before rendering.
-export const WikiDetail: React.FC<WikiDetailProps> = ({ page, allPages, canEdit, onEdit }) => {
+export const WikiDetail: React.FC<WikiDetailProps> = ({
+  page,
+  allPages,
+  canEdit,
+  onEdit,
+  onRestore,
+}) => {
   const contentRef = useRef<HTMLDivElement>(null);
   const { imageViewer, closeImageViewer } = useContentImageHandler();
   const [showHistory, setShowHistory] = useState(false);
@@ -178,7 +186,13 @@ export const WikiDetail: React.FC<WikiDetailProps> = ({ page, allPages, canEdit,
           {/* 편집 이력 */}
           {showHistory && canEdit && (
             <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800">
-              <WikiHistory slug={page.slug} currentContent={page.content} />
+              {/* key=updatedAt: 복원/편집으로 페이지가 바뀌면 이력 목록을 새로 불러온다 */}
+              <WikiHistory
+                key={page.updatedAt}
+                slug={page.slug}
+                currentContent={page.content}
+                onRestore={onRestore}
+              />
             </div>
           )}
 
