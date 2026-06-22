@@ -8,8 +8,10 @@ export const useBoardManagement = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [dataLoaded, setDataLoaded] = useState(false);
-  // 동일 tick 내 다중 클릭 race 방지용 — setState는 비동기라 saving state만으로 막을 수 없다.
+  // 저장 직렬화용 — 한 게시판에 저장이 진행 중인지 추적(out-of-order 저장 방지).
   const inFlightRef = useRef<Set<string>>(new Set());
+  // 저장 진행 중에 들어온 후속 변경의 "최신 상태"를 적재(coalescing). 저장이 끝나면 이어서 저장한다.
+  const pendingRef = useRef<Map<string, BoardPermission[]>>(new Map());
 
   const [fetchError, setFetchError] = useState<string | null>(null);
 
@@ -68,17 +70,35 @@ export const useBoardManagement = () => {
     setPermissions(permissionsState);
   };
 
+  // 대기열(pendingRef)의 최신 상태를 직렬로 저장. 저장이 끝나면 그 사이 쌓인 변경을 이어서 저장한다.
+  const runSave = (boardId: string) => {
+    const perms = pendingRef.current.get(boardId);
+    if (!perms) return;
+    pendingRef.current.delete(boardId);
+    inFlightRef.current.add(boardId);
+    setSaving(s => ({ ...s, [boardId]: true }));
+    savePermissions(boardId, perms)
+      .catch(() => {
+        if (import.meta.env.DEV) console.error('권한 저장 실패 — 서버 상태로 롤백됨');
+      })
+      .finally(() => {
+        inFlightRef.current.delete(boardId);
+        // 저장 중 들어온 후속 변경이 있으면 최신 상태로 이어서 저장(클릭 유실 방지)
+        if (pendingRef.current.has(boardId)) {
+          runSave(boardId);
+        } else {
+          setSaving(s => ({ ...s, [boardId]: false }));
+        }
+      });
+  };
+
   const updatePermission = (
     boardId: string,
     roleId: string,
     type: 'canRead' | 'canWrite' | 'canDelete',
     roles: Role[]
   ) => {
-    // ✅ ref 기반 동기 lock — setState/saving은 비동기라 동일 tick의 연속 클릭을 막지 못함
-    if (inFlightRef.current.has(boardId)) return;
-    inFlightRef.current.add(boardId);
-
-    // 최신 permissions를 함수형 setState 안에서 읽어 update — closure의 stale 값 사용 차단
+    // 최신 permissions를 함수형 setState 안에서 읽어 낙관적 업데이트(연속 클릭도 누적 반영)
     let updatedPerms: BoardPermission[] = [];
     let skipped = false;
     setPermissions(prev => {
@@ -106,20 +126,14 @@ export const useBoardManagement = () => {
       return { ...prev, [boardId]: updatedPerms };
     });
 
-    if (skipped) {
-      inFlightRef.current.delete(boardId);
-      return;
-    }
+    if (skipped || updatedPerms.length === 0) return;
 
-    setSaving(s => ({ ...s, [boardId]: true }));
-    savePermissions(boardId, updatedPerms)
-      .catch(() => {
-        if (import.meta.env.DEV) console.error('권한 저장 실패 — 서버 상태로 롤백됨');
-      })
-      .finally(() => {
-        inFlightRef.current.delete(boardId);
-        setSaving(s => ({ ...s, [boardId]: false }));
-      });
+    // 최신 상태를 대기열에 적재(직전 변경 coalescing). 진행 중 저장이 없으면 즉시 시작하고,
+    // 진행 중이면 끝난 뒤 runSave가 이어서 저장하므로 토글이 드롭되지 않는다(기존 버그 수정).
+    pendingRef.current.set(boardId, updatedPerms);
+    if (!inFlightRef.current.has(boardId)) {
+      runSave(boardId);
+    }
   };
 
   const savePermissions = async (boardId: string, perms: BoardPermission[]) => {

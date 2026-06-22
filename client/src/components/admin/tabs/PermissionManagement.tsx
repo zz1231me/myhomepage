@@ -1,6 +1,6 @@
 // PermissionManagement.tsx - 권한 관리 컴포넌트
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useBoardManagement } from '../../../hooks/admin/useBoardManagement';
 import { useRoleManagement } from '../../../hooks/admin/useRoleManagement';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -25,6 +25,9 @@ export const PermissionManagement = () => {
   const [showGraph, setShowGraph] = useState(false);
   const [wikiRoles, setWikiRoles] = useState<string[]>([]);
   const [wikiSaving, setWikiSaving] = useState(false);
+  // 저장 직렬화용 — 저장 중 들어온 후속 토글의 최신 상태를 적재(coalescing)해 클릭 유실 방지
+  const wikiSavingRef = useRef(false);
+  const wikiPendingRef = useRef<string[] | null>(null);
 
   const loadWikiPermissions = useCallback(async () => {
     try {
@@ -35,27 +38,46 @@ export const PermissionManagement = () => {
     }
   }, []);
 
-  const toggleWikiRole = async (roleId: string) => {
-    // 동시 저장 차단 — rapid click 시 stale state로 인한 race 방지
-    if (wikiSaving) return;
-    const next = wikiRoles.includes(roleId)
-      ? wikiRoles.filter(r => r !== roleId)
-      : [...wikiRoles, roleId];
-    setWikiSaving(true);
-    // optimistic UI — 클릭 즉시 체크박스 토글
-    const previous = wikiRoles;
-    setWikiRoles(next);
-    try {
-      const data = await updateWikiPermissions(next);
-      setWikiRoles(data.roles ?? next);
-    } catch (err) {
-      // 실패 시 이전 상태로 롤백 + 사용자에게 알림 (silent failure 방지)
-      setWikiRoles(previous);
-      if (import.meta.env.DEV) console.error('위키 권한 저장 실패', err);
-      toast.error('위키 권한 저장에 실패했습니다.');
-    } finally {
-      setWikiSaving(false);
+  // 최신 위키 역할 목록을 직렬로 저장. 저장 중 쌓인 변경은 끝난 뒤 이어서 저장(클릭 유실 방지)
+  const flushWikiSave = useCallback(
+    async (roles: string[]) => {
+      wikiSavingRef.current = true;
+      setWikiSaving(true);
+      try {
+        const data = await updateWikiPermissions(roles);
+        // 대기 중 후속 변경이 없을 때만 서버 정규화 결과를 반영(있으면 그게 최신이므로 덮어쓰지 않음)
+        if (!wikiPendingRef.current && data.roles) setWikiRoles(data.roles);
+      } catch (err) {
+        if (import.meta.env.DEV) console.error('위키 권한 저장 실패', err);
+        toast.error('위키 권한 저장에 실패했습니다.');
+        wikiPendingRef.current = null;
+        await loadWikiPermissions(); // 실패 시 서버 상태로 롤백
+      } finally {
+        wikiSavingRef.current = false;
+        if (wikiPendingRef.current) {
+          const next = wikiPendingRef.current;
+          wikiPendingRef.current = null;
+          await flushWikiSave(next);
+        } else {
+          setWikiSaving(false);
+        }
+      }
+    },
+    [loadWikiPermissions]
+  );
+
+  const toggleWikiRole = (roleId: string) => {
+    // 낙관적 토글(드롭하지 않음). 저장 중이면 최신 상태를 대기열에 적재해 이어서 저장(기존 드롭 버그 수정).
+    let next: string[] = [];
+    setWikiRoles(prev => {
+      next = prev.includes(roleId) ? prev.filter(r => r !== roleId) : [...prev, roleId];
+      return next;
+    });
+    if (wikiSavingRef.current) {
+      wikiPendingRef.current = next;
+      return;
     }
+    void flushWikiSave(next);
   };
 
   useEffect(() => {
