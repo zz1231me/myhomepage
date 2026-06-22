@@ -6,6 +6,7 @@ import { useAuthStore } from '../store/auth';
 import { useSiteSettings } from '../store/siteSettings';
 import { toast } from '../utils/toast';
 import { ConfirmationModal } from './admin/common/ConfirmationModal';
+import { generateRandomAvatarFile } from '../utils/identicon';
 
 interface User {
   id: string;
@@ -56,6 +57,7 @@ export const AvatarUpload: React.FC<AvatarUploadProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0); // ✅ 강제 새로고침용
@@ -175,6 +177,21 @@ export const AvatarUpload: React.FC<AvatarUploadProps> = ({
       handleFileUpload(file);
     }
   };
+
+  // 랜덤 아바타 생성 — 사진 업로드 없이 코드로 identicon을 만들어 기존 업로드 흐름에 태운다
+  const handleGenerateAvatar = useCallback(async () => {
+    if (isUploading || isDeleting || isGenerating) return;
+    setIsGenerating(true);
+    try {
+      const file = await generateRandomAvatarFile();
+      await handleFileUpload(file);
+    } catch (error) {
+      if (import.meta.env.DEV) console.error('❌ 아바타 생성 실패:', error);
+      toast.error(error instanceof Error ? error.message : '아바타 생성에 실패했습니다.');
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [isUploading, isDeleting, isGenerating, handleFileUpload]);
 
   // 드래그 앤 드롭 처리
   const handleDrag = (e: React.DragEvent) => {
@@ -302,6 +319,21 @@ export const AvatarUpload: React.FC<AvatarUploadProps> = ({
           "
         >
           {isUploading ? '업로드 중...' : '사진 변경'}
+        </button>
+
+        <button
+          onClick={handleGenerateAvatar}
+          disabled={isLoading || isGenerating}
+          title="사진 없이 랜덤 그래픽 아바타를 생성합니다"
+          className="
+            px-4 py-2 text-sm font-medium text-violet-600 bg-violet-50
+            rounded-lg hover:bg-violet-100 focus:outline-none focus:ring-2
+            focus:ring-violet-500 focus:ring-opacity-50 transition-colors
+            disabled:opacity-50 disabled:cursor-not-allowed
+            dark:text-violet-300 dark:bg-violet-900/40 dark:hover:bg-violet-900/60
+          "
+        >
+          {isGenerating ? '생성 중...' : '🎲 랜덤 생성'}
         </button>
 
         {allowDelete && user.avatar && (
