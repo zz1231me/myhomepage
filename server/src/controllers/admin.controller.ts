@@ -16,7 +16,7 @@ import {
   invalidateCache,
   invalidateUserCache as invalidateUserResponseCache,
 } from '../utils/cache';
-import { invalidateUserCache } from '../middlewares/auth.middleware';
+import { invalidateUserCache, clearAllUserCaches } from '../middlewares/auth.middleware';
 
 // 사용자 상태 변경 시 인증 미들웨어 캐시 + HTTP 응답 캐시(boards 등) 둘 다 무효화한다.
 // auth.middleware.invalidateUserCache만 호출하면 cacheMiddleware('boards', 300)에 저장된
@@ -24,6 +24,14 @@ import { invalidateUserCache } from '../middlewares/auth.middleware';
 const invalidateAllUserCaches = (userId: string): void => {
   invalidateUserCache(userId);
   invalidateUserResponseCache(userId);
+};
+
+// 역할 변경/삭제는 다수 사용자에게 영향(역할 비활성화·삭제 시 마이그레이션). 영향 사용자를
+// 일일이 열거하지 않고 인증 캐시(roleInfo.isActive/tokenVersion 게이트) + boards 응답 캐시를
+// 전체 무효화해, 취소된 권한이 TTL 동안 stale 하게 통과하지 않도록 한다.
+const invalidateRoleAffectedCaches = (): void => {
+  clearAllUserCaches();
+  invalidateCache('boards');
 };
 import { AuthValidator } from '../validators/auth.validator';
 import { FlatRequest as Request, type AuthRequest } from '../types/auth-request';
@@ -482,6 +490,7 @@ export const updateRole = async (req: Request, res: Response): Promise<void> => 
       return;
     }
     await roleService.updateRole(id, { name, description, isActive });
+    invalidateRoleAffectedCaches();
     logAudit(req, 'update_role', {
       targetType: 'role',
       targetId: id,
@@ -499,6 +508,7 @@ export const deleteRole = async (req: Request, res: Response): Promise<void> => 
   try {
     const { id } = req.params;
     await roleService.deleteRole(id);
+    invalidateRoleAffectedCaches();
     logAudit(req, 'delete_role', { targetType: 'role', targetId: id });
     sendSuccess(res, null, '역할 삭제 완료');
   } catch (error: unknown) {

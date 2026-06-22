@@ -43,6 +43,13 @@ export function invalidateUserCache(userId: string): void {
   userCache.delete(userId);
 }
 
+// 역할 변경/삭제처럼 다수 사용자에게 영향을 주는 작업용 — 전체 사용자 캐시 무효화.
+// (역할 비활성화/삭제 시 캐시된 roleInfo.isActive / tokenVersion 이 최대 TTL 동안 stale 하게 남아
+//  취소된 세션이 통과하던 문제를 즉시 해소)
+export function clearAllUserCaches(): void {
+  userCache.clear();
+}
+
 export const authenticate = async (
   req: Request,
   res: Response,
