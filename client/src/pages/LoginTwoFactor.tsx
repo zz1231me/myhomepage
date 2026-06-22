@@ -45,8 +45,10 @@ export default function LoginTwoFactor() {
         setUser(payload.user, payload.tokenInfo);
       }
 
-      // 대시보드로 이동
-      navigate('/dashboard', { replace: true });
+      // 강제 비밀번호 변경 대상이면 변경 페이지로, 아니면 대시보드로 (Login.tsx와 동일 분기)
+      navigate(payload.user?.mustChangePassword ? '/change-password' : '/dashboard', {
+        replace: true,
+      });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       setError(err.response?.data?.message || '인증 코드가 올바르지 않습니다.');
