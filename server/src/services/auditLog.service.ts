@@ -72,6 +72,10 @@ export class AuditLogService extends BaseService {
     const endDateObj = params.endDate ? new Date(params.endDate) : null;
     const validStart = startDateObj && !isNaN(startDateObj.getTime()) ? startDateObj : null;
     const validEnd = endDateObj && !isNaN(endDateObj.getTime()) ? endDateObj : null;
+    // 종료일을 날짜만(YYYY-MM-DD) 지정한 경우 해당 일자 끝까지 포함 (당일 누락 방지)
+    if (validEnd && params.endDate && /^\d{4}-\d{2}-\d{2}$/.test(params.endDate.trim())) {
+      validEnd.setUTCHours(23, 59, 59, 999);
+    }
 
     if (validStart && validEnd) {
       where.createdAt = { [Op.between]: [validStart, validEnd] };

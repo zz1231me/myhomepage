@@ -19,6 +19,12 @@ export interface Comment {
   parentId?: number | null;
   depth?: number;
   replies?: Comment[];
+  /** 자식이 살아있어 트리 보존을 위해 표시되는 '삭제된 댓글' placeholder */
+  isDeleted?: boolean;
+  /** 좋아요 수 (서버 비정규화 컬럼) */
+  likeCount?: number;
+  /** 현재 사용자가 좋아요했는지 여부 */
+  liked?: boolean;
 }
 
 let _optimisticIdCounter = 0; // Number.MAX_SAFE_INTEGER로 wrapping해 overflow 방지

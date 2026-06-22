@@ -103,7 +103,9 @@ CommentModel.init(
       type: DataTypes.TEXT,
       allowNull: false,
       validate: {
-        len: [1, 1000],
+        // 실제 길이 제한은 컨트롤러가 설정값(commentContentMaxLength)으로 검증한다.
+        // 모델은 빈 값 방지 + 비정상 대용량만 막는 안전망(서식 HTML은 평문보다 길어질 수 있으므로 넉넉히).
+        len: [1, 100000],
       },
     },
     author: {

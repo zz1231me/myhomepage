@@ -38,6 +38,7 @@ export const EventManagement = () => {
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   const handleDeleteEvent = async (id: number) => {
@@ -57,14 +58,18 @@ export const EventManagement = () => {
   };
 
   const handleSaveEdit = async (id: number) => {
+    if (savingEdit) return; // 진행 중 중복 요청(Enter 연타/키 리피트) 방지
     const trimmed = editTitle.trim();
     if (!trimmed) return;
+    setSavingEdit(true);
     try {
       await updateEvent(id, { title: trimmed });
       toast.success('일정이 수정되었습니다.');
       setEditingId(null);
     } catch {
       toast.error('일정 수정에 실패했습니다.');
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -223,9 +228,10 @@ export const EventManagement = () => {
                         <div className="flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => handleSaveEdit(event.id)}
-                            className="px-3 py-1.5 text-xs font-medium rounded-md bg-primary-600 hover:bg-primary-700 text-white transition-colors"
+                            disabled={savingEdit}
+                            className="px-3 py-1.5 text-xs font-medium rounded-md bg-primary-600 hover:bg-primary-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            저장
+                            {savingEdit ? '저장 중...' : '저장'}
                           </button>
                           <button
                             onClick={() => setEditingId(null)}

@@ -43,12 +43,13 @@ export function DashboardSidebar({ isOpen, onClose }: DashboardSidebarProps) {
     error: bookmarksError,
     openBookmark,
   } = useBookmarks();
-  const { getUserRole, user } = useAuth();
+  const { getUserRole, user, isAdmin: isAdminCheck } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   const userRole = getUserRole();
-  const isAdmin = userRole === 'admin';
+  // store.isAdmin()은 role==='admin' + roleInfo.isActive 까지 확인(비활성 역할 차단)
+  const isAdmin = isAdminCheck();
 
   const handleAdminClick = () => {
     navigate('/admin');

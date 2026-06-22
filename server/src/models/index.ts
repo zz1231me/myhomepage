@@ -14,6 +14,7 @@ import { SiteSettings } from './SiteSettings';
 import { RateLimitSettings } from './RateLimitSettings';
 import { SecurityLog } from './SecurityLog';
 import { PostLike } from './PostLike';
+import { CommentLike } from './CommentLike';
 import { Notification } from './Notification';
 import { PostBookmark } from './PostBookmark';
 import { PostRead } from './PostRead';
@@ -190,6 +191,28 @@ PostLike.belongsTo(Post, { foreignKey: 'PostId', as: 'post' });
 // User ↔ PostLike — User hard-delete 시 행위 기록도 함께 제거 (paranoid가 기본이지만 force-destroy 대비)
 User.hasMany(PostLike, { foreignKey: 'UserId', as: 'postLikes', onDelete: 'CASCADE', hooks: true });
 PostLike.belongsTo(User, { foreignKey: 'UserId', as: 'user' });
+
+// ========================================
+// CommentLike 관련 관계 (PostLike와 동일 패턴)
+// ========================================
+
+// Comment ↔ CommentLike — 댓글 hard-delete 시 좋아요 기록도 함께 제거
+Comment.hasMany(CommentLike, {
+  foreignKey: 'CommentId',
+  as: 'likes',
+  onDelete: 'CASCADE',
+  hooks: true,
+});
+CommentLike.belongsTo(Comment, { foreignKey: 'CommentId', as: 'comment' });
+
+// User ↔ CommentLike
+User.hasMany(CommentLike, {
+  foreignKey: 'UserId',
+  as: 'commentLikes',
+  onDelete: 'CASCADE',
+  hooks: true,
+});
+CommentLike.belongsTo(User, { foreignKey: 'UserId', as: 'user' });
 
 // ========================================
 // PostBookmark 관련 관계
@@ -375,6 +398,7 @@ export {
   RateLimitSettings,
   SecurityLog,
   PostLike,
+  CommentLike,
   Notification,
   PostBookmark,
   PostRead,

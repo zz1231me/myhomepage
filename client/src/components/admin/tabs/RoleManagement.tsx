@@ -30,8 +30,10 @@ export const RoleManagement = () => {
       await addRole(roleForm);
       setRoleForm({ id: '', name: '', description: '' });
       toast.success('역할이 추가되었습니다.');
-    } catch {
-      toast.error('역할 추가에 실패했습니다.');
+    } catch (err: unknown) {
+      // 서버 검증 메시지(ID 형식: 2~50자 영문/숫자/_/- 등)를 노출
+      const e = err as { response?: { data?: { message?: string } } };
+      toast.error(e.response?.data?.message ?? '역할 추가에 실패했습니다.');
     }
   };
 

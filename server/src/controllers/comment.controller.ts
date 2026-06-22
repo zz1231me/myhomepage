@@ -2,6 +2,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../types/auth-request';
 import { commentService } from '../services/comment.service';
+import { commentLikeService } from '../services/commentLike.service';
 import { notificationService } from '../services/notification.service';
 import {
   sendSuccess,
@@ -12,9 +13,18 @@ import {
 } from '../utils/response';
 import { logError } from '../utils/logger';
 import { getSettings } from '../utils/settingsCache';
-import { checkSecretPostAccess } from '../utils/postAccess';
+import { checkSecretPostAccess, SecretPostFields } from '../utils/postAccess';
 import { Post } from '../models/Post';
 import { Comment } from '../models/Comment';
+
+// 댓글 길이는 클라이언트(useCommentOperations.getTextLength)와 동일하게 태그·&nbsp; 제거 후
+// 텍스트 길이로 센다. raw HTML 길이로 세면 서식이 많은 댓글이 클라 카운터(950/1000)와 다르게
+// 서버에서 거부되는 불일치가 생긴다.
+const commentTextLength = (content: string): number =>
+  content
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .trim().length;
 
 // ✅ 댓글 작성
 export const createComment = async (
@@ -37,13 +47,13 @@ export const createComment = async (
       return;
     }
 
-    if (!content || content.trim().length === 0) {
+    if (!content || commentTextLength(content) === 0) {
       sendValidationError(res, 'content', '댓글 내용을 입력해주세요.');
       return;
     }
 
     const commentMaxLen = getSettings().commentContentMaxLength;
-    if (content.trim().length > commentMaxLen) {
+    if (commentTextLength(content) > commentMaxLen) {
       sendValidationError(res, 'content', `댓글은 ${commentMaxLen}자 이내로 작성해주세요.`);
       return;
     }
@@ -171,7 +181,7 @@ export const getCommentsByPost = async (
       }
     }
 
-    const comments = await commentService.getCommentsByPost(postId, sort);
+    const comments = await commentService.getCommentsByPost(postId, sort, userId);
     sendSuccess(res, comments, '댓글 목록 조회 성공');
   } catch (err) {
     next(err);
@@ -195,13 +205,13 @@ export const updateComment = async (
       return;
     }
 
-    if (!content || content.trim().length === 0) {
+    if (!content || commentTextLength(content) === 0) {
       sendValidationError(res, 'content', '댓글 내용을 입력해주세요.');
       return;
     }
 
     const commentMaxLen = getSettings().commentContentMaxLength;
-    if (content.trim().length > commentMaxLen) {
+    if (commentTextLength(content) > commentMaxLen) {
       sendValidationError(res, 'content', `댓글은 ${commentMaxLen}자 이내로 작성해주세요.`);
       return;
     }
@@ -278,6 +288,77 @@ export const deleteComment = async (
     await commentService.deleteComment(numericCommentId, userId, userRole || 'guest');
 
     sendSuccess(res, { deletedCommentId: numericCommentId }, '댓글이 삭제되었습니다.');
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ✅ 댓글 좋아요 토글
+export const likeComment = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { boardType, commentId } = req.params;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      sendUnauthorized(res, '로그인이 필요합니다.');
+      return;
+    }
+
+    const numericCommentId = parseInt(commentId, 10);
+    if (isNaN(numericCommentId)) {
+      sendValidationError(res, 'commentId', '잘못된 댓글 ID입니다.');
+      return;
+    }
+
+    // boardType 교차 검증 + 비밀글 보호 필드 함께 조회 (URL 조작/IDOR 차단)
+    const comment = await Comment.findByPk(numericCommentId, {
+      include: [
+        {
+          model: Post,
+          as: 'post',
+          attributes: ['boardType', 'UserId', 'isSecret', 'secretType', 'secretUserIds'],
+        },
+      ],
+    });
+    if (!comment) {
+      sendNotFound(res, '댓글');
+      return;
+    }
+    const post = (comment as Comment & { post?: SecretPostFields & { boardType: string } }).post;
+    if (!post || post.boardType !== boardType) {
+      sendNotFound(res, '댓글');
+      return;
+    }
+
+    // ✅ 비밀글 보호: 댓글 작성/조회와 동일하게, 게시판 읽기 권한만으론 부족하고
+    //    비밀글 접근 권한(작성자/허용 사용자/관리자)이 있어야 좋아요 가능
+    const access = checkSecretPostAccess(post, userId, req.user?.role);
+    if (!access.ok) {
+      sendForbidden(res, access.message);
+      return;
+    }
+
+    const result = await commentLikeService.toggleLike(numericCommentId, userId);
+
+    sendSuccess(res, result, result.liked ? '좋아요를 눌렀습니다.' : '좋아요를 취소했습니다.');
+
+    // 좋아요를 누른 경우(취소 제외) 댓글 작성자에게 알림 — 게시글 좋아요와 동일 패턴(fire-and-forget)
+    if (result.liked && comment.UserId && comment.UserId !== userId) {
+      const likerName = req.user?.name || '누군가';
+      notificationService
+        .create({
+          userId: comment.UserId,
+          type: 'LIKE',
+          message: `${likerName}님이 회원님의 댓글에 좋아요를 눌렀습니다.`,
+          link: `/dashboard/posts/${boardType}/${comment.PostId}`,
+          relatedId: String(comment.PostId),
+        })
+        .catch(notifErr => logError('댓글 좋아요 알림 생성 실패', notifErr));
+    }
   } catch (err) {
     next(err);
   }

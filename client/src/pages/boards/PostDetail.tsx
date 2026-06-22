@@ -31,6 +31,7 @@ import { ConfirmationModal } from '../../components/admin/common/ConfirmationMod
 import { markPostRead, togglePin } from '../../api/posts';
 import { getPostTags } from '../../api/tags';
 import { useAuth } from '../../store/auth';
+import { useSiteSettings } from '../../store/siteSettings';
 import { Tag } from '../../types/board.types';
 import { toast } from '../../utils/toast';
 
@@ -105,6 +106,9 @@ const PostDetail = () => {
 
   const { imageViewer, closeImageViewer } = useContentImageHandler();
   const { getUserRole } = useAuth();
+  // 페이지 타이틀에 쓸 사이트 정체성 — 하드코딩 'MyHome' 대신 관리자 설정값을 사용
+  const siteName = useSiteSettings(s => s.settings.siteName);
+  const siteTitle = useSiteSettings(s => s.settings.siteTitle);
   const userRole = getUserRole();
   const canPin = userRole === 'admin' || isBoardManager;
 
@@ -167,15 +171,15 @@ const PostDetail = () => {
     setMeta('og:description', plainContent);
     setMeta('og:type', 'article');
     setMeta('og:url', window.location.href);
-    document.title = `${post.title} | MyHome`;
+    document.title = `${post.title} | ${siteName}`;
 
     return () => {
-      document.title = 'MyHome';
+      document.title = siteTitle;
       ['og:title', 'og:description', 'og:type', 'og:url'].forEach(prop => {
         document.querySelector(`meta[property="${prop}"]`)?.removeAttribute('content');
       });
     };
-  }, [post, isLocked]);
+  }, [post, isLocked, siteName, siteTitle]);
 
   // ✅ 공통 컴포넌트 사용
   if (loading) return <PageSkeleton />;

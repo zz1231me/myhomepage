@@ -8,6 +8,7 @@ import {
   markAsRead,
   markAllAsRead,
   deleteNotification,
+  deleteAllNotifications,
 } from '../controllers/notification.controller';
 import { cacheMiddleware } from '../utils/cache';
 import { apiLimiter } from '../middlewares/rate-limit.middleware';
@@ -33,6 +34,10 @@ router.put(
 router.put(
   '/:id/read',
   asyncHandler((req, res) => markAsRead(req as AuthRequest, res))
+);
+router.delete(
+  '/',
+  asyncHandler((req, res) => deleteAllNotifications(req as AuthRequest, res))
 );
 router.delete(
   '/:id',

@@ -53,6 +53,10 @@ const WikiPageRoute = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [pagesLoadError, setPagesLoadError] = useState(false);
+  // 리비전 복원 — 복원할 내용(null이면 확인 모달 닫힘)
+  const [restoreContent, setRestoreContent] = useState<string | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
 
   const fetchPages = useCallback(async () => {
     try {
@@ -158,6 +162,32 @@ const WikiPageRoute = () => {
       setDeleteError(message);
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  // 특정 리비전 내용으로 복원 요청 → 확인 모달 표시
+  const handleRestore = (content: string) => {
+    setRestoreError(null);
+    setRestoreContent(content);
+  };
+
+  const confirmRestore = async () => {
+    if (!currentPage || restoreContent === null) return;
+    setIsRestoring(true);
+    try {
+      // 복원 = 해당 내용으로 현재 페이지 갱신(서버가 새 리비전으로 기록). 제목/구조는 유지.
+      const page = await updateWikiPage(currentPage.slug, {
+        title: currentPage.title,
+        content: restoreContent,
+      });
+      setCurrentPage(page);
+      await fetchPages();
+      setRestoreContent(null);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '복원에 실패했습니다.';
+      setRestoreError(message);
+    } finally {
+      setIsRestoring(false);
     }
   };
 
@@ -287,6 +317,7 @@ const WikiPageRoute = () => {
               setIsEditing(true);
               setIsCreating(false);
             }}
+            onRestore={canEdit ? handleRestore : undefined}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center text-slate-400 dark:text-slate-500">
@@ -408,6 +439,69 @@ const WikiPageRoute = () => {
                   <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 )}
                 {isDeleting ? '삭제 중...' : '삭제'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 리비전 복원 확인 모달 */}
+      {restoreContent !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-sm w-full p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center flex-shrink-0">
+                <svg
+                  className="w-5 h-5 text-amber-600 dark:text-amber-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                  />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                  이 버전으로 복원
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  현재 내용이 선택한 버전으로 바뀝니다(새 이력으로 기록).
+                </p>
+              </div>
+            </div>
+            <p className="text-sm text-slate-600 dark:text-slate-400 mb-2">
+              선택한 버전의 내용으로 복원하시겠습니까?
+            </p>
+            {restoreError && (
+              <p className="text-xs text-red-500 mb-4 p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                {restoreError}
+              </p>
+            )}
+            <div className="flex gap-3 justify-end mt-6">
+              <button
+                onClick={() => {
+                  setRestoreContent(null);
+                  setRestoreError(null);
+                }}
+                disabled={isRestoring}
+                className="px-4 py-2 text-sm font-medium bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-60 transition-colors"
+              >
+                취소
+              </button>
+              <button
+                onClick={confirmRestore}
+                disabled={isRestoring}
+                className="px-4 py-2 text-sm font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-60 transition-colors flex items-center gap-2"
+              >
+                {isRestoring && (
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                )}
+                {isRestoring ? '복원 중...' : '복원'}
               </button>
             </div>
           </div>
