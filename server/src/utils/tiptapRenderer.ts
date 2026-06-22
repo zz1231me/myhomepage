@@ -517,32 +517,3 @@ function extractText(nodes: TiptapNode[]): string {
 
   return result.replace(/\s+/g, ' ').trim();
 }
-
-// ✅ JSON 콘텐츠 유효성 검사
-export function validateTiptapJSON(json: string): { isValid: boolean; error?: string } {
-  try {
-    const parsed = JSON.parse(json);
-
-    if (!parsed || typeof parsed !== 'object') {
-      return { isValid: false, error: '유효하지 않은 JSON 객체입니다.' };
-    }
-
-    if (parsed.type !== 'doc') {
-      return { isValid: false, error: '문서 타입이 올바르지 않습니다.' };
-    }
-
-    if (parsed.content && !Array.isArray(parsed.content)) {
-      return { isValid: false, error: '콘텐츠가 배열 형태가 아닙니다.' };
-    }
-
-    return { isValid: true };
-  } catch (_error) {
-    return { isValid: false, error: 'JSON 파싱에 실패했습니다.' };
-  }
-}
-
-export default {
-  renderTiptapToHTML,
-  extractTextFromTiptap,
-  validateTiptapJSON,
-};

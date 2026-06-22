@@ -113,10 +113,3 @@ declare global {
     }
   }
 }
-
-export default {
-  checkBoardAccess,
-  checkReadAccess,
-  checkWriteAccess,
-  checkDeleteAccess,
-};
