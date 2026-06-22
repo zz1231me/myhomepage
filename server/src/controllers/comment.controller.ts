@@ -329,7 +329,22 @@ export const likeComment = async (
     }
 
     const result = await commentLikeService.toggleLike(numericCommentId, userId);
+
     sendSuccess(res, result, result.liked ? '좋아요를 눌렀습니다.' : '좋아요를 취소했습니다.');
+
+    // 좋아요를 누른 경우(취소 제외) 댓글 작성자에게 알림 — 게시글 좋아요와 동일 패턴(fire-and-forget)
+    if (result.liked && comment.UserId && comment.UserId !== userId) {
+      const likerName = req.user?.name || '누군가';
+      notificationService
+        .create({
+          userId: comment.UserId,
+          type: 'LIKE',
+          message: `${likerName}님이 회원님의 댓글에 좋아요를 눌렀습니다.`,
+          link: `/dashboard/posts/${boardType}/${comment.PostId}`,
+          relatedId: String(comment.PostId),
+        })
+        .catch(notifErr => logError('댓글 좋아요 알림 생성 실패', notifErr));
+    }
   } catch (err) {
     next(err);
   }
