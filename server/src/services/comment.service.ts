@@ -319,6 +319,12 @@ export class CommentService extends BaseService {
         throw new AppError(403, '삭제 권한이 없습니다.');
       }
 
+      // 좋아요 정리: Comment는 paranoid(소프트 삭제)라 comment.destroy()가 FK CASCADE를
+      // 발동시키지 않으므로, 남는 CommentLike 행을 같은 트랜잭션에서 명시적으로 제거한다.
+      // (소프트 삭제된 댓글은 좋아요 토글 불가(404)이고 표시 시 likeCount 0으로 마스킹되지만,
+      //  고아 행이 쌓이지 않도록 정리)
+      await CommentLike.destroy({ where: { CommentId: commentId }, transaction: t });
+
       // soft delete가 model에 설정되어 있으므로 destroy 호출
       await comment.destroy({ transaction: t });
     });

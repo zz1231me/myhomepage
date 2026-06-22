@@ -13,7 +13,7 @@ import {
 } from '../utils/response';
 import { logError } from '../utils/logger';
 import { getSettings } from '../utils/settingsCache';
-import { checkSecretPostAccess } from '../utils/postAccess';
+import { checkSecretPostAccess, SecretPostFields } from '../utils/postAccess';
 import { Post } from '../models/Post';
 import { Comment } from '../models/Comment';
 
@@ -314,17 +314,31 @@ export const likeComment = async (
       return;
     }
 
-    // boardType 교차 검증: 댓글이 올바른 게시판 소속인지 확인 (URL 조작 차단)
+    // boardType 교차 검증 + 비밀글 보호 필드 함께 조회 (URL 조작/IDOR 차단)
     const comment = await Comment.findByPk(numericCommentId, {
-      include: [{ model: Post, as: 'post', attributes: ['boardType'] }],
+      include: [
+        {
+          model: Post,
+          as: 'post',
+          attributes: ['boardType', 'UserId', 'isSecret', 'secretType', 'secretUserIds'],
+        },
+      ],
     });
     if (!comment) {
       sendNotFound(res, '댓글');
       return;
     }
-    const post = (comment as Comment & { post?: { boardType: string } }).post;
+    const post = (comment as Comment & { post?: SecretPostFields & { boardType: string } }).post;
     if (!post || post.boardType !== boardType) {
       sendNotFound(res, '댓글');
+      return;
+    }
+
+    // ✅ 비밀글 보호: 댓글 작성/조회와 동일하게, 게시판 읽기 권한만으론 부족하고
+    //    비밀글 접근 권한(작성자/허용 사용자/관리자)이 있어야 좋아요 가능
+    const access = checkSecretPostAccess(post, userId, req.user?.role);
+    if (!access.ok) {
+      sendForbidden(res, access.message);
       return;
     }
 

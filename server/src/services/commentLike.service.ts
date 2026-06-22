@@ -46,18 +46,6 @@ export class CommentLikeService extends BaseService {
       return { liked: !existing, likeCount };
     });
   }
-
-  /**
-   * 여러 댓글에 대해 현재 사용자가 좋아요한 댓글 id 집합 반환 (목록 조회 시 1쿼리로 일괄)
-   */
-  async getLikedCommentIds(commentIds: number[], userId: string): Promise<Set<number>> {
-    if (commentIds.length === 0) return new Set();
-    const rows = await CommentLike.findAll({
-      where: { CommentId: commentIds, UserId: userId },
-      attributes: ['CommentId'],
-    });
-    return new Set(rows.map(r => r.CommentId as number));
-  }
 }
 
 export const commentLikeService = new CommentLikeService();
