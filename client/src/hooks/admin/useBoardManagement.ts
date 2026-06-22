@@ -105,19 +105,32 @@ export const useBoardManagement = () => {
       const boardPerms = prev[boardId] || [];
       const existingIndex = boardPerms.findIndex(p => p.roleId === roleId);
       if (existingIndex >= 0) {
-        updatedPerms = boardPerms.map(p => (p.roleId === roleId ? { ...p, [type]: !p[type] } : p));
+        updatedPerms = boardPerms.map(p => {
+          if (p.roleId !== roleId) return p;
+          const next = { ...p, [type]: !p[type] };
+          // 읽기/쓰기/삭제 결합(서버 정규화와 일치): 읽기를 끄면 쓰기/삭제도 해제,
+          // 쓰기/삭제를 켜면 읽기 자동 부여. read 없는 write/delete는 실제로 무력화되기 때문.
+          if (type === 'canRead' && !next.canRead) {
+            next.canWrite = false;
+            next.canDelete = false;
+          } else if ((type === 'canWrite' || type === 'canDelete') && next[type]) {
+            next.canRead = true;
+          }
+          return next;
+        });
       } else {
         const role = roles.find(r => r.id === roleId);
         if (!role) {
           skipped = true;
           return prev;
         }
+        // 새 권한 행: 어떤 항목을 켜든 읽기는 전제이므로 canRead=true
         updatedPerms = [
           ...boardPerms,
           {
             roleId,
             roleName: role.name,
-            canRead: type === 'canRead',
+            canRead: true,
             canWrite: type === 'canWrite',
             canDelete: type === 'canDelete',
           },
