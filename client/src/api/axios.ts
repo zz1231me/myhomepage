@@ -9,9 +9,19 @@ const REDIRECT_FORBIDDEN = '/forbidden';
 const AUTH_ENDPOINTS = ['/auth/me', '/auth/refresh'];
 
 // 세션 만료(토큰 갱신 실패/401)로 로그인 페이지로 강제 이동.
-// 로그인 상태였던 경우에만 만료 안내 플래그를 남겨, 비로그인 방문자에게 "세션 만료" 오인을 막는다.
+// "로그인 상태였는지"를 zustand store의 user로 판단하면 안 된다 — store는 매 페이지 로드 시
+// 비어 있고 /auth/me 성공 후에야 채워지므로, 콜드 리로드 직후(만료가 가장 흔히 감지되는 시점)엔
+// user가 아직 null이라 안내 토스트를 놓친다. 대신 로그인 시 저장되고 clearUser 시 제거되는
+// localStorage 'tokenInfo' 존재로 판단한다(리로드에도 유지). 비로그인 방문자는 값이 없어 오인 없음.
+const hadSession = (): boolean => {
+  try {
+    return localStorage.getItem('tokenInfo') !== null;
+  } catch {
+    return false;
+  }
+};
 const redirectToLogin = (): void => {
-  if (useAuth.getState().user) flagSessionExpired();
+  if (hadSession()) flagSessionExpired();
   window.location.href = REDIRECT_LOGIN;
 };
 
