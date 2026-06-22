@@ -177,6 +177,9 @@ export class BoardService extends BaseService {
         await PostTag.destroy({ where: childWhere, transaction: t });
       }
       await Post.destroy({ where: { boardType: boardId }, transaction: t, force: true });
+      // 게시판 권한(BoardAccess)도 명시적으로 정리 — onDelete:CASCADE는 constraints:false +
+      // SQLite FK 미강제라 보장되지 않는다. 안 지우면 같은 id로 게시판 재생성 시 옛 권한이 되살아남.
+      await BoardAccess.destroy({ where: { boardId }, transaction: t });
       await board.destroy({ transaction: t });
     });
 
