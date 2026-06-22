@@ -8,7 +8,7 @@ interface Props {
 }
 
 const RoleProtectedRoute = ({ children, allowedRoles }: Props) => {
-  const { isAuthenticated, isLoading, getUserRole } = useAuth();
+  const { isAuthenticated, isLoading, getUserRole, getUser } = useAuth();
 
   if (isLoading) {
     return (
@@ -29,8 +29,10 @@ const RoleProtectedRoute = ({ children, allowedRoles }: Props) => {
   }
 
   const userRole = getUserRole();
+  // 비활성화된 역할(roleInfo.isActive === false)은 권한이 정지된 것으로 간주 — 가드 차단
+  const roleActive = getUser()?.roleInfo?.isActive !== false;
 
-  if (!userRole || !allowedRoles.includes(userRole)) {
+  if (!userRole || !allowedRoles.includes(userRole) || !roleActive) {
     if (import.meta.env.DEV) {
       console.warn(
         `❌ [RoleProtectedRoute] 권한 부족: 필요 역할 [${allowedRoles.join(', ')}], 현재 역할: ${userRole || 'none'}`
