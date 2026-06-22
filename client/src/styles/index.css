@@ -31,17 +31,17 @@
   --color-primary-900: #312e81;
   --color-primary-950: #1e1b4b;
 
-  /* ── Secondary: Violet ── */
-  --color-secondary-50: #faf5ff;
-  --color-secondary-100: #f3e8ff;
-  --color-secondary-200: #e9d5ff;
-  --color-secondary-300: #d8b4fe;
-  --color-secondary-400: #c084fc;
-  --color-secondary-500: #a855f7;
-  --color-secondary-600: #9333ea;
-  --color-secondary-700: #7e22ce;
-  --color-secondary-800: #6b21a8;
-  --color-secondary-900: #581c87;
+  /* ── Secondary / Accent: Teal (indigo 보색 계열 액센트 — 단조로움 해소) ── */
+  --color-secondary-50: #f0fdfa;
+  --color-secondary-100: #ccfbf1;
+  --color-secondary-200: #99f6e4;
+  --color-secondary-300: #5eead4;
+  --color-secondary-400: #2dd4bf;
+  --color-secondary-500: #14b8a6;
+  --color-secondary-600: #0d9488;
+  --color-secondary-700: #0f766e;
+  --color-secondary-800: #115e59;
+  --color-secondary-900: #134e4a;
 
   /* ── Neutral: Slate ── */
   --color-neutral-50: #f8fafc;
@@ -56,6 +56,32 @@
   --color-neutral-850: #172032;
   --color-neutral-900: #0f172a;
   --color-neutral-950: #020617;
+
+  /* ── Semantic ramps (역할별 1색으로 통일) ── */
+  /* success: emerald */
+  --color-success-50: #ecfdf5;
+  --color-success-100: #d1fae5;
+  --color-success-500: #10b981;
+  --color-success-600: #059669;
+  --color-success-700: #047857;
+  /* warning: amber */
+  --color-warning-50: #fffbeb;
+  --color-warning-100: #fef3c7;
+  --color-warning-500: #f59e0b;
+  --color-warning-600: #d97706;
+  --color-warning-700: #b45309;
+  /* info: sky */
+  --color-info-50: #f0f9ff;
+  --color-info-100: #e0f2fe;
+  --color-info-500: #0ea5e9;
+  --color-info-600: #0284c7;
+  --color-info-700: #0369a1;
+  /* danger: red (기존 다수 사용과 정합) */
+  --color-danger-50: #fef2f2;
+  --color-danger-100: #fee2e2;
+  --color-danger-500: #ef4444;
+  --color-danger-600: #dc2626;
+  --color-danger-700: #b91c1c;
 
   /* ── Font families ── */
   --font-sans:
@@ -331,11 +357,15 @@ body {
   .btn-danger {
     @apply inline-flex items-center justify-center gap-2
            px-5 py-2.5
-           bg-red-600 hover:bg-red-700 active:bg-red-800
-           text-white text-sm font-semibold
+           bg-red-50 dark:bg-red-900/30
+           border border-red-200 dark:border-red-800/60
+           text-red-600 dark:text-red-400 text-sm font-semibold
            rounded-lg shadow-sm
-           transition-all duration-150
+           hover:bg-red-100 dark:hover:bg-red-900/50
+           hover:border-red-300 dark:hover:border-red-700
+           active:bg-red-200 dark:active:bg-red-900/60
            active:scale-[0.98]
+           transition-all duration-150
            disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100;
   }
 

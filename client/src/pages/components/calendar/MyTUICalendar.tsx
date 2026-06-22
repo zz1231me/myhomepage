@@ -254,7 +254,7 @@ const MyTUICalendar: React.FC = () => {
                       shadow-sm overflow-hidden relative"
       >
         {/* 상단 accent 라인 */}
-        <div className="h-[3px] bg-gradient-to-r from-primary-500 via-primary-600 to-violet-600 flex-shrink-0" />
+        <div className="h-[3px] bg-gradient-to-r from-primary-500 via-primary-600 to-secondary-600 flex-shrink-0" />
 
         {/* 헤더 */}
         <CalendarHeader

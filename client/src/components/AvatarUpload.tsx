@@ -269,14 +269,14 @@ export const AvatarUpload: React.FC<AvatarUploadProps> = ({
 
           {/* 로딩 오버레이 */}
           {isLoading && (
-            <div className="absolute inset-0 bg-black bg-opacity-50 rounded-xl flex items-center justify-center">
+            <div className="absolute inset-0 bg-black bg-opacity-50 rounded-[2px] flex items-center justify-center">
               <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
             </div>
           )}
 
           {/* 호버 오버레이 */}
           {!isLoading && (
-            <div className="absolute inset-0 bg-black bg-opacity-50 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black bg-opacity-50 rounded-[2px] opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
               <div className="text-white text-sm font-medium text-center">
                 📸
                 <br />
@@ -287,7 +287,7 @@ export const AvatarUpload: React.FC<AvatarUploadProps> = ({
 
           {/* 드래그 활성 오버레이 */}
           {dragActive && !isLoading && (
-            <div className="absolute inset-0 bg-blue-500 bg-opacity-30 rounded-xl flex items-center justify-center">
+            <div className="absolute inset-0 bg-blue-500 bg-opacity-30 rounded-[2px] flex items-center justify-center">
               <div className="text-white text-sm font-medium text-center">
                 📥
                 <br />
@@ -306,13 +306,13 @@ export const AvatarUpload: React.FC<AvatarUploadProps> = ({
       )}
 
       {/* 액션 버튼들 */}
-      <div className="flex space-x-2">
+      <div className="flex flex-wrap justify-center gap-2">
         <button
           onClick={handleUploadClick}
           disabled={isLoading}
           className="
-            px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 
-            rounded-lg hover:bg-blue-100 focus:outline-none focus:ring-2 
+            px-4 py-2 text-sm font-medium whitespace-nowrap text-blue-600 bg-blue-50
+            rounded-lg hover:bg-blue-100 focus:outline-none focus:ring-2
             focus:ring-blue-500 focus:ring-opacity-50 transition-colors
             disabled:opacity-50 disabled:cursor-not-allowed
             dark:text-blue-400 dark:bg-blue-900 dark:hover:bg-blue-800
@@ -326,7 +326,7 @@ export const AvatarUpload: React.FC<AvatarUploadProps> = ({
           disabled={isLoading || isGenerating}
           title="사진 없이 랜덤 그래픽 아바타를 생성합니다"
           className="
-            px-4 py-2 text-sm font-medium text-violet-600 bg-violet-50
+            px-4 py-2 text-sm font-medium whitespace-nowrap text-violet-600 bg-violet-50
             rounded-lg hover:bg-violet-100 focus:outline-none focus:ring-2
             focus:ring-violet-500 focus:ring-opacity-50 transition-colors
             disabled:opacity-50 disabled:cursor-not-allowed
@@ -341,8 +341,8 @@ export const AvatarUpload: React.FC<AvatarUploadProps> = ({
             onClick={requestDeleteAvatar}
             disabled={isLoading}
             className="
-              px-4 py-2 text-sm font-medium text-red-600 bg-red-50 
-              rounded-lg hover:bg-red-100 focus:outline-none focus:ring-2 
+              px-4 py-2 text-sm font-medium whitespace-nowrap text-red-600 bg-red-50
+              rounded-lg hover:bg-red-100 focus:outline-none focus:ring-2
               focus:ring-red-500 focus:ring-opacity-50 transition-colors
               disabled:opacity-50 disabled:cursor-not-allowed
               dark:text-red-400 dark:bg-red-900 dark:hover:bg-red-800
@@ -358,7 +358,7 @@ export const AvatarUpload: React.FC<AvatarUploadProps> = ({
             onClick={forceRefresh}
             disabled={isLoading}
             className="
-            px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100
+            px-3 py-2 text-sm font-medium whitespace-nowrap text-slate-600 bg-slate-100
             rounded-lg hover:bg-slate-200 focus:outline-none focus:ring-2
             focus:ring-slate-500 focus:ring-opacity-50 transition-colors
             disabled:opacity-50 disabled:cursor-not-allowed

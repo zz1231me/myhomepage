@@ -183,7 +183,7 @@ const BoardManagerManagement = () => {
                         className="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400 font-semibold text-sm">
+                          <div className="w-8 h-8 rounded-[2px] bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400 font-semibold text-sm">
                             {record.user?.name?.[0] ?? '?'}
                           </div>
                           <div>

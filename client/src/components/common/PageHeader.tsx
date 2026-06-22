@@ -26,12 +26,12 @@ export const PageHeader = React.memo(
               {breadcrumbs.map((bc, idx) => {
                 const isLast = idx === breadcrumbs.length - 1;
                 return (
-                  <li key={`${bc.label}-${idx}`} className="flex items-center gap-1.5">
+                  <li key={`${bc.label}-${idx}`} className="flex items-center gap-1.5 min-w-0">
                     {idx > 0 && (
                       <svg
                         aria-hidden="true"
                         focusable="false"
-                        className="w-3 h-3 text-slate-300 dark:text-slate-600"
+                        className="w-3 h-3 text-slate-300 dark:text-slate-600 flex-shrink-0"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -47,14 +47,14 @@ export const PageHeader = React.memo(
                     {!isLast && bc.to ? (
                       <Link
                         to={bc.to}
-                        className="hover:text-primary-600 dark:hover:text-primary-400 hover:underline transition-colors"
+                        className="min-w-0 truncate hover:text-primary-600 dark:hover:text-primary-400 hover:underline transition-colors"
                       >
                         {bc.label}
                       </Link>
                     ) : (
                       <span
                         aria-current={isLast ? 'page' : undefined}
-                        className={isLast ? 'text-slate-700 dark:text-slate-300 font-medium' : ''}
+                        className={`min-w-0 truncate ${isLast ? 'text-slate-700 dark:text-slate-300 font-medium' : ''}`}
                       >
                         {bc.label}
                       </span>
