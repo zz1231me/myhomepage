@@ -163,9 +163,14 @@ export const authenticate = async (
 
     // 강제 비밀번호 변경(관리자 초기화 후): 임시 비번으로 로그인한 사용자는 비밀번호 변경/세션
     // 관련 엔드포인트(/api/auth/*) 외 모든 요청을 차단한다. 클라이언트 강제 이동의 서버측 방어선.
-    if (cachedUser.mustChangePassword && !req.originalUrl.includes('/api/auth/')) {
-      sendForbidden(res, '비밀번호를 먼저 변경해야 합니다.');
-      return;
+    // ⚠️ 반드시 쿼리스트링을 제거한 '경로'로 검사한다. originalUrl 전체에 includes()를 쓰면
+    //    `/api/notifications?x=/api/auth/` 같이 쿼리에 문자열을 심어 게이트를 우회할 수 있다.
+    if (cachedUser.mustChangePassword) {
+      const pathOnly = req.originalUrl.split('?')[0];
+      if (!pathOnly.startsWith('/api/auth/')) {
+        sendForbidden(res, '비밀번호를 먼저 변경해야 합니다.');
+        return;
+      }
     }
 
     (req as AuthRequest).user = {
