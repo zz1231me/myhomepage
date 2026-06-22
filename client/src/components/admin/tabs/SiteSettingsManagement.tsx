@@ -351,6 +351,7 @@ const DEFAULT_SETTINGS: SiteSettings = {
   defaultPageSize: 10,
   securityLogRetentionDays: 90,
   errorLogRetentionDays: 30,
+  deletedPostRetentionDays: 7,
   jwtAccessTokenHours: 2,
   jwtRefreshTokenDays: 3,
   postTitleMaxLength: 200,
@@ -917,6 +918,15 @@ export const SiteSettingsManagement = () => {
                 max={365}
                 value={settings.errorLogRetentionDays}
                 onChange={v => set('errorLogRetentionDays', v)}
+                unit="일"
+              />
+              <NumberInput
+                label="삭제 게시글 보관 기간"
+                description="삭제(숨김)된 게시글을 DB에서 영구 삭제하기까지의 기간"
+                min={1}
+                max={365}
+                value={settings.deletedPostRetentionDays}
+                onChange={v => set('deletedPostRetentionDays', v)}
                 unit="일"
               />
             </div>

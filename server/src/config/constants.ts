@@ -42,10 +42,6 @@ export const RESERVED_BOARD_IDS = [
 export const DEFAULT_PAGE_SIZE = 10;
 export const MAX_PAGE_SIZE = 100;
 
-// 삭제된 게시글 보관 기간 — soft-delete(deletedAt 기록, 숨김) 후 이 기간이 지나면
-// 주기 작업(runLogCleanup)이 DB에서 영구 삭제(첨부파일 포함)한다.
-export const DELETED_POST_RETENTION_DAYS = 7;
-
 export const PAGINATION = {
   DEFAULT_PAGE: 1,
   DEFAULT_LIMIT: DEFAULT_PAGE_SIZE,

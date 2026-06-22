@@ -91,7 +91,6 @@ import { auditLogService } from './services/auditLog.service';
 import { userSessionService } from './services/userSession.service';
 import { getIpRuleCache } from './services/ipRule.service';
 import { postService } from './services/post.service';
-import { DELETED_POST_RETENTION_DAYS } from './config/constants';
 import { loadSettingsCache, getSettings } from './utils/settingsCache';
 
 /**
@@ -101,7 +100,8 @@ import { loadSettingsCache, getSettings } from './utils/settingsCache';
  */
 async function runLogCleanup(): Promise<void> {
   try {
-    const { securityLogRetentionDays, errorLogRetentionDays } = getSettings();
+    const { securityLogRetentionDays, errorLogRetentionDays, deletedPostRetentionDays } =
+      getSettings();
 
     const [secDeleted, errDeleted, loginDeleted, auditDeleted, sessionDeleted, postsPurged] =
       await Promise.all([
@@ -110,8 +110,8 @@ async function runLogCleanup(): Promise<void> {
         loginHistoryService.deleteOldRecords(90),
         auditLogService.deleteOldLogs(365),
         userSessionService.cleanExpiredSessions(),
-        // 삭제된 게시글: soft-delete 후 보관 기간(기본 7일)이 지나면 DB에서 영구 삭제
-        postService.purgeExpiredPosts(DELETED_POST_RETENTION_DAYS),
+        // 삭제된 게시글: soft-delete 후 보관 기간(관리자 설정값)이 지나면 DB에서 영구 삭제
+        postService.purgeExpiredPosts(deletedPostRetentionDays),
       ]);
 
     if (
