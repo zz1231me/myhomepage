@@ -15,13 +15,14 @@ interface AvatarProps {
   showTooltip?: boolean;
 }
 
+// 크기는 기존보다 살짝(+2px) 키운 값. Tailwind 4px 스텝으로는 미세 증가가 안 되어 arbitrary px 사용.
 const sizeClasses = {
-  xs: 'w-7 h-7 text-xs',
-  sm: 'w-10 h-10 text-xs',
-  md: 'w-12 h-12 text-sm',
-  lg: 'w-14 h-14 text-base',
-  xl: 'w-16 h-16 text-lg',
-  '2xl': 'w-20 h-20 text-xl',
+  xs: 'w-[30px] h-[30px] text-xs',
+  sm: 'w-[42px] h-[42px] text-xs',
+  md: 'w-[50px] h-[50px] text-sm',
+  lg: 'w-[58px] h-[58px] text-base',
+  xl: 'w-[66px] h-[66px] text-lg',
+  '2xl': 'w-[82px] h-[82px] text-xl',
 };
 
 const variantClasses = {
@@ -144,8 +145,9 @@ export const Avatar: React.FC<AvatarProps> = React.memo(
     const baseClasses = React.useMemo(
       () => `
     ${sizeClasses[size]}
-    rounded-lg
-    flex 
+    rounded-[2px]
+    ring-1 ring-black/5 dark:ring-white/10
+    flex
     items-center 
     justify-center 
     font-semibold 
@@ -186,7 +188,7 @@ export const Avatar: React.FC<AvatarProps> = React.memo(
           title={showTooltip ? user.name : undefined}
         >
           {!imageLoaded && !imageError && (
-            <div className="absolute inset-0 bg-slate-200 dark:bg-slate-700 rounded-lg flex items-center justify-center">
+            <div className="absolute inset-0 bg-slate-200 dark:bg-slate-700 rounded-[2px] flex items-center justify-center">
               <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div>
             </div>
           )}
