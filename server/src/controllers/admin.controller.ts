@@ -520,6 +520,17 @@ export const getBoardAccessPermissions = async (req: Request, res: Response): Pr
   }
 };
 
+// 전체 게시판 권한 일괄 조회 (관리자 권한 화면 — 보드별 N요청 대신 1요청)
+export const getAllBoardAccessPermissions = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const permissions = await roleService.getAllBoardAccessPermissions();
+    sendSuccess(res, permissions);
+  } catch (error) {
+    logError('전체 권한 조회 실패', error);
+    sendError(res, 500, '권한 조회 실패');
+  }
+};
+
 export const setBoardAccessPermissions = async (req: Request, res: Response): Promise<void> => {
   try {
     const { boardId } = req.params;

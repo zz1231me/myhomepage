@@ -130,6 +130,25 @@ export class RoleService extends BaseService {
     }
   }
 
+  // 전체 게시판 권한을 한 번에 조회 — 관리자 권한 화면이 보드별 N개 요청 대신 1요청으로 받도록
+  // (보드별 fan-out이 adminLimiter에 걸려 일부 보드가 빈 상태로 로드되던 문제 예방).
+  // 단일 조회와 동일한 행 shape(BoardAccess + role)를 반환하고, 클라가 boardId로 그룹핑한다.
+  async getAllBoardAccessPermissions() {
+    try {
+      return await BoardAccess.findAll({
+        include: [
+          {
+            model: Role,
+            as: 'role',
+            attributes: ['id', 'name'],
+          },
+        ],
+      });
+    } catch (_error) {
+      throw new AppError(500, '권한 조회 실패');
+    }
+  }
+
   async setBoardAccessPermissions(
     boardId: string,
     permissions: Array<{
@@ -166,11 +185,16 @@ export class RoleService extends BaseService {
           if (invalid) {
             throw new AppError(400, `역할 '${invalid}'을(를) 찾을 수 없습니다.`);
           }
-        }
 
-        await BoardAccess.destroy({ where: { boardId }, transaction: t });
+          // ⚠️ 전달된 역할의 권한만 교체하고, payload에 없는 역할의 권한은 보존한다.
+          //    예전엔 보드의 모든 BoardAccess를 destroy 후 재생성해서, 관리자 UI가 권한 로드
+          //    실패(429/네트워크) 등으로 부분 매트릭스를 보내면 다른 역할 권한이 통째로 사라졌다
+          //    ("권한을 줘도 새로고침하면 안 들어가는" 버그). 전달된 roleId만 scoped destroy.
+          await BoardAccess.destroy({
+            where: { boardId, roleId: { [Op.in]: roleIds } },
+            transaction: t,
+          });
 
-        if (permissions.length > 0) {
           await BoardAccess.bulkCreate(
             permissions.map(perm => {
               const canWrite = perm.canWrite ?? false;
