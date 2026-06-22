@@ -142,6 +142,15 @@ function Login() {
       <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-violet-400/10 dark:bg-violet-600/8 rounded-full blur-3xl pointer-events-none" />
 
       <div className="w-full max-w-[400px] relative">
+        {/* 관리자 설정 로그인 안내 메시지 (설정에 값이 있을 때만 표시) */}
+        {settings.loginMessage?.trim() && (
+          <div className="mb-4 p-4 bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800/60 rounded-xl animate-slideInDown">
+            <p className="text-sm text-sky-800 dark:text-sky-300 whitespace-pre-line leading-relaxed">
+              {settings.loginMessage}
+            </p>
+          </div>
+        )}
+
         {/* 관리자 승인 대기 안내 (회원가입 직후 requireApproval=true 인 경우) */}
         {showApprovalInfo && (
           <div className="mb-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/60 rounded-xl animate-slideInDown">

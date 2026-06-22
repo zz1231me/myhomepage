@@ -15,10 +15,12 @@ import { getSiteSettings } from './api/siteSettings';
 import { useSiteSettings } from './store/siteSettings';
 import { useAuth } from './store/auth';
 import { logger } from './utils/logger';
+import { cacheSiteIdentity } from './utils/siteIdentityCache';
 import { toast } from './utils/toast';
 import { consumeSessionExpired } from './utils/sessionExpiry';
 import { LoadingSpinner } from './components/admin/common/LoadingSpinner';
 import { NotificationToast } from './components/common/NotificationToast';
+import { MaintenanceGate } from './components/MaintenanceGate';
 
 // 🚀 Lazy Loading applied to all page components
 const Login = lazy(() => import('./pages/Login'));
@@ -82,6 +84,10 @@ function App() {
         link.href = settings.faviconUrl;
       }
 
+      // 다음 새로고침 때 깜빡임 없이 즉시 적용되도록 캐시 — index.html의 인라인 스크립트가
+      // 첫 페인트 전에 이 값을 읽어 적용한다.
+      cacheSiteIdentity(settings.siteTitle, settings.faviconUrl);
+
       // 메타 설명 업데이트
       if (settings.description) {
         let meta = document.querySelector("meta[name='description']") as HTMLMetaElement;
@@ -108,116 +114,119 @@ function App() {
     <ErrorBoundary>
       <BrowserRouter>
         <NotificationToast />
-        {/* 🚀 Suspense로 로딩 중 상태 처리 */}
-        <Suspense
-          fallback={
-            <div className="flex h-screen w-full items-center justify-center bg-slate-50 dark:bg-slate-900">
-              <LoadingSpinner message="페이지 로딩 중..." />
-            </div>
-          }
-        >
-          <Routes>
-            {/* ✅ 공개 라우트 */}
-            <Route path="/" element={<Login />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/login/2fa" element={<LoginTwoFactor />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
+        {/* 점검 모드 게이트 — 점검 ON 시 비관리자에게 안내 페이지 표시(관리자는 우회) */}
+        <MaintenanceGate>
+          {/* 🚀 Suspense로 로딩 중 상태 처리 */}
+          <Suspense
+            fallback={
+              <div className="flex h-screen w-full items-center justify-center bg-slate-50 dark:bg-slate-900">
+                <LoadingSpinner message="페이지 로딩 중..." />
+              </div>
+            }
+          >
+            <Routes>
+              {/* ✅ 공개 라우트 */}
+              <Route path="/" element={<Login />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/login/2fa" element={<LoginTwoFactor />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
 
-            {/* ✅ 프로필 페이지 - 독립적인 보호된 라우트 */}
-            <Route
-              path="/profile"
-              element={
-                <ProtectedRoute>
-                  <Profile />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* ✅ 권한 없음 안내 페이지 - 인증된 사용자만 접근 가능 */}
-            <Route
-              path="/unauthorized"
-              element={
-                <ProtectedRoute>
-                  <Unauthorized />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* ✅ 접근 금지 페이지 - IP 차단 등 */}
-            <Route path="/forbidden" element={<Forbidden />} />
-
-            {/* ✅ 보호된 경로: 대시보드 및 하위 페이지들 */}
-            <Route
-              path="/dashboard"
-              element={
-                <ProtectedRoute>
-                  <Dashboard />
-                </ProtectedRoute>
-              }
-            >
-              {/* ✅ 기본 대시보드 경로 - 캘린더로 리다이렉트 */}
-              <Route index element={<Navigate to="calendar" replace />} />
-
-              {/* 주요 화면 라우팅 */}
-              <Route path="calendar" element={<MyTUICalendar />} />
-              <Route path="memos" element={<MemoBoard />} />
-              <Route path="wiki" element={<WikiPageRoute />} />
-              <Route path="wiki/:slug" element={<WikiPageRoute />} />
-
-              {/* ✅ 게시글 관련 - 권한 보호됨 */}
+              {/* ✅ 프로필 페이지 - 독립적인 보호된 라우트 */}
               <Route
-                path="posts/:boardType/new"
+                path="/profile"
                 element={
-                  <BoardProtectedRoute action="write">
-                    <PostEditor mode="create" />
-                  </BoardProtectedRoute>
+                  <ProtectedRoute>
+                    <Profile />
+                  </ProtectedRoute>
                 }
               />
 
+              {/* ✅ 권한 없음 안내 페이지 - 인증된 사용자만 접근 가능 */}
               <Route
-                path="posts/:boardType/edit/:id"
+                path="/unauthorized"
                 element={
-                  <BoardProtectedRoute action="write">
-                    <PostEditor mode="edit" />
-                  </BoardProtectedRoute>
+                  <ProtectedRoute>
+                    <Unauthorized />
+                  </ProtectedRoute>
                 }
               />
 
+              {/* ✅ 접근 금지 페이지 - IP 차단 등 */}
+              <Route path="/forbidden" element={<Forbidden />} />
+
+              {/* ✅ 보호된 경로: 대시보드 및 하위 페이지들 */}
               <Route
-                path="posts/:boardType/:id"
+                path="/dashboard"
                 element={
-                  <BoardProtectedRoute action="read">
-                    <PostDetail />
-                  </BoardProtectedRoute>
+                  <ProtectedRoute>
+                    <Dashboard />
+                  </ProtectedRoute>
+                }
+              >
+                {/* ✅ 기본 대시보드 경로 - 캘린더로 리다이렉트 */}
+                <Route index element={<Navigate to="calendar" replace />} />
+
+                {/* 주요 화면 라우팅 */}
+                <Route path="calendar" element={<MyTUICalendar />} />
+                <Route path="memos" element={<MemoBoard />} />
+                <Route path="wiki" element={<WikiPageRoute />} />
+                <Route path="wiki/:slug" element={<WikiPageRoute />} />
+
+                {/* ✅ 게시글 관련 - 권한 보호됨 */}
+                <Route
+                  path="posts/:boardType/new"
+                  element={
+                    <BoardProtectedRoute action="write">
+                      <PostEditor mode="create" />
+                    </BoardProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="posts/:boardType/edit/:id"
+                  element={
+                    <BoardProtectedRoute action="write">
+                      <PostEditor mode="edit" />
+                    </BoardProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="posts/:boardType/:id"
+                  element={
+                    <BoardProtectedRoute action="read">
+                      <PostDetail />
+                    </BoardProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="posts/:boardType"
+                  element={
+                    <BoardProtectedRoute action="read">
+                      <PostList />
+                    </BoardProtectedRoute>
+                  }
+                />
+              </Route>
+
+              {/* ✅ 관리자 전용 라우트 - 별도 독립 페이지 (/admin) */}
+              <Route
+                path="/admin/*"
+                element={
+                  <RoleProtectedRoute allowedRoles={['admin']}>
+                    <AdminUserPage />
+                  </RoleProtectedRoute>
                 }
               />
 
-              <Route
-                path="posts/:boardType"
-                element={
-                  <BoardProtectedRoute action="read">
-                    <PostList />
-                  </BoardProtectedRoute>
-                }
-              />
-            </Route>
-
-            {/* ✅ 관리자 전용 라우트 - 별도 독립 페이지 (/admin) */}
-            <Route
-              path="/admin/*"
-              element={
-                <RoleProtectedRoute allowedRoles={['admin']}>
-                  <AdminUserPage />
-                </RoleProtectedRoute>
-              }
-            />
-
-            {/* ✅ 404 페이지 - 가장 마지막에 배치 */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Suspense>
+              {/* ✅ 404 페이지 - 가장 마지막에 배치 */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Suspense>
+        </MaintenanceGate>
       </BrowserRouter>
     </ErrorBoundary>
   );

@@ -232,7 +232,7 @@ function ForgotPassword() {
 
         <div className="mt-6 text-center">
           <p className="text-xs text-slate-400 dark:text-slate-500">
-            © 2025 {settings.siteName}. All rights reserved.
+            © {new Date().getFullYear()} {settings.siteName}. All rights reserved.
           </p>
         </div>
       </div>
