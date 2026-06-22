@@ -1069,18 +1069,25 @@ export class PostService extends BaseService {
     });
     if (expired.length === 0) return 0;
 
-    const postIds = expired.map(p => p.id);
+    const allIds = expired.map(p => p.id);
 
-    // 게시글 + 자식을 한 트랜잭션에서 hard-delete (force:true는 soft-deleted 행도 실제 삭제)
-    await sequelize.transaction(async t => {
-      const childWhere = { PostId: { [Op.in]: postIds } };
-      await Comment.destroy({ where: childWhere, transaction: t, force: true });
-      await PostLike.destroy({ where: childWhere, transaction: t });
-      await PostRead.destroy({ where: childWhere, transaction: t });
-      await PostBookmark.destroy({ where: childWhere, transaction: t });
-      await PostTag.destroy({ where: childWhere, transaction: t });
-      await Post.destroy({ where: { id: { [Op.in]: postIds } }, transaction: t, force: true });
-    });
+    // 배치 처리: 한 번에 IN(...)에 넣는 id 수를 제한한다. SQLite는 SQL 변수 상한(기본 999)이
+    // 있어, 만료 글이 많으면(최초 배포 후 백로그 등) 단일 IN 절이 실패할 수 있다. 또한 거대한
+    // 단일 트랜잭션으로 DB가 오래 잠기는 것도 방지하기 위해 청크별 트랜잭션으로 나눈다.
+    const BATCH = 500;
+    for (let i = 0; i < allIds.length; i += BATCH) {
+      const postIds = allIds.slice(i, i + BATCH);
+      // 게시글 + 자식을 한 트랜잭션에서 hard-delete (force:true는 soft-deleted 행도 실제 삭제)
+      await sequelize.transaction(async t => {
+        const childWhere = { PostId: { [Op.in]: postIds } };
+        await Comment.destroy({ where: childWhere, transaction: t, force: true });
+        await PostLike.destroy({ where: childWhere, transaction: t });
+        await PostRead.destroy({ where: childWhere, transaction: t });
+        await PostBookmark.destroy({ where: childWhere, transaction: t });
+        await PostTag.destroy({ where: childWhere, transaction: t });
+        await Post.destroy({ where: { id: { [Op.in]: postIds } }, transaction: t, force: true });
+      });
+    }
 
     // 첨부파일 정리 — deletePost에서 이미 삭제됐지만, 다른 경로로 soft-delete된 경우까지
     // 방어적으로 처리(deleteFileIfExists는 파일이 없으면 무시).
