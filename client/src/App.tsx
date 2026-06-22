@@ -15,6 +15,8 @@ import { getSiteSettings } from './api/siteSettings';
 import { useSiteSettings } from './store/siteSettings';
 import { useAuth } from './store/auth';
 import { logger } from './utils/logger';
+import { toast } from './utils/toast';
+import { consumeSessionExpired } from './utils/sessionExpiry';
 import { LoadingSpinner } from './components/admin/common/LoadingSpinner';
 import { NotificationToast } from './components/common/NotificationToast';
 
@@ -51,6 +53,13 @@ function App() {
     window.addEventListener('storage', handleStorage);
     return () => window.removeEventListener('storage', handleStorage);
   }, [clearUser]);
+
+  // ✅ 세션 만료로 강제 로그아웃된 경우(하드 리다이렉트 직후) 1회성 안내 토스트
+  useEffect(() => {
+    if (consumeSessionExpired()) {
+      toast.warning('세션이 만료되어 로그아웃되었습니다. 다시 로그인해 주세요.');
+    }
+  }, []);
 
   const loadSiteSettings = async () => {
     try {

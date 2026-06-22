@@ -72,7 +72,13 @@ export async function refreshToken() {
 
   if (!res.ok) {
     const errorText = await res.text();
-    devLog('❌ /api/auth/refresh 에러 응답:', errorText);
+    // 401 = 리프레시 토큰 없음/만료(로그아웃 상태의 정상 경로) — 조용한 info로만 기록해
+    // 초기화 시 콘솔에 빨간 에러처럼 보이는 노이즈를 줄인다. 그 외 상태만 상세 로그.
+    if (res.status === 401) {
+      devLog('ℹ️ /api/auth/refresh: 유효한 세션 없음 (401)');
+    } else {
+      devLog('❌ /api/auth/refresh 에러 응답:', errorText);
+    }
     const err = Object.assign(new Error(`토큰 갱신 실패: ${res.status}`), {
       status: res.status,
     });
