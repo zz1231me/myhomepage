@@ -19,6 +19,7 @@ import {
   updateRole,
   deleteRole,
   getBoardAccessPermissions,
+  getAllBoardAccessPermissions,
   setBoardAccessPermissions,
   getAllEvents,
   deleteEventAsAdmin,
@@ -77,6 +78,8 @@ router.get('/boards', getAllBoards as RequestHandler);
 router.post('/boards', createBoard as RequestHandler);
 router.put('/boards/:id', updateBoard as RequestHandler);
 router.delete('/boards/:id', deleteBoard as RequestHandler);
+// 전체 게시판 권한 일괄 조회 (보드별 :boardId 라우트와 경로가 달라 충돌 없음)
+router.get('/board-permissions', getAllBoardAccessPermissions as RequestHandler);
 router.get('/boards/:boardId/permissions', getBoardAccessPermissions as RequestHandler);
 router.put('/boards/:boardId/permissions', setBoardAccessPermissions as RequestHandler);
 

@@ -52,20 +52,24 @@ export const useBoardManagement = () => {
   };
 
   const fetchBoardPermissions = async (boardList: Board[]) => {
-    const results = await Promise.all(
-      boardList.map(board =>
-        api
-          .get(`/admin/boards/${board.id}/permissions`)
-          .then(res => ({ boardId: board.id, data: res.data.data || res.data }))
-          .catch(err => {
-            if (import.meta.env.DEV) console.error(`권한 조회 실패 (${board.name}):`, err);
-            return { boardId: board.id, data: [] };
-          })
-      )
-    );
+    // 보드별 N요청(GET /boards/:id/permissions) 대신 1요청으로 전체 권한을 받아 boardId로 그룹핑.
+    // 이전엔 보드 수만큼 병렬 GET이 adminLimiter(100/15분)에 걸려 일부 보드가 빈 권한으로
+    // 로드되고, 그 상태로 토글하면 부분 저장이 일어나는 트리거가 됐다(PR: 부분 저장 보존으로
+    // 데이터 유실은 막았지만, 빈 로드 자체를 예방).
     const permissionsState: Record<string, BoardPermission[]> = {};
-    for (const { boardId, data } of results) {
-      permissionsState[boardId] = data;
+    for (const board of boardList) permissionsState[board.id] = []; // 권한 없는 보드도 표시
+    try {
+      const res = await api.get('/admin/board-permissions');
+      const rows = (res.data.data ?? res.data ?? []) as Array<
+        BoardPermission & { boardId: string }
+      >;
+      for (const row of rows) {
+        if (!permissionsState[row.boardId]) permissionsState[row.boardId] = [];
+        permissionsState[row.boardId].push(row);
+      }
+    } catch (err) {
+      if (import.meta.env.DEV) console.error('게시판 권한 일괄 조회 실패:', err);
+      setFetchError('게시판 권한을 불러오지 못했습니다.');
     }
     setPermissions(permissionsState);
   };

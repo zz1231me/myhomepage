@@ -130,6 +130,25 @@ export class RoleService extends BaseService {
     }
   }
 
+  // 전체 게시판 권한을 한 번에 조회 — 관리자 권한 화면이 보드별 N개 요청 대신 1요청으로 받도록
+  // (보드별 fan-out이 adminLimiter에 걸려 일부 보드가 빈 상태로 로드되던 문제 예방).
+  // 단일 조회와 동일한 행 shape(BoardAccess + role)를 반환하고, 클라가 boardId로 그룹핑한다.
+  async getAllBoardAccessPermissions() {
+    try {
+      return await BoardAccess.findAll({
+        include: [
+          {
+            model: Role,
+            as: 'role',
+            attributes: ['id', 'name'],
+          },
+        ],
+      });
+    } catch (_error) {
+      throw new AppError(500, '권한 조회 실패');
+    }
+  }
+
   async setBoardAccessPermissions(
     boardId: string,
     permissions: Array<{
