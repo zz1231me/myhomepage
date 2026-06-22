@@ -53,6 +53,7 @@ export const createReport = async (req: AuthRequest, res: Response): Promise<voi
   try {
     const report = await reportService.createReport({
       reporterId,
+      reporterRole: req.user.role,
       targetType: targetType as ReportTargetType,
       targetId,
       reason: reason as ReportReason,
@@ -72,6 +73,10 @@ export const createReport = async (req: AuthRequest, res: Response): Promise<voi
     }
     if (appErr.statusCode === 409) {
       sendError(res, 409, appErr.message ?? '이미 신고한 콘텐츠입니다.');
+      return;
+    }
+    if (appErr.statusCode === 403) {
+      sendForbidden(res, appErr.message ?? '신고 권한이 없습니다.');
       return;
     }
     logError('신고 접수 실패', err, { reporterId, targetType, targetId });

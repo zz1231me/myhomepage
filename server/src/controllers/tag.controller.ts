@@ -166,7 +166,15 @@ export const addPostTags = async (req: AuthRequest, res: Response): Promise<void
 
 export const getPostTags = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const tags = await tagService.getTagsForPost(req.params.id);
+    const { boardType, id } = req.params;
+    // boardType 교차 검증: 미들웨어(checkReadAccess)는 :boardType만 검증하므로, 다른 게시판
+    // 읽기 권한으로 임의 게시글의 태그를 읽는 IDOR을 막기 위해 게시글이 해당 게시판 소속인지 확인
+    const post = await Post.findByPk(id, { attributes: ['id', 'boardType'] });
+    if (!post || post.boardType !== boardType) {
+      sendNotFound(res, '게시글');
+      return;
+    }
+    const tags = await tagService.getTagsForPost(id);
     sendSuccess(res, tags);
   } catch (err) {
     logError('게시글 태그 조회 실패', err, { postId: req.params.id });
