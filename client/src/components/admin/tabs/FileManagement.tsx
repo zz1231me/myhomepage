@@ -100,7 +100,13 @@ export const FileManagement = React.memo(() => {
       await api.delete(`/uploads/admin/${file.type}/${file.filename}`);
       toast.success('파일이 삭제되었습니다.');
       setConfirmDelete(null);
-      await fetchFiles();
+      // 현재 페이지의 마지막 파일을 삭제했고 1페이지가 아니면 이전 페이지로(빈 페이지 stale 방지).
+      // setPage가 page 의존 useEffect로 refetch를 트리거하므로 명시 refetch 생략.
+      if (files.length === 1 && page > 1) {
+        setPage(p => p - 1);
+      } else {
+        await fetchFiles();
+      }
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } } };
       toast.error(e.response?.data?.message ?? '삭제 중 오류가 발생했습니다.');

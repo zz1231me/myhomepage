@@ -63,12 +63,19 @@ export const useAuthInit = () => {
           devWarn('⚠️ 서버 응답에 user 정보 없음');
           clearUser();
         } catch (getCurrentError: unknown) {
-          devError('❌ /api/auth/me 호출 실패:', getCurrentError);
-
           // ✅ 401: 쿠키에 access_token 자체가 없는 경우 → refresh 수동 시도
           //    419: 인터셉터가 이미 처리했으나 갱신 실패 → 여기서는 재시도하지 않음
           const axiosError = getCurrentError as { response?: { status?: number } };
           const statusCode = axiosError.response?.status;
+
+          // 401/419는 "로그인 안 됨/토큰 만료"라는 정상 초기화 경로다. 로그아웃 방문자가 앱을
+          // 열 때마다 콘솔에 빨간 에러가 찍히면 실제 버그처럼 보이므로, 예상된 상태는 info로만
+          // 남기고 예상 밖(500 등)일 때만 error로 기록한다.
+          if (statusCode === 401 || statusCode === 419) {
+            devLog('ℹ️ /api/auth/me 미인증(status:', statusCode, ') — 정상 초기화 경로');
+          } else {
+            devError('❌ /api/auth/me 호출 실패:', getCurrentError);
+          }
 
           if (statusCode === 401) {
             devLog('🔄 토큰 없음 감지, Refresh Token으로 직접 갱신 시도...');
@@ -85,8 +92,9 @@ export const useAuthInit = () => {
               }
               devWarn('⚠️ Refresh Token 응답에 user/tokenInfo 없음');
               clearUser();
-            } catch (refreshError) {
-              devError('❌ Refresh Token 갱신 실패:', refreshError);
+            } catch {
+              // refresh 실패 = 유효한 세션 없음(로그아웃 방문자) — 정상 경로라 info로만 기록
+              devLog('ℹ️ Refresh Token 없음/만료 — 로그아웃 상태로 처리');
               clearUser();
             }
           } else {

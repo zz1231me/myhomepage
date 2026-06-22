@@ -22,6 +22,7 @@ import { Comment } from '../models/Comment';
 import { PostLike } from '../models/PostLike';
 import { PostTag } from '../models/PostTag';
 import { PostRead } from '../models/PostRead';
+import { Notification } from '../models/Notification';
 import { BaseService } from './base.service';
 import { AppError } from '../middlewares/error.middleware';
 import { extractTextFromTiptap } from '../utils/tiptapRenderer';
@@ -176,7 +177,7 @@ export class PostService extends BaseService {
     const escapedSearchTerm = searchTerm.replace(/[%_\\]/g, '\\$&');
 
     // 병렬로 접근 가능한 게시판 조회
-    const [generalBoards, personalBoard] = await Promise.all([
+    const [generalBoards, managedBoards, personalBoard] = await Promise.all([
       // 일반 게시판: 단일 JOIN 쿼리
       BoardAccess.findAll({
         where: {
@@ -197,6 +198,21 @@ export class PostService extends BaseService {
         ],
         attributes: ['boardId'],
       }),
+      // 담당자(BoardManager)로 지정된 게시판 — 역할 권한이 없어도 읽을 수 있으므로 검색에 포함
+      // (getUserAccessibleBoards/사이드바와 동일 기준. 비활성 게시판은 제외)
+      BoardManager.findAll({
+        where: { userId },
+        include: [
+          {
+            model: Board,
+            as: 'board',
+            where: { isActive: true, isPersonal: false },
+            required: true,
+            attributes: ['id'],
+          },
+        ],
+        attributes: ['boardId'],
+      }),
       // 개인 폴더
       Board.findOne({
         where: {
@@ -208,10 +224,14 @@ export class PostService extends BaseService {
       }),
     ]);
 
-    const accessibleBoardTypes = generalBoards.map(access => access.boardId);
-    if (personalBoard) {
-      accessibleBoardTypes.push(personalBoard.id);
-    }
+    // 역할 기반 + 담당자 게시판 + 개인 폴더를 합쳐 중복 제거
+    const accessibleBoardTypes = [
+      ...new Set([
+        ...generalBoards.map(access => access.boardId),
+        ...managedBoards.map(rec => rec.boardId),
+        ...(personalBoard ? [personalBoard.id] : []),
+      ]),
+    ];
 
     if (accessibleBoardTypes.length === 0) {
       return { results: [], count: 0, query: searchTerm };
@@ -228,9 +248,11 @@ export class PostService extends BaseService {
             [Op.or]: [{ isSecret: false }, { isSecret: true, UserId: userId }],
           },
           {
+            // contentText(평문)로 검색 — 원본 HTML에 LIKE를 걸면 서식 태그가 단어 사이에
+            // 끼어 "볼드 이탤릭" 같은 구절이 매치되지 않으므로 평문 컬럼을 사용한다.
             [Op.or]: [
               { title: { [Op.like]: `%${escapedSearchTerm}%` } },
-              { content: { [Op.like]: `%${escapedSearchTerm}%` } },
+              { contentText: { [Op.like]: `%${escapedSearchTerm}%` } },
             ],
           },
         ],
@@ -278,9 +300,10 @@ export class PostService extends BaseService {
     const wikiPages = await WikiPage.findAll({
       where: {
         isPublished: true,
+        // contentText(평문) 검색 — 원본 HTML 태그로 인한 매칭 누락 방지
         [Op.or]: [
           { title: { [Op.like]: `%${escapedSearchTerm}%` } },
-          { content: { [Op.like]: `%${escapedSearchTerm}%` } },
+          { contentText: { [Op.like]: `%${escapedSearchTerm}%` } },
         ],
       },
       attributes: ['id', 'slug', 'title', 'content', 'createdAt'],
@@ -314,9 +337,10 @@ export class PostService extends BaseService {
     const events = canReadEvents
       ? await Event.findAll({
           where: {
+            // bodyText(평문) 검색 — 원본 HTML 태그로 인한 매칭 누락 방지
             [Op.or]: [
               { title: { [Op.like]: `%${escapedSearchTerm}%` } },
-              { body: { [Op.like]: `%${escapedSearchTerm}%` } },
+              { bodyText: { [Op.like]: `%${escapedSearchTerm}%` } },
             ],
           },
           include: [
@@ -414,7 +438,8 @@ export class PostService extends BaseService {
       const escapedSearch = search.replace(/[%_\\]/g, '\\$&');
       whereCondition[Op.or] = [
         { title: { [Op.like]: `%${escapedSearch}%` } },
-        { content: { [Op.like]: `%${escapedSearch}%` } },
+        // contentText(평문) 검색 — 원본 HTML 태그로 인한 매칭 누락 방지
+        { contentText: { [Op.like]: `%${escapedSearch}%` } },
       ];
     }
 
@@ -1030,7 +1055,7 @@ export class PostService extends BaseService {
 
     // DB 레코드를 먼저 삭제한 뒤 파일 삭제 (DB 실패 시 파일은 유지됨)
     // ✅ 게시글은 paranoid(soft-delete)이므로 destroy 시 자식이 cascade되지 않는다.
-    //    자식 정리를 하나의 트랜잭션으로 묶어 orphan(댓글/리액션/조회기록/태그) 누적을 방지.
+    //    자식 정리를 하나의 트랜잭션으로 묶어 orphan(댓글/리액션/조회기록/태그/알림) 누적을 방지.
     await sequelize.transaction(async t => {
       // 댓글도 paranoid → soft-delete (감사 추적 유지하되 '살아있는' 쿼리에서 제외)
       await Comment.destroy({ where: { PostId: post.id }, transaction: t });
@@ -1038,6 +1063,9 @@ export class PostService extends BaseService {
       await PostLike.destroy({ where: { PostId: post.id }, transaction: t });
       await PostRead.destroy({ where: { PostId: post.id }, transaction: t });
       await PostTag.destroy({ where: { PostId: post.id }, transaction: t });
+      // 이 글을 가리키는 알림(댓글/좋아요/멘션)은 링크가 죽으므로 정리 — 사용자 알림이라 감사가치 없음.
+      // (신고(Report)는 모더레이션/감사 기록이고 글은 soft-delete라 paranoid:false로 계속 조회되므로 보존)
+      await Notification.destroy({ where: { relatedId: post.id }, transaction: t });
       await post.destroy({ transaction: t });
     });
 

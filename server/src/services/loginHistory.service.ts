@@ -62,6 +62,10 @@ export class LoginHistoryService extends BaseService {
     };
     const startDate = params.startDate ? toDate(params.startDate) : null;
     const endDate = params.endDate ? toDate(params.endDate) : null;
+    // 종료일을 날짜만(YYYY-MM-DD) 지정한 경우 해당 일자 끝까지 포함 (당일 누락 방지)
+    if (endDate && params.endDate && /^\d{4}-\d{2}-\d{2}$/.test(params.endDate.trim())) {
+      endDate.setUTCHours(23, 59, 59, 999);
+    }
 
     if (startDate && endDate) {
       where.createdAt = { [Op.between]: [startDate, endDate] };

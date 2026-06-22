@@ -7,29 +7,48 @@ import { Comment } from '../models/Comment';
 import { User } from '../models/User';
 import { BaseService } from './base.service';
 import { AppError } from '../middlewares/error.middleware';
+import { boardService } from './board.service';
 
 export class ReportService extends BaseService {
   async createReport(params: {
     reporterId: string;
+    reporterRole: string;
     targetType: ReportTargetType;
     targetId: string;
     reason: ReportReason;
     description?: string;
   }): Promise<Report> {
-    const { reporterId, targetType, targetId, reason, description } = params;
+    const { reporterId, reporterRole, targetType, targetId, reason, description } = params;
 
-    // 대상 존재 확인
+    // 대상 존재 확인 + 소속 게시판 파악 (권한 검증용)
+    let boardType: string;
     if (targetType === 'post') {
-      const post = await Post.findByPk(targetId);
+      const post = await Post.findByPk(targetId, { attributes: ['id', 'UserId', 'boardType'] });
       if (!post) throw new AppError(404, '게시글을 찾을 수 없습니다.');
       // 자신의 글 신고 불가
       if (post.UserId === reporterId)
         throw new AppError(400, '자신의 게시글은 신고할 수 없습니다.');
+      boardType = post.boardType;
     } else {
-      const comment = await Comment.findByPk(targetId);
+      const comment = await Comment.findByPk(targetId, { attributes: ['id', 'UserId', 'PostId'] });
       if (!comment) throw new AppError(404, '댓글을 찾을 수 없습니다.');
       if (comment.UserId === reporterId)
         throw new AppError(400, '자신의 댓글은 신고할 수 없습니다.');
+      const parentPost = await Post.findByPk(comment.PostId, { attributes: ['boardType'] });
+      if (!parentPost) throw new AppError(404, '게시글을 찾을 수 없습니다.');
+      boardType = parentPost.boardType;
+    }
+
+    // ✅ 신고하려면 해당 게시판 읽기 권한이 있어야 한다 — 접근 불가 게시판의 콘텐츠를
+    //    (ID만 알면) 신고하거나 존재 여부를 떠보는 것을 차단(다른 board-scoped 액션과 동일 정책)
+    const access = await boardService.checkPermission(
+      reporterId,
+      reporterRole,
+      boardType,
+      'canRead'
+    );
+    if (!access.hasAccess) {
+      throw new AppError(403, '접근 권한이 없는 게시판의 콘텐츠는 신고할 수 없습니다.');
     }
 
     // 중복 신고 확인
@@ -107,6 +126,26 @@ export class ReportService extends BaseService {
       commentsData.map(c => [String(c.id), c.get({ plain: true }) as { content: string }])
     );
 
+    // 처리자(reviewedBy) 이름 배치 조회 — 목록에 내부 ID 대신 사람 이름을 표시 (N+1 방지)
+    const reviewerIds = [
+      ...new Set(
+        plains
+          .map(r => (r as { reviewedBy?: string | null }).reviewedBy)
+          .filter((x): x is string => !!x)
+      ),
+    ];
+    const reviewersData =
+      reviewerIds.length > 0
+        ? await User.findAll({
+            where: { id: { [Op.in]: reviewerIds } },
+            attributes: ['id', 'name'],
+            paranoid: false,
+          })
+        : [];
+    const reviewerMap = new Map(
+      reviewersData.map(u => [String(u.id), (u.get({ plain: true }) as { name: string }).name])
+    );
+
     const enriched = plains.map(plain => {
       let targetInfo: { title?: string; content?: string } = {};
       if (plain.targetType === 'post') {
@@ -116,7 +155,9 @@ export class ReportService extends BaseService {
         const c = commentMap.get(plain.targetId);
         if (c) targetInfo = { content: c.content?.substring(0, 100) };
       }
-      return { ...plain, targetInfo };
+      const reviewedBy = (plain as { reviewedBy?: string | null }).reviewedBy;
+      const reviewedByName = reviewedBy ? (reviewerMap.get(reviewedBy) ?? reviewedBy) : null;
+      return { ...plain, targetInfo, reviewedByName };
     });
 
     return this.buildPagedResponse(enriched, count, pagination);

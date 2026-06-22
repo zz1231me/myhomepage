@@ -12,7 +12,7 @@ import { ThemeToggle } from '../ThemeToggle';
 import { useUIOverlays } from '../../store/uiOverlays';
 
 export function UserDropdown() {
-  const { getUserName, getUserRole, getUser, clearUser } = useAuth();
+  const { getUserName, getUserRole, getUser, clearUser, isAdmin } = useAuth();
   const navigate = useNavigate();
 
   // 통합 overlay store — NotificationBell/GlobalSearch와 자동 배타.
@@ -140,7 +140,7 @@ export function UserDropdown() {
                 <span>프로필 설정</span>
               </button>
 
-              {userRole === 'admin' && (
+              {isAdmin() && (
                 <button
                   onClick={() => {
                     navigate('/admin');

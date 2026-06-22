@@ -2,10 +2,28 @@
 import axios from 'axios';
 import { refreshToken } from './auth';
 import { useAuth } from '../store/auth';
+import { flagSessionExpired } from '../utils/sessionExpiry';
 
 const REDIRECT_LOGIN = '/';
 const REDIRECT_FORBIDDEN = '/forbidden';
 const AUTH_ENDPOINTS = ['/auth/me', '/auth/refresh'];
+
+// 세션 만료(토큰 갱신 실패/401)로 로그인 페이지로 강제 이동.
+// "로그인 상태였는지"를 zustand store의 user로 판단하면 안 된다 — store는 매 페이지 로드 시
+// 비어 있고 /auth/me 성공 후에야 채워지므로, 콜드 리로드 직후(만료가 가장 흔히 감지되는 시점)엔
+// user가 아직 null이라 안내 토스트를 놓친다. 대신 로그인 시 저장되고 clearUser 시 제거되는
+// localStorage 'tokenInfo' 존재로 판단한다(리로드에도 유지). 비로그인 방문자는 값이 없어 오인 없음.
+const hadSession = (): boolean => {
+  try {
+    return localStorage.getItem('tokenInfo') !== null;
+  } catch {
+    return false;
+  }
+};
+const redirectToLogin = (): void => {
+  if (hadSession()) flagSessionExpired();
+  window.location.href = REDIRECT_LOGIN;
+};
 
 // 토큰 갱신 응답에서 tokenInfo를 추출해 zustand store를 동기화
 // (인터셉터 자동 갱신 후 클라이언트 store의 만료시각이 stale 상태가 되면,
@@ -108,9 +126,9 @@ api.interceptors.response.use(
         } catch (refreshError) {
           // ✅ 대기 중인 모든 subscriber에 에러 전파 (무한 대기 방지)
           onRefreshFailed(refreshError);
-          // ✅ 인증 엔드포인트가 아닌 경우에만 리다이렉트
+          // ✅ 인증 엔드포인트가 아닌 경우에만 리다이렉트 (세션 만료 안내 포함)
           if (!isAuthEndpoint) {
-            window.location.href = REDIRECT_LOGIN;
+            redirectToLogin();
           }
           return Promise.reject(refreshError);
         } finally {
@@ -133,7 +151,7 @@ api.interceptors.response.use(
       // ✅ 인증 엔드포인트 및 비밀글 검증 엔드포인트는 리다이렉트 제외
       const isSecretVerify = SECRET_VERIFY_PATTERN.test(originalRequest?.url ?? '');
       if (!isAuthEndpoint && !isSecretVerify) {
-        window.location.href = REDIRECT_LOGIN;
+        redirectToLogin();
       }
     }
 
@@ -181,7 +199,7 @@ uploadApi.interceptors.response.use(
           return uploadApi(error.config);
         } catch (refreshErr) {
           onRefreshFailed(refreshErr);
-          window.location.href = REDIRECT_LOGIN;
+          redirectToLogin();
           return Promise.reject(refreshErr);
         } finally {
           isRefreshing = false;
@@ -203,7 +221,7 @@ uploadApi.interceptors.response.use(
       const isUploadAuthEndpoint = AUTH_ENDPOINTS.some(ep => uploadUrl.includes(ep));
       const isUploadSecretVerify = SECRET_VERIFY_PATTERN.test(uploadUrl);
       if (!isUploadAuthEndpoint && !isUploadSecretVerify) {
-        window.location.href = REDIRECT_LOGIN;
+        redirectToLogin();
       }
     }
 

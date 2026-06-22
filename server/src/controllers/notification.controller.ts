@@ -86,3 +86,15 @@ export const deleteNotification = async (req: AuthRequest, res: Response): Promi
     sendError(res, 500, '알림 삭제 실패');
   }
 };
+
+// DELETE /api/notifications  → 내 알림 전체 삭제
+export const deleteAllNotifications = async (req: AuthRequest, res: Response): Promise<void> => {
+  const userId = req.user?.id;
+  try {
+    const deletedCount = await notificationService.deleteAllNotifications(userId);
+    sendSuccess(res, { deletedCount }, '모든 알림이 삭제되었습니다.');
+  } catch (err) {
+    logError('전체 알림 삭제 실패', err, { userId });
+    sendError(res, 500, '전체 알림 삭제 실패');
+  }
+};

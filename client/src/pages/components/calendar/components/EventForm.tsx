@@ -101,7 +101,17 @@ export const EventForm: React.FC<EventFormProps> = ({
   );
 
   return (
-    <form onSubmit={onSubmit} className="space-y-5">
+    <form
+      onSubmit={onSubmit}
+      onKeyDown={e => {
+        // 단일 라인 input(제목/장소/날짜)에서 Enter로 일정이 조기 생성·수정되는 것 방지
+        // (메모 textarea의 줄바꿈과 명시적 제출 버튼은 그대로 동작)
+        if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
+          e.preventDefault();
+        }
+      }}
+      className="space-y-5"
+    >
       {/* 일정 종류 */}
       <div>
         <FieldLabel required>일정 종류</FieldLabel>

@@ -172,13 +172,20 @@ export class RoleService extends BaseService {
 
         if (permissions.length > 0) {
           await BoardAccess.bulkCreate(
-            permissions.map(perm => ({
-              boardId,
-              roleId: perm.roleId,
-              canRead: perm.canRead ?? true,
-              canWrite: perm.canWrite ?? false,
-              canDelete: perm.canDelete ?? false,
-            })),
+            permissions.map(perm => {
+              const canWrite = perm.canWrite ?? false;
+              const canDelete = perm.canDelete ?? false;
+              // 쓰기/삭제 권한은 읽기를 전제로 한다. 권한 해석(checkPermission)은 canRead가
+              // false면 canWrite가 true여도 전부 거부하므로, read 없이 write/delete만 저장하면
+              // 관리자가 부여한 권한이 조용히 무력화된다. 저장 시 정규화해 이 footgun을 막는다.
+              return {
+                boardId,
+                roleId: perm.roleId,
+                canRead: (perm.canRead ?? true) || canWrite || canDelete,
+                canWrite,
+                canDelete,
+              };
+            }),
             { transaction: t }
           );
         }

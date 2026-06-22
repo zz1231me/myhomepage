@@ -7,6 +7,5 @@ export { default as PostTitleInput } from './components/PostTitleInput';
 export { default as CKEditorWrapper } from './core/CKEditorWrapper';
 export type { CKEditorRef } from './core/CKEditorWrapper';
 
-// Fallback 에디터 (에러 복구용)
-export { default as FallbackEditor } from './core/FallbackEditor';
+// 에디터 에러 바운더리 (에러 복구용)
 export { default as EditorErrorBoundary } from './core/EditorErrorBoundary';
