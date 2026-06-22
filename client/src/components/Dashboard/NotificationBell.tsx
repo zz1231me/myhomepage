@@ -6,11 +6,13 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { stagger, listItem, scaleIn } from '../../utils/animations';
 import { useUIOverlays } from '../../store/uiOverlays';
 import { useNotificationStore } from '../../store/notifications';
+import { toast } from '../../utils/toast';
 import {
   getNotifications,
   markAsRead,
   markAllAsRead,
   deleteNotification,
+  deleteAllNotifications,
 } from '../../api/notifications';
 
 interface Notification {
@@ -69,6 +71,9 @@ export function NotificationBell() {
   // 알림 fetch 실패 시 사용자에게 안내 + 재시도 버튼 제공 (이전엔 무음 catch라
   // "알림 없음" 빈 상태와 "에러" 빈 상태가 구분되지 않았음)
   const [fetchError, setFetchError] = useState(false);
+  // 전체 삭제 2단계 확인(실수 클릭 방지) + 진행 상태
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
@@ -111,9 +116,12 @@ export function NotificationBell() {
     return () => stop();
   }, []);
 
-  // 패널 열릴 때 목록 로드
+  // 패널 열릴 때 목록 로드 + 전체삭제 확인 상태 초기화(이전에 열었을 때 남은 확인 상태 제거)
   useEffect(() => {
-    if (open) fetchNotifications();
+    if (open) {
+      fetchNotifications();
+      setConfirmClear(false);
+    }
   }, [open, fetchNotifications]);
 
   // 외부 클릭 닫기
@@ -153,6 +161,24 @@ export function NotificationBell() {
       setStoreUnread(0);
     } catch {
       /* 알림 API 에러 무시 */
+    }
+  };
+
+  const handleClearAll = async () => {
+    if (clearing) return;
+    setClearing(true);
+    try {
+      await deleteAllNotifications();
+      setNotifications([]);
+      setNextCursor(null);
+      setStoreUnread(0);
+      setConfirmClear(false);
+    } catch {
+      // 파괴적 일괄 작업은 무음 실패 시 사용자가 성공으로 오인하므로 명시적 피드백 제공
+      // (목록은 유지되어 재시도 가능)
+      toast.error('알림 전체 삭제에 실패했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -219,14 +245,44 @@ export function NotificationBell() {
                   </span>
                 )}
               </h3>
-              {unreadCount > 0 && (
-                <button
-                  onClick={handleMarkAll}
-                  className="text-xs text-primary-600 dark:text-primary-400 hover:underline font-medium"
-                >
-                  모두 읽음
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {unreadCount > 0 && (
+                  <button
+                    onClick={handleMarkAll}
+                    className="text-xs text-primary-600 dark:text-primary-400 hover:underline font-medium"
+                  >
+                    모두 읽음
+                  </button>
+                )}
+                {notifications.length > 0 &&
+                  !loading &&
+                  !fetchError &&
+                  (confirmClear ? (
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-xs text-slate-500 dark:text-slate-400">전체 삭제?</span>
+                      <button
+                        onClick={handleClearAll}
+                        disabled={clearing}
+                        className="text-xs text-red-600 dark:text-red-400 hover:underline font-medium disabled:opacity-50"
+                      >
+                        {clearing ? '삭제 중...' : '삭제'}
+                      </button>
+                      <button
+                        onClick={() => setConfirmClear(false)}
+                        className="text-xs text-slate-500 dark:text-slate-400 hover:underline font-medium"
+                      >
+                        취소
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmClear(true)}
+                      className="text-xs text-red-500 dark:text-red-400 hover:underline font-medium"
+                    >
+                      전체 삭제
+                    </button>
+                  ))}
+              </div>
             </div>
 
             {/* 목록 */}

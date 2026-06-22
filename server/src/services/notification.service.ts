@@ -71,6 +71,13 @@ export class NotificationService {
     const count = await Notification.destroy({ where: { id, userId } });
     if (count === 0) throw new AppError(404, '알림을 찾을 수 없습니다.');
   }
+
+  // 내 알림 전체 삭제 — 삭제된 개수 반환 (0건이어도 에러 아님)
+  async deleteAllNotifications(userId: string): Promise<number> {
+    const count = await Notification.destroy({ where: { userId } });
+    invalidateCache('notifications:unread', userId);
+    return count;
+  }
 }
 
 export const notificationService = new NotificationService();
