@@ -284,6 +284,7 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
 export const resetPassword = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+    const { tempPassword: rawTemp } = req.body as { tempPassword?: unknown };
     const adminId = (req as unknown as AuthRequest).user?.id;
 
     // 자기 자신의 비밀번호를 초기화하면 즉시 세션이 무효화되어 로그아웃됨
@@ -297,8 +298,15 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // 고정 임시 비밀번호로 초기화 + 강제 변경 플래그 설정(서버가 비밀번호를 정함)
-    const tempPassword = await userService.resetPassword(id);
+    // 관리자가 입력한 6자리 숫자 임시 비밀번호 (서버에서도 형식 검증 — 클라 신뢰 안 함)
+    const tempCode = String(rawTemp ?? '');
+    if (!/^\d{6}$/.test(tempCode)) {
+      sendError(res, 400, '임시 비밀번호는 6자리 숫자로 입력해주세요.');
+      return;
+    }
+
+    // 임시 비번 설정 + 강제 변경 플래그
+    const tempPassword = await userService.resetPassword(id, tempCode);
     invalidateAllUserCaches(id);
     logAudit(req, 'reset_password', {
       targetType: 'user',

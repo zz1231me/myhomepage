@@ -59,12 +59,12 @@ export const useUserManagement = () => {
     await fetchUsers();
   };
 
-  // 서버가 고정 임시 비밀번호를 설정하고 mustChangePassword 플래그를 켠다(사용자는 로그인 후
-  // 강제 변경). 클라가 비밀번호를 만들지 않고 서버가 반환한 임시 비번을 표시한다.
-  const resetPassword = async (id: string): Promise<string> => {
-    const res = await api.post(`/admin/users/${id}/reset-password`);
+  // 관리자가 입력한 6자리 숫자를 임시 비밀번호로 설정하고 mustChangePassword 플래그를 켠다
+  // (사용자는 로그인 후 강제 변경). 형식 검증은 서버에서도 수행.
+  const resetPassword = async (id: string, tempPassword: string): Promise<string> => {
+    const res = await api.post(`/admin/users/${id}/reset-password`, { tempPassword });
     const data = res.data?.data ?? res.data;
-    return data?.tempPassword ?? '';
+    return data?.tempPassword ?? tempPassword;
   };
 
   return {

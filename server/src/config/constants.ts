@@ -42,10 +42,6 @@ export const RESERVED_BOARD_IDS = [
 export const DEFAULT_PAGE_SIZE = 10;
 export const MAX_PAGE_SIZE = 100;
 
-// 관리자 비밀번호 초기화 시 설정되는 고정 임시 비밀번호.
-// 초기화된 사용자는 이 값으로 로그인 후 즉시 비밀번호 변경이 강제된다(mustChangePassword).
-export const ADMIN_RESET_TEMP_PASSWORD = '123456';
-
 export const PAGINATION = {
   DEFAULT_PAGE: 1,
   DEFAULT_LIMIT: DEFAULT_PAGE_SIZE,

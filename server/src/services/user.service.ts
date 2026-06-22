@@ -6,7 +6,6 @@ import { processAvatar, deleteAvatarFile } from '../middlewares/upload/avatar';
 import { Op, UniqueConstraintError } from 'sequelize';
 import { sequelize } from '../config/sequelize';
 import { userSessionService } from './userSession.service';
-import { ADMIN_RESET_TEMP_PASSWORD } from '../config/constants';
 
 export class UserService extends BaseService {
   async findById(id: string): Promise<UserInstance | null> {
@@ -231,9 +230,10 @@ export class UserService extends BaseService {
     };
   }
 
-  // 관리자 초기화: 고정 임시 비밀번호로 설정 + 강제 변경 플래그 + 기존 세션 무효화.
+  // 관리자 초기화: 관리자가 입력한 6자리 임시 비밀번호로 설정 + 강제 변경 플래그 + 기존 세션 무효화.
   // 사용자는 임시 비번으로 로그인 후 비밀번호 변경 전까지 다른 동작이 차단된다.
-  async resetPassword(id: string): Promise<string> {
+  // (tempPassword 형식 검증은 컨트롤러에서 6자리 숫자로 수행)
+  async resetPassword(id: string, tempPassword: string): Promise<string> {
     const user = await User.findByPk(id);
     if (!user) throw new AppError(404, '사용자를 찾을 수 없습니다.');
 
@@ -242,11 +242,11 @@ export class UserService extends BaseService {
       throw new AppError(400, '삭제된 계정의 비밀번호는 변경할 수 없습니다.');
     }
 
-    user.password = ADMIN_RESET_TEMP_PASSWORD; // Hook handles hashing
+    user.password = tempPassword; // Hook handles hashing
     user.mustChangePassword = true; // 로그인 후 강제 변경
     user.tokenVersion = (user.tokenVersion ?? 0) + 1; // 기존 세션 즉시 무효화
     await user.save();
-    return ADMIN_RESET_TEMP_PASSWORD;
+    return tempPassword;
   }
 
   async changePassword(id: string, currentPassword: string, newPassword: string): Promise<void> {
