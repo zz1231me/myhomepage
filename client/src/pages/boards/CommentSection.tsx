@@ -244,6 +244,25 @@ const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
   // 단일 댓글 행 렌더러 (재귀적으로 replies 포함)
   const renderComment = useCallback(
     (comment: Comment, isReply = false): React.ReactNode => {
+      // 삭제됐지만 답글이 살아있어 트리 보존용으로 내려온 placeholder — 내용/작성자/액션 없이
+      // 음영 처리한 안내만 보여주고, 답글은 그대로 들여쓰기해 계층을 유지한다.
+      if (comment.isDeleted) {
+        return (
+          <div key={comment.id}>
+            <div
+              className={`py-4 ${isReply ? 'pl-4 border-l-2 border-slate-200 dark:border-slate-700 ml-3' : ''}`}
+            >
+              <p className="text-sm italic text-slate-400 dark:text-slate-500">
+                삭제된 댓글입니다.
+              </p>
+            </div>
+            {comment.replies && comment.replies.length > 0 && (
+              <div className="ml-3">{comment.replies.map(reply => renderComment(reply, true))}</div>
+            )}
+          </div>
+        );
+      }
+
       const commentUserId = comment.UserId || comment.user?.id;
       const isOwner = !!(
         currentUserId &&

@@ -19,6 +19,8 @@ export interface Comment {
   parentId?: number | null;
   depth?: number;
   replies?: Comment[];
+  /** 자식이 살아있어 트리 보존을 위해 표시되는 '삭제된 댓글' placeholder */
+  isDeleted?: boolean;
 }
 
 let _optimisticIdCounter = 0; // Number.MAX_SAFE_INTEGER로 wrapping해 overflow 방지
