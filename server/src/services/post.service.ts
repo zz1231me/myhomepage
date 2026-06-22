@@ -22,6 +22,7 @@ import { Comment } from '../models/Comment';
 import { PostLike } from '../models/PostLike';
 import { PostTag } from '../models/PostTag';
 import { PostRead } from '../models/PostRead';
+import { PostBookmark } from '../models/PostBookmark';
 import { Notification } from '../models/Notification';
 import { BaseService } from './base.service';
 import { AppError } from '../middlewares/error.middleware';
@@ -1062,6 +1063,7 @@ export class PostService extends BaseService {
       // 파생 데이터는 hard-delete (복구 가치 없음)
       await PostLike.destroy({ where: { PostId: post.id }, transaction: t });
       await PostRead.destroy({ where: { PostId: post.id }, transaction: t });
+      await PostBookmark.destroy({ where: { PostId: post.id }, transaction: t });
       await PostTag.destroy({ where: { PostId: post.id }, transaction: t });
       // 이 글을 가리키는 알림(댓글/좋아요/멘션)은 링크가 죽으므로 정리 — 사용자 알림이라 감사가치 없음.
       // (신고(Report)는 모더레이션/감사 기록이고 글은 soft-delete라 paranoid:false로 계속 조회되므로 보존)
@@ -1076,6 +1078,58 @@ export class PostService extends BaseService {
         logError(`첨부파일 삭제 실패 (DB는 이미 정리됨): ${att.filename}`, fileErr);
       }
     }
+  }
+
+  /**
+   * 보관 기간이 지난 soft-deleted 게시글을 DB에서 영구 삭제(purge)한다.
+   * 게시글 삭제는 1차로 soft-delete(deletedAt 기록, 숨김)되고, retentionDays가 지나면
+   * 주기 작업이 이 메서드로 게시글 + 댓글 + 잔여 파생데이터를 hard-delete한다.
+   * @returns 영구 삭제된 게시글 수
+   */
+  async purgeExpiredPosts(retentionDays: number): Promise<number> {
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+
+    // paranoid 해제하고 보관 기간이 지난 soft-deleted 게시글만 조회
+    const expired = await Post.findAll({
+      where: { deletedAt: { [Op.ne]: null, [Op.lte]: cutoff } },
+      attributes: ['id', 'attachments'],
+      paranoid: false,
+    });
+    if (expired.length === 0) return 0;
+
+    const allIds = expired.map(p => p.id);
+
+    // 배치 처리: 한 번에 IN(...)에 넣는 id 수를 제한한다. SQLite는 SQL 변수 상한(기본 999)이
+    // 있어, 만료 글이 많으면(최초 배포 후 백로그 등) 단일 IN 절이 실패할 수 있다. 또한 거대한
+    // 단일 트랜잭션으로 DB가 오래 잠기는 것도 방지하기 위해 청크별 트랜잭션으로 나눈다.
+    const BATCH = 500;
+    for (let i = 0; i < allIds.length; i += BATCH) {
+      const postIds = allIds.slice(i, i + BATCH);
+      // 게시글 + 자식을 한 트랜잭션에서 hard-delete (force:true는 soft-deleted 행도 실제 삭제)
+      await sequelize.transaction(async t => {
+        const childWhere = { PostId: { [Op.in]: postIds } };
+        await Comment.destroy({ where: childWhere, transaction: t, force: true });
+        await PostLike.destroy({ where: childWhere, transaction: t });
+        await PostRead.destroy({ where: childWhere, transaction: t });
+        await PostBookmark.destroy({ where: childWhere, transaction: t });
+        await PostTag.destroy({ where: childWhere, transaction: t });
+        await Post.destroy({ where: { id: { [Op.in]: postIds } }, transaction: t, force: true });
+      });
+    }
+
+    // 첨부파일 정리 — deletePost에서 이미 삭제됐지만, 다른 경로로 soft-delete된 경우까지
+    // 방어적으로 처리(deleteFileIfExists는 파일이 없으면 무시).
+    for (const post of expired) {
+      for (const att of this.parseAttachments(post.attachments)) {
+        try {
+          this.deleteFileIfExists(att.filename, att.path);
+        } catch (fileErr) {
+          logError(`만료 게시글 첨부파일 삭제 실패: ${att.filename}`, fileErr);
+        }
+      }
+    }
+
+    return expired.length;
   }
 
   // ✅ 게시글 고정/해제 (admin 또는 해당 게시판 담당자만 가능)

@@ -99,6 +99,7 @@ function toPayload(s: SiteSettings) {
     defaultPageSize: s.defaultPageSize ?? DEFAULTS.defaultPageSize,
     securityLogRetentionDays: s.securityLogRetentionDays ?? DEFAULTS.securityLogRetentionDays,
     errorLogRetentionDays: s.errorLogRetentionDays ?? DEFAULTS.errorLogRetentionDays,
+    deletedPostRetentionDays: s.deletedPostRetentionDays ?? DEFAULTS.deletedPostRetentionDays,
     jwtAccessTokenHours: s.jwtAccessTokenHours ?? DEFAULTS.jwtAccessTokenHours,
     jwtRefreshTokenDays: s.jwtRefreshTokenDays ?? DEFAULTS.jwtRefreshTokenDays,
     postTitleMaxLength: s.postTitleMaxLength ?? DEFAULTS.postTitleMaxLength,
@@ -171,6 +172,7 @@ export const updateSiteSettings = async (req: Request, res: Response) => {
       defaultPageSize,
       securityLogRetentionDays,
       errorLogRetentionDays,
+      deletedPostRetentionDays,
       jwtAccessTokenHours,
       jwtRefreshTokenDays,
       postTitleMaxLength,
@@ -237,6 +239,7 @@ export const updateSiteSettings = async (req: Request, res: Response) => {
       // 로그 보존
       [securityLogRetentionDays, 'securityLogRetentionDays', 7, 365],
       [errorLogRetentionDays, 'errorLogRetentionDays', 7, 365],
+      [deletedPostRetentionDays, 'deletedPostRetentionDays', 1, 365],
       // JWT 토큰 유효시간
       [jwtAccessTokenHours, 'jwtAccessTokenHours', 1, 168],
       [jwtRefreshTokenDays, 'jwtRefreshTokenDays', 1, 30],
@@ -403,6 +406,10 @@ export const updateSiteSettings = async (req: Request, res: Response) => {
         errorLogRetentionDays !== undefined
           ? errorLogRetentionDays
           : settings.errorLogRetentionDays,
+      deletedPostRetentionDays:
+        deletedPostRetentionDays !== undefined
+          ? deletedPostRetentionDays
+          : settings.deletedPostRetentionDays,
       jwtAccessTokenHours:
         jwtAccessTokenHours !== undefined ? jwtAccessTokenHours : settings.jwtAccessTokenHours,
       jwtRefreshTokenDays:

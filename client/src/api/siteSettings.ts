@@ -37,6 +37,7 @@ export interface SiteSettings {
   defaultPageSize: number;
   securityLogRetentionDays: number;
   errorLogRetentionDays: number;
+  deletedPostRetentionDays: number;
   jwtAccessTokenHours: number;
   jwtRefreshTokenDays: number;
   postTitleMaxLength: number;

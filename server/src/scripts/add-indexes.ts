@@ -98,6 +98,12 @@ export async function addDatabaseIndexes(): Promise<void> {
         fields: ['UserId'],
         description: '사용자별 이벤트',
       },
+      {
+        table: 'events',
+        name: 'idx_events_parent',
+        fields: ['parentEventId'],
+        description: '반복 일정 인스턴스 조회',
+      },
       { table: 'events', name: 'idx_events_title', fields: ['title'], description: '이벤트 검색' },
 
       // ── BoardAccess ───────────────────────────────────

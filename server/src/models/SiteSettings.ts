@@ -39,6 +39,7 @@ export interface SiteSettingsInstance extends Model<
   defaultPageSize: CreationOptional<number>;
   securityLogRetentionDays: CreationOptional<number>;
   errorLogRetentionDays: CreationOptional<number>;
+  deletedPostRetentionDays: CreationOptional<number>;
   jwtAccessTokenHours: CreationOptional<number>;
   jwtRefreshTokenDays: CreationOptional<number>;
   postTitleMaxLength: CreationOptional<number>;
@@ -105,6 +106,7 @@ export class SiteSettings
   declare public defaultPageSize: CreationOptional<number>;
   declare public securityLogRetentionDays: CreationOptional<number>;
   declare public errorLogRetentionDays: CreationOptional<number>;
+  declare public deletedPostRetentionDays: CreationOptional<number>;
   declare public jwtAccessTokenHours: CreationOptional<number>;
   declare public jwtRefreshTokenDays: CreationOptional<number>;
   declare public postTitleMaxLength: CreationOptional<number>;
@@ -307,6 +309,12 @@ SiteSettings.init(
       allowNull: false,
       defaultValue: 30,
       field: 'error_log_retention_days',
+    },
+    deletedPostRetentionDays: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 7,
+      field: 'deleted_post_retention_days',
     },
     jwtAccessTokenHours: {
       type: DataTypes.INTEGER,

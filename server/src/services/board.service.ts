@@ -6,6 +6,10 @@ import { AppError } from '../middlewares/error.middleware';
 import { sequelize } from '../config/sequelize';
 import { UniqueConstraintError, Op } from 'sequelize';
 import { PostTag } from '../models/PostTag';
+import { Comment } from '../models/Comment';
+import { PostLike } from '../models/PostLike';
+import { PostRead } from '../models/PostRead';
+import { PostBookmark } from '../models/PostBookmark';
 import { BoardManager } from '../models/BoardManager';
 import { AccessibleBoard, PersonalFolderResult } from '../types/auth-request';
 import crypto from 'crypto';
@@ -158,13 +162,24 @@ export class BoardService extends BaseService {
     // ⚠️ Post는 paranoid이므로 force:true가 없으면 deletedAt만 채워지고 실제 row가 남음 →
     //    Post.boardType의 FK(onDelete: RESTRICT) 위반으로 board.destroy()가 실패함.
     //    따라서 게시판 삭제 시에는 게시글을 hard-delete 한다.
-    // PostTag는 through 조인이 constraints:false라 FK cascade가 없음 → 수동 정리(orphan 방지)
+    // 게시글의 자식 데이터(댓글/좋아요/조회기록/북마크/태그)는 모두 수동 정리해야 한다.
+    // SQLite는 FK 미강제, Post는 paranoid라 — deletePost와 동일하게 직접 hard-delete하지
+    // 않으면 게시판 삭제 후 PostId가 사라진 게시글을 가리키는 orphan 행이 남는다.
+    // 게시글을 hard-delete(force:true)하므로 댓글도 audit 가치 없이 hard-delete한다.
     const postIds = posts.map(p => p.id);
     await sequelize.transaction(async t => {
       if (postIds.length > 0) {
-        await PostTag.destroy({ where: { PostId: { [Op.in]: postIds } }, transaction: t });
+        const childWhere = { PostId: { [Op.in]: postIds } };
+        await Comment.destroy({ where: childWhere, transaction: t, force: true });
+        await PostLike.destroy({ where: childWhere, transaction: t });
+        await PostRead.destroy({ where: childWhere, transaction: t });
+        await PostBookmark.destroy({ where: childWhere, transaction: t });
+        await PostTag.destroy({ where: childWhere, transaction: t });
       }
       await Post.destroy({ where: { boardType: boardId }, transaction: t, force: true });
+      // 게시판 권한(BoardAccess)도 명시적으로 정리 — onDelete:CASCADE는 constraints:false +
+      // SQLite FK 미강제라 보장되지 않는다. 안 지우면 같은 id로 게시판 재생성 시 옛 권한이 되살아남.
+      await BoardAccess.destroy({ where: { boardId }, transaction: t });
       await board.destroy({ transaction: t });
     });
 

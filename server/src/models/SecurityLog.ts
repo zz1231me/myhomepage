@@ -39,34 +39,36 @@ SecurityLog.init(
       defaultValue: DataTypes.UUIDV4,
       primaryKey: true,
     },
+    // 명시적 길이 지정 — 기본 STRING(VARCHAR 255)이면 긴 URL(route)/UA 문자열이 MySQL·PG
+    // strict 모드에서 잘리거나 INSERT 에러가 난다. LoginHistory와 동일한 길이 기준으로 통일.
     userId: {
-      type: DataTypes.STRING,
+      type: DataTypes.STRING(50),
       allowNull: true,
     },
     ipAddress: {
-      type: DataTypes.STRING,
+      type: DataTypes.STRING(45), // IPv6 최대 길이
       allowNull: true, // 내부 시스템 이벤트 등 IP가 없는 경우 허용
       defaultValue: null,
     },
     action: {
-      type: DataTypes.STRING,
+      type: DataTypes.STRING(100),
       allowNull: false,
     },
     method: {
-      type: DataTypes.STRING,
+      type: DataTypes.STRING(10),
       allowNull: false,
     },
     route: {
-      type: DataTypes.STRING,
+      type: DataTypes.STRING(500),
       allowNull: false,
     },
     userAgent: {
-      type: DataTypes.STRING,
+      type: DataTypes.STRING(500),
       allowNull: true,
       defaultValue: 'Unknown',
     },
     status: {
-      type: DataTypes.STRING, // ENUM('SUCCESS', 'FAILURE') -> STRING to support 'WARNING', 'CRITICAL' etc.
+      type: DataTypes.STRING(20), // ENUM('SUCCESS', 'FAILURE') -> STRING to support 'WARNING', 'CRITICAL' etc.
       defaultValue: 'SUCCESS',
     },
     details: {

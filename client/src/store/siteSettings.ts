@@ -55,6 +55,7 @@ export interface SiteSettings {
   // ── 로그 보존 ──────────────────────────────────────────────────────────────
   securityLogRetentionDays: number;
   errorLogRetentionDays: number;
+  deletedPostRetentionDays: number;
   // ── JWT 만료 ───────────────────────────────────────────────────────────────
   jwtAccessTokenHours: number;
   jwtRefreshTokenDays: number;
@@ -146,6 +147,7 @@ export const useSiteSettings = create<SiteSettingsStore>(set => ({
     // 로그 보존 기본값
     securityLogRetentionDays: 90,
     errorLogRetentionDays: 30,
+    deletedPostRetentionDays: 7,
     // JWT 만료 기본값
     jwtAccessTokenHours: 2,
     jwtRefreshTokenDays: 3,

@@ -121,6 +121,7 @@ export const SETTINGS_DEFAULTS = {
   defaultPageSize: 10,
   securityLogRetentionDays: 90,
   errorLogRetentionDays: 30,
+  deletedPostRetentionDays: 7,
   jwtAccessTokenHours: 2,
   jwtRefreshTokenDays: 3,
   postTitleMaxLength: 200,
@@ -178,6 +179,8 @@ export async function loadSettingsCache(): Promise<void> {
         securityLogRetentionDays:
           settings.securityLogRetentionDays ?? DEFAULTS.securityLogRetentionDays,
         errorLogRetentionDays: settings.errorLogRetentionDays ?? DEFAULTS.errorLogRetentionDays,
+        deletedPostRetentionDays:
+          settings.deletedPostRetentionDays ?? DEFAULTS.deletedPostRetentionDays,
         jwtAccessTokenHours: settings.jwtAccessTokenHours ?? DEFAULTS.jwtAccessTokenHours,
         jwtRefreshTokenDays: settings.jwtRefreshTokenDays ?? DEFAULTS.jwtRefreshTokenDays,
         postTitleMaxLength: settings.postTitleMaxLength ?? DEFAULTS.postTitleMaxLength,
