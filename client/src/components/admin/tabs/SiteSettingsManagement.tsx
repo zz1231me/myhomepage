@@ -7,6 +7,7 @@ import {
   SiteSettings,
 } from '../../../api/siteSettings';
 import { useSiteSettings } from '../../../store/siteSettings';
+import { cacheSiteIdentity } from '../../../utils/siteIdentityCache';
 import { AdminSection } from '../common/AdminSection';
 import { ToggleSwitch } from '../common/ToggleSwitch';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -464,6 +465,9 @@ export const SiteSettingsManagement = () => {
       isDirty.current = false; // 저장 성공 시 dirty 플래그 초기화
       document.title = updated.siteTitle;
       if (updated.faviconUrl) applyFavicon(updated.faviconUrl);
+      // 캐시도 갱신 — 안 하면 변경 직후 새로고침 시 index.html 인라인 스크립트가 옛 제목을
+      // 잠깐 적용했다 교체하는 깜빡임이 남는다.
+      cacheSiteIdentity(updated.siteTitle, updated.faviconUrl);
       showMessage('success', '✅ 설정이 저장되었습니다.');
     } catch {
       showMessage('error', '❌ 설정 저장에 실패했습니다.');
