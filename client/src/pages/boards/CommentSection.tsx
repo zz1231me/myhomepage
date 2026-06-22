@@ -154,7 +154,8 @@ const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState('');
-  const [sortBy, setSortBy] = useState<'oldest' | 'newest' | 'popular'>('oldest');
+  // 'popular'(추천순)은 댓글 좋아요 기능이 없어 항상 등록순과 동일하므로 옵션에서 제외
+  const [sortBy, setSortBy] = useState<'oldest' | 'newest'>('oldest');
   const [copied, setCopied] = useState(false);
 
   const { isAuthenticated, getUserId, getUser, isAdmin } = useAuth();
@@ -243,6 +244,25 @@ const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
   // 단일 댓글 행 렌더러 (재귀적으로 replies 포함)
   const renderComment = useCallback(
     (comment: Comment, isReply = false): React.ReactNode => {
+      // 삭제됐지만 답글이 살아있어 트리 보존용으로 내려온 placeholder — 내용/작성자/액션 없이
+      // 음영 처리한 안내만 보여주고, 답글은 그대로 들여쓰기해 계층을 유지한다.
+      if (comment.isDeleted) {
+        return (
+          <div key={comment.id}>
+            <div
+              className={`py-4 ${isReply ? 'pl-4 border-l-2 border-slate-200 dark:border-slate-700 ml-3' : ''}`}
+            >
+              <p className="text-sm italic text-slate-400 dark:text-slate-500">
+                삭제된 댓글입니다.
+              </p>
+            </div>
+            {comment.replies && comment.replies.length > 0 && (
+              <div className="ml-3">{comment.replies.map(reply => renderComment(reply, true))}</div>
+            )}
+          </div>
+        );
+      }
+
       const commentUserId = comment.UserId || comment.user?.id;
       const isOwner = !!(
         currentUserId &&
@@ -603,7 +623,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
             </p>
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1">
-                {(['oldest', 'newest', 'popular'] as const).map(option => (
+                {(['oldest', 'newest'] as const).map(option => (
                   <button
                     key={option}
                     onClick={() => setSortBy(option)}
@@ -613,7 +633,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ postId }) => {
                         : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
                     }`}
                   >
-                    {option === 'oldest' ? '등록순' : option === 'newest' ? '최신순' : '추천순'}
+                    {option === 'oldest' ? '등록순' : '최신순'}
                   </button>
                 ))}
               </div>

@@ -1,3 +1,4 @@
+import { Op } from 'sequelize';
 import { BaseService } from './base.service';
 import { Comment, CommentInstance } from '../models/Comment';
 import { User } from '../models/User';
@@ -116,45 +117,97 @@ export class CommentService extends BaseService {
   async getCommentsByPost(
     postId: string,
     sortBy: 'oldest' | 'newest' | 'popular' = 'oldest'
-  ): Promise<CommentInstance[]> {
-    const orderMap: Record<string, [string, string][]> = {
-      oldest: [['createdAt', 'ASC']],
-      newest: [['createdAt', 'DESC']],
-      popular: [
-        ['likeCount', 'DESC'],
-        ['createdAt', 'ASC'],
-      ],
-    };
+  ): Promise<Array<Record<string, unknown>>> {
+    const ATTRS = [
+      'id',
+      'content',
+      'author',
+      'createdAt',
+      'updatedAt',
+      'UserId',
+      'PostId',
+      'isEdited',
+      'editedAt',
+      'parentId',
+      'depth',
+      'path',
+      'likeCount',
+    ];
+    const userInclude = [
+      { model: User, as: 'user', attributes: ['id', 'name', 'avatar'], required: false },
+    ];
 
-    return Comment.findAll({
+    // 1) 살아있는 댓글 조회
+    const live = await Comment.findAll({
       where: { PostId: postId },
-      attributes: [
-        'id',
-        'content',
-        'author',
-        'createdAt',
-        'updatedAt',
-        'UserId',
-        'PostId',
-        'isEdited',
-        'editedAt',
-        'parentId',
-        'depth',
-        'path',
-        'likeCount',
-      ],
-      include: [
-        {
-          model: User,
-          as: 'user',
-          attributes: ['id', 'name', 'avatar'],
-          required: false,
-        },
-      ],
-      order: orderMap[sortBy] ?? [['createdAt', 'ASC']],
+      attributes: ATTRS,
+      include: userInclude,
       // DoS 방지: 게시글당 최대 개수는 관리자 설정값 사용
       limit: getCommentSettings().maxCount,
     });
+
+    const result: Array<Record<string, unknown>> = live.map(c => ({
+      ...c.get({ plain: true }),
+      isDeleted: false,
+    }));
+    const present = new Set<number>(result.map(c => c.id as number));
+
+    // 2) 삭제된 '부모' 댓글 복원 — 자식이 살아있으면 트리 계층 보존을 위해 마스킹해 포함한다.
+    //    부모가 또 삭제된 부모를 가질 수 있어 더 이상 누락이 없을 때까지 반복(상한 10회 안전장치).
+    for (let depth = 0; depth < 10; depth += 1) {
+      const missing = [
+        ...new Set(
+          result
+            .map(c => c.parentId as number | null)
+            .filter((pid): pid is number => pid !== null && !present.has(pid))
+        ),
+      ];
+      if (missing.length === 0) break;
+
+      const parents = await Comment.findAll({
+        where: { id: { [Op.in]: missing }, PostId: postId },
+        attributes: [...ATTRS, 'deletedAt'],
+        include: userInclude,
+        paranoid: false, // 소프트 삭제된 부모도 포함
+      });
+      if (parents.length === 0) break;
+
+      for (const p of parents) {
+        const plain = p.get({ plain: true }) as Record<string, unknown>;
+        present.add(plain.id as number);
+        if (plain.deletedAt) {
+          // 삭제된 부모 — 내용/작성자 마스킹 + isDeleted 플래그(클라가 액션 없이 음영 처리)
+          result.push({
+            ...plain,
+            content: '삭제된 댓글입니다.',
+            author: '(삭제됨)',
+            user: null,
+            UserId: null,
+            isEdited: false,
+            editedAt: null,
+            likeCount: 0,
+            deletedAt: undefined,
+            isDeleted: true,
+          });
+        } else {
+          // 삭제는 아니나 limit으로 잘려 빠졌던 부모 — 그대로 복원
+          result.push({ ...plain, deletedAt: undefined, isDeleted: false });
+        }
+      }
+    }
+
+    // 3) 정렬 — 마스킹 부모를 끼워넣었으므로 정렬 기준에 맞춰 다시 정렬(클라 트리 빌더의 root 순서 보존)
+    const byTime = (a: Record<string, unknown>, b: Record<string, unknown>): number =>
+      new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime();
+    if (sortBy === 'newest') {
+      result.sort((a, b) => byTime(b, a));
+    } else if (sortBy === 'popular') {
+      result.sort((a, b) => (b.likeCount as number) - (a.likeCount as number) || byTime(a, b));
+    } else {
+      result.sort(byTime);
+    }
+
+    return result;
   }
 
   /**
