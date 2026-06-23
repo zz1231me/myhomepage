@@ -158,11 +158,20 @@ export interface UserSessionRecord {
   createdAt: string;
 }
 
+export interface PasswordResetRequestItem {
+  id: string;
+  userId: string; // 로그인 아이디
+  name: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+}
+
 export type TabType =
   | 'users'
   | 'boards'
   | 'roles'
   | 'permissions'
+  | 'password-reset-requests'
   | 'events'
   | 'bookmarks'
   | 'rate-limits'

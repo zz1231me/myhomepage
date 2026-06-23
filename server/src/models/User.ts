@@ -9,6 +9,7 @@ import {
   InferCreationAttributes,
   CreationOptional,
   NonAttribute,
+  Transaction,
 } from 'sequelize';
 import { sequelize } from '../config/sequelize';
 import bcrypt from 'bcryptjs';
@@ -170,15 +171,19 @@ class UserModel
   }
 
   // ✅ 비밀번호 재설정 토큰 생성 (SHA-256 해시 저장, 평문 반환)
-  public async generatePasswordResetToken(): Promise<string> {
+  // transaction 옵션을 받아 save를 같은 트랜잭션에 묶을 수 있다. SQLite는 단일 writer라,
+  // 호출부가 트랜잭션을 잡은 상태에서 트랜잭션 밖 save를 하면 SQLITE_BUSY로 교착된다.
+  public async generatePasswordResetToken(options?: {
+    transaction?: Transaction;
+  }): Promise<string> {
     const token = crypto.randomBytes(32).toString('hex');
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
 
     this.passwordResetToken = hashedToken; // DB에는 해시만 저장
     this.passwordResetExpires = new Date(Date.now() + getPasswordResetTokenMs());
-    await this.save();
+    await this.save({ transaction: options?.transaction });
 
-    return token; // 평문 토큰은 이메일로만 전달
+    return token; // 평문 토큰은 관리자 승인 시 발급(링크로 전달)
   }
 
   // ✅ 계정 익명화 (게시글/댓글 작성자명 변경용)

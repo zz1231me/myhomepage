@@ -327,13 +327,13 @@ function Login() {
             </button>
           </form>
 
-          {/* 비밀번호 찾기 + 회원가입 링크 */}
+          {/* 비밀번호 초기화 요청 + 회원가입 링크 */}
           <div className="mt-5 flex flex-col items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
             <Link
-              to="/forgot-password"
+              to="/password-reset-request"
               className="text-primary-600 dark:text-primary-400 font-medium hover:text-primary-700 dark:hover:text-primary-300 transition-colors"
             >
-              비밀번호를 잊으셨나요?
+              비밀번호 초기화 요청
             </Link>
             {settings.allowRegistration !== false && (
               <p>

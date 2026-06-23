@@ -3,6 +3,7 @@ import { Response } from 'express';
 
 import XLSX from 'xlsx-js-style';
 import { userService } from '../services/user.service';
+import { passwordResetRequestService } from '../services/passwordResetRequest.service';
 import { boardService } from '../services/board.service';
 import { roleService } from '../services/role.service';
 import { eventService } from '../services/event.service';
@@ -326,6 +327,62 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
     const appErr = toAppError(error);
     logError('비밀번호 재설정 실패', error);
     sendError(res, appErr?.statusCode ?? 500, appErr?.message ?? '비밀번호 재설정 실패');
+  }
+};
+
+// ===== 비밀번호 초기화 요청 (사용자 요청 → 관리자 승인) =====
+
+export const getPasswordResetRequests = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const raw = (req.query.status as string) || 'pending';
+    const status = (['pending', 'approved', 'rejected'].includes(raw) ? raw : 'pending') as
+      | 'pending'
+      | 'approved'
+      | 'rejected';
+    const requests = await passwordResetRequestService.listRequests(status);
+    sendSuccess(res, requests);
+  } catch (error) {
+    logError('비밀번호 초기화 요청 목록 조회 실패', error);
+    sendError(res, 500, '요청 목록 조회 실패');
+  }
+};
+
+export const approvePasswordResetRequest = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const adminId = (req as unknown as AuthRequest).user?.id ?? 'unknown';
+    // ⚠️ 수락은 곧 신원 검증 — 관리자가 오프라인으로 본인 확인 후 수락해야 한다(클라 UI에 경고 표시).
+    const { token, user } = await passwordResetRequestService.approve(id, adminId);
+    // (자기 자신 요청 자가승인 차단은 서비스 approve 내부에서 처리)
+    logAudit(req, 'approve_password_reset', {
+      targetType: 'user',
+      targetId: user.id,
+      afterValue: { approved: true },
+    });
+    // 평문 토큰을 관리자에게만 반환 — 관리자가 재설정 링크를 본인에게 전달한다(이메일 인프라 없음).
+    sendSuccess(
+      res,
+      { token, loginId: user.id },
+      '요청을 수락했습니다. 재설정 링크를 본인에게 전달하세요.'
+    );
+  } catch (error) {
+    const appErr = toAppError(error);
+    logError('비밀번호 초기화 요청 수락 실패', error);
+    sendError(res, appErr?.statusCode ?? 500, appErr?.message ?? '요청 수락 실패');
+  }
+};
+
+export const rejectPasswordResetRequest = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const adminId = (req as unknown as AuthRequest).user?.id ?? 'unknown';
+    const { userId } = await passwordResetRequestService.reject(id, adminId);
+    logAudit(req, 'reject_password_reset', { targetType: 'user', targetId: userId });
+    sendSuccess(res, null, '요청을 거절했습니다.');
+  } catch (error) {
+    const appErr = toAppError(error);
+    logError('비밀번호 초기화 요청 거절 실패', error);
+    sendError(res, appErr?.statusCode ?? 500, appErr?.message ?? '요청 거절 실패');
   }
 };
 

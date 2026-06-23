@@ -19,7 +19,7 @@ import { useAuth } from '../store/auth';
 // 리다이렉트되는데, '/'를 예외로 두면 (설정 로드 전 race까지 겹쳐) 점검 페이지 대신 로그인폼이
 // 떠버린다. '/'에서도 점검 페이지를 보이고, 로그인은 '/login'(점검 페이지의 '관리자 로그인'
 // 링크) 또는 비밀번호 찾기 경로로만 진입하게 한다.
-const AUTH_PATHS = ['/login', '/login/2fa', '/forgot-password', '/reset-password'];
+const AUTH_PATHS = ['/login', '/login/2fa', '/password-reset-request', '/reset-password'];
 
 const MaintenancePage: React.FC<{ message: string | null; siteName: string }> = ({
   message,

@@ -38,7 +38,7 @@ const NotFound = lazy(() => import('./pages/NotFound'));
 const MemoBoard = lazy(() => import('./pages/memos/MemoBoard'));
 const WikiPageRoute = lazy(() => import('./pages/wiki/WikiPage'));
 const LoginTwoFactor = lazy(() => import('./pages/LoginTwoFactor'));
-const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
+const PasswordResetRequest = lazy(() => import('./pages/PasswordResetRequest'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const ChangePassword = lazy(() => import('./pages/ChangePassword'));
 
@@ -131,7 +131,7 @@ function App() {
               <Route path="/login" element={<Login />} />
               <Route path="/login/2fa" element={<LoginTwoFactor />} />
               <Route path="/register" element={<Register />} />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/password-reset-request" element={<PasswordResetRequest />} />
               <Route path="/reset-password" element={<ResetPassword />} />
 
               {/* ✅ 강제 비밀번호 변경 (관리자 초기화 후) — ProtectedRoute가 여기로 강제 이동 */}

@@ -31,8 +31,8 @@ export const changePasswordSchema = z.object({
   newPassword: z.string().min(1, '새 비밀번호는 필수입니다.').max(100),
 });
 
-export const forgotPasswordSchema = z.object({
-  email: z.string().email('유효한 이메일 형식이 아닙니다.'),
+export const passwordResetRequestSchema = z.object({
+  loginId: z.string().min(1, '아이디를 입력해주세요.').max(50),
 });
 
 // ⚠️ 버그 수정: 클라이언트/컨트롤러가 'password' 필드를 사용하므로 스키마도 'password'로 통일
