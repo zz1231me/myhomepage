@@ -494,10 +494,16 @@ export const deleteEvent = async (
       }
     }
 
-    // 반복 이벤트의 부모를 삭제할 때 자식 인스턴스도 함께 삭제 (고아화 방지) — 트랜잭션으로 원자적 처리
+    // 반복 이벤트의 부모를 삭제할 때 자식 인스턴스도 함께 삭제 (고아화 방지) — 트랜잭션으로 원자적 처리.
+    // ⚠️ 같은 소유자의 자식만 삭제한다. parentEventId는 검증 없이 raw body로 설정 가능하므로,
+    //    UserId 스코프가 없으면 타 사용자가 이 이벤트를 부모로 링크해 둔 경우 소유자의 삭제가
+    //    그 사용자의 이벤트까지 지우는 교차 사용자 데이터 손실이 발생할 수 있다.
     let deleted = 0;
     await sequelize.transaction(async t => {
-      await Event.destroy({ where: { parentEventId: id }, transaction: t });
+      await Event.destroy({
+        where: { parentEventId: id, UserId: existingEvent.UserId },
+        transaction: t,
+      });
       deleted = await Event.destroy({ where: { id }, transaction: t });
     });
 

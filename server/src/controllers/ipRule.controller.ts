@@ -11,6 +11,7 @@ import {
   deleteIpRule,
   getIpRuleStats,
   matchesIpRule,
+  getIpRuleCache,
 } from '../services/ipRule.service';
 import { IpRule, IpRuleType } from '../models/IpRule';
 import { AppError } from '../middlewares/error.middleware';
@@ -102,6 +103,35 @@ export const addIpRule = async (req: AuthRequest, res: Response): Promise<void> 
   if (type === 'blacklist' && req.ip && matchesIpRule(req.ip, ipTrimmed)) {
     sendError(res, 400, '현재 접속 중인 본인 IP는 차단(blacklist) 목록에 추가할 수 없습니다.');
     return;
+  }
+
+  // self-lockout 방지(whitelist) — whitelist가 하나라도 활성화되면 목록에 없는 IP는 전부 차단된다.
+  // 신규 규칙은 즉시 활성(isActive:true)이므로, 본인 IP가 새 규칙·기존 활성 whitelist·환경변수
+  // 어느 것에도 포함되지 않으면 관리 화면(IP 규칙 해제 포함)에 락아웃될 수 있어 거부한다.
+  if (type === 'whitelist' && req.ip) {
+    const selfIp = req.ip.startsWith('::ffff:') ? req.ip.slice(7) : req.ip;
+    let covered = true; // 캐시 조회 실패 시 가드 스킵(fail-open — 편의 안전장치)
+    try {
+      const cache = await getIpRuleCache();
+      const envWhitelist = process.env.ALLOWED_ADMIN_IPS
+        ? process.env.ALLOWED_ADMIN_IPS.split(',')
+            .map(s => s.trim())
+            .filter(Boolean)
+        : [];
+      covered =
+        matchesIpRule(selfIp, ipTrimmed) ||
+        [...cache.whitelist, ...envWhitelist].some(r => matchesIpRule(selfIp, r));
+    } catch {
+      covered = true;
+    }
+    if (!covered) {
+      sendError(
+        res,
+        400,
+        '이 화이트리스트 규칙은 현재 접속 중인 본인 IP를 포함하지 않아 관리자 접근이 차단될 수 있습니다. 본인 IP를 포함하는 규칙을 먼저 추가하세요.'
+      );
+      return;
+    }
   }
 
   try {
