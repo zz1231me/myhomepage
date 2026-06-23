@@ -11,6 +11,8 @@ import { PostLike } from '../models/PostLike';
 import { PostRead } from '../models/PostRead';
 import { PostBookmark } from '../models/PostBookmark';
 import { BoardManager } from '../models/BoardManager';
+import { CommentLike } from '../models/CommentLike';
+import { Notification } from '../models/Notification';
 import { AccessibleBoard, PersonalFolderResult } from '../types/auth-request';
 import crypto from 'crypto';
 import fs from 'fs';
@@ -138,9 +140,12 @@ export class BoardService extends BaseService {
     }
 
     // 게시판 내 게시글 첨부파일 목록을 미리 수집 (DB 삭제 후 파일 정리용)
+    // ⚠️ paranoid:false — 아래 Post.destroy(force:true)는 soft-deleted 글까지 hard-delete 하므로,
+    //    postIds도 soft-deleted 글을 포함해야 그 자식(댓글/좋아요 등)까지 정리된다(orphan 방지).
     const posts = await Post.findAll({
       where: { boardType: boardId },
       attributes: ['id', 'attachments'],
+      paranoid: false,
     });
     type Attachment = { filename: string; path?: string };
     const filesToDelete: Attachment[] = [];
@@ -170,16 +175,39 @@ export class BoardService extends BaseService {
     await sequelize.transaction(async t => {
       if (postIds.length > 0) {
         const childWhere = { PostId: { [Op.in]: postIds } };
+        // CommentLike는 댓글 soft/hard 삭제로 CASCADE가 보장되지 않으므로(constraints:false+SQLite)
+        // 댓글 id를 먼저 모아 명시 정리한다(deletePost와 동일). IN 변수 상한 회피 위해 청크 분할.
+        const comments = await Comment.findAll({
+          where: childWhere,
+          attributes: ['id'],
+          paranoid: false,
+          transaction: t,
+        });
+        const commentIds = comments.map(c => c.id);
+        const COMMENT_LIKE_CHUNK = 500;
+        for (let i = 0; i < commentIds.length; i += COMMENT_LIKE_CHUNK) {
+          await CommentLike.destroy({
+            where: { CommentId: { [Op.in]: commentIds.slice(i, i + COMMENT_LIKE_CHUNK) } },
+            transaction: t,
+          });
+        }
         await Comment.destroy({ where: childWhere, transaction: t, force: true });
         await PostLike.destroy({ where: childWhere, transaction: t });
         await PostRead.destroy({ where: childWhere, transaction: t });
         await PostBookmark.destroy({ where: childWhere, transaction: t });
         await PostTag.destroy({ where: childWhere, transaction: t });
+        // 이 글들을 가리키는 알림(댓글/좋아요)도 링크가 죽으므로 정리(deletePost와 동일).
+        await Notification.destroy({
+          where: { relatedId: { [Op.in]: postIds } },
+          transaction: t,
+        });
       }
       await Post.destroy({ where: { boardType: boardId }, transaction: t, force: true });
-      // 게시판 권한(BoardAccess)도 명시적으로 정리 — onDelete:CASCADE는 constraints:false +
-      // SQLite FK 미강제라 보장되지 않는다. 안 지우면 같은 id로 게시판 재생성 시 옛 권한이 되살아남.
+      // 게시판 권한(BoardAccess) + 담당자(BoardManager)도 명시적으로 정리 — onDelete:CASCADE는
+      // constraints:false + SQLite FK 미강제라 보장되지 않는다. 안 지우면 같은 id로 게시판 재생성 시
+      // 옛 권한/담당자가 되살아나 의도치 않은 접근 권한이 부활한다.
       await BoardAccess.destroy({ where: { boardId }, transaction: t });
+      await BoardManager.destroy({ where: { boardId }, transaction: t });
       await board.destroy({ transaction: t });
     });
 
