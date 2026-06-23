@@ -1,13 +1,13 @@
-// src/pages/ForgotPassword.tsx - 비밀번호 재설정 이메일 요청 페이지
+// src/pages/PasswordResetRequest.tsx - 비밀번호 초기화 요청 페이지 (아이디 → 관리자 승인)
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { forgotPassword as forgotPasswordAPI } from '../api/auth';
+import { requestPasswordReset } from '../api/auth';
 import { useSiteSettings } from '../store/siteSettings';
 
-function ForgotPassword() {
+function PasswordResetRequest() {
   const { settings } = useSiteSettings();
 
-  const [email, setEmail] = useState('');
+  const [loginId, setLoginId] = useState('');
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -27,7 +27,7 @@ function ForgotPassword() {
     setIsLoading(true);
 
     try {
-      const result = await forgotPasswordAPI(email.trim().toLowerCase());
+      const result = await requestPasswordReset(loginId.trim());
       setSuccessMessage(result.message);
       setSubmitted(true);
     } catch (err) {
@@ -93,12 +93,12 @@ function ForgotPassword() {
             )}
 
             <h1 className="text-2xl font-bold mb-2 text-slate-900 dark:text-white">
-              비밀번호 재설정
+              비밀번호 초기화 요청
             </h1>
             <p className="text-sm text-slate-600 dark:text-slate-400">
               {submitted
-                ? '이메일을 확인해주세요'
-                : '가입 시 사용한 이메일을 입력하시면 재설정 링크를 보내드립니다'}
+                ? '관리자 승인을 기다려주세요'
+                : '아이디를 입력하면 관리자에게 초기화 요청이 전달됩니다'}
             </p>
           </div>
 
@@ -122,7 +122,7 @@ function ForgotPassword() {
                   </svg>
                   <div>
                     <p className="text-sm font-medium text-green-800 dark:text-green-300">
-                      요청 완료
+                      요청 접수됨
                     </p>
                     <p className="text-sm text-green-700 dark:text-green-400 mt-1">
                       {successMessage}
@@ -135,37 +135,42 @@ function ForgotPassword() {
                 type="button"
                 onClick={() => {
                   setSubmitted(false);
-                  setEmail('');
+                  setLoginId('');
                   setSuccessMessage('');
                 }}
                 className="w-full py-3 px-4 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 transition-colors"
               >
-                다른 이메일로 다시 요청하기
+                다른 아이디로 다시 요청하기
               </button>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label
-                  htmlFor="email"
+                  htmlFor="loginId"
                   className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2"
                 >
-                  이메일 주소
+                  아이디
                 </label>
                 <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
+                  id="loginId"
+                  type="text"
+                  value={loginId}
+                  onChange={e => setLoginId(e.target.value)}
                   disabled={isLoading}
                   required
+                  autoComplete="username"
                   className="w-full px-4 py-3 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100
                             focus:bg-slate-50 dark:focus:bg-slate-600 focus:ring-2 focus:ring-primary-500/40
                             disabled:opacity-50 disabled:cursor-not-allowed
                             transition-all duration-200
                             placeholder:text-slate-400 dark:placeholder:text-slate-500"
-                  placeholder="가입 시 사용한 이메일을 입력하세요"
+                  placeholder="가입 시 사용한 아이디를 입력하세요"
                 />
+                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                  관리자가 본인 확인 후 승인하면, 새 비밀번호를 설정할 수 있는 링크를 안내받게
+                  됩니다.
+                </p>
               </div>
 
               <button
@@ -197,20 +202,10 @@ function ForgotPassword() {
                         className="opacity-75"
                       ></path>
                     </svg>
-                    <span>전송 중...</span>
+                    <span>요청 중...</span>
                   </>
                 ) : (
-                  <>
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                      />
-                    </svg>
-                    <span>재설정 링크 보내기</span>
-                  </>
+                  <span>초기화 요청하기</span>
                 )}
               </button>
             </form>
@@ -240,4 +235,4 @@ function ForgotPassword() {
   );
 }
 
-export default ForgotPassword;
+export default PasswordResetRequest;

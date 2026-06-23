@@ -5,6 +5,7 @@ import {
   Users,
   ShieldCheck,
   KeyRound,
+  Inbox,
   LayoutGrid,
   UserCog,
   Tag,
@@ -45,6 +46,7 @@ export const TabNavigation = React.memo(() => {
           { id: 'users', label: '사용자', icon: Users },
           { id: 'roles', label: '역할', icon: ShieldCheck },
           { id: 'permissions', label: '권한', icon: KeyRound },
+          { id: 'password-reset-requests', label: '초기화 요청', icon: Inbox },
         ],
       },
       {

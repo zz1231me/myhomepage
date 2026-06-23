@@ -3,6 +3,7 @@ import { Request, Response, NextFunction } from 'express';
 import { AuthRequest } from '../types/auth-request';
 import { userService } from '../services/user.service';
 import { authService } from '../services/auth.service';
+import { passwordResetRequestService } from '../services/passwordResetRequest.service';
 import { logInfo, logSuccess, logError } from '../utils/logger';
 import { AuthValidator } from '../validators/auth.validator';
 import {
@@ -427,31 +428,26 @@ export const uploadAvatar = async (
   }
 };
 
-// 비밀번호 재설정 이메일 요청
-export const forgotPassword = async (req: Request, res: Response): Promise<void> => {
+// 비밀번호 초기화 요청 (비로그인) — 아이디로 요청을 남기면 관리자가 승인 후 재설정 링크를 발급한다.
+export const requestPasswordReset = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email } = req.body;
+    const { loginId } = req.body as { loginId?: unknown };
 
-    if (!email || typeof email !== 'string') {
-      sendValidationError(res, 'email', '이메일을 입력해주세요.');
+    if (!loginId || typeof loginId !== 'string') {
+      sendValidationError(res, 'loginId', '아이디를 입력해주세요.');
       return;
     }
 
-    const result = await authService.forgotPassword(email.trim().toLowerCase());
+    await passwordResetRequestService.createRequest(loginId.trim());
 
-    // 보안상 사용자 존재 여부와 관계없이 동일한 응답
+    // 계정 존재 여부와 무관하게 동일한 응답 (아이디 열거 방지)
     sendSuccess(
       res,
       null,
-      '비밀번호 재설정 링크가 이메일로 발송되었습니다. (이메일이 등록되지 않은 경우에도 동일한 메시지가 표시됩니다.)'
+      '비밀번호 초기화 요청이 접수되었습니다. 관리자 승인 후 안내됩니다. (등록되지 않은 아이디도 동일하게 표시됩니다.)'
     );
-
-    if (result && process.env.NODE_ENV === 'development') {
-      const resetUrl = `${process.env.CLIENT_URL || 'http://localhost:5173'}/reset-password?token=${result.token}`;
-      logInfo('[개발모드] 비밀번호 재설정 URL', { resetUrl });
-    }
   } catch (err) {
-    logError('비밀번호 재설정 요청 오류', err);
+    logError('비밀번호 초기화 요청 오류', err);
     sendError(res, 500, '서버 오류가 발생했습니다.');
   }
 };

@@ -30,6 +30,7 @@ import { UserSession } from './UserSession';
 import { Report } from './Report';
 import IpRule from './IpRule';
 import { BoardManager } from './BoardManager';
+import { PasswordResetRequest } from './PasswordResetRequest';
 
 // ========================================
 // User 관련 관계
@@ -381,6 +382,18 @@ User.hasMany(WikiRevision, {
 WikiRevision.belongsTo(User, { foreignKey: 'editorId', as: 'editor', constraints: false });
 
 // ========================================
+// PasswordResetRequest — 비밀번호 초기화 요청 (사용자 요청 → 관리자 승인)
+// ========================================
+User.hasMany(PasswordResetRequest, {
+  foreignKey: 'userId',
+  as: 'passwordResetRequests',
+  onDelete: 'CASCADE',
+  hooks: true,
+  constraints: false,
+});
+PasswordResetRequest.belongsTo(User, { foreignKey: 'userId', as: 'user', constraints: false });
+
+// ========================================
 // ✅ 정리된 모델 Export (필요한 모델만)
 // ========================================
 
@@ -414,6 +427,7 @@ export {
   Report,
   IpRule,
   BoardManager,
+  PasswordResetRequest,
 };
 
 // ========================================

@@ -11,7 +11,7 @@ import {
   updateTheme,
   uploadAvatar as uploadAvatarController,
   deleteAvatar,
-  forgotPassword,
+  requestPasswordReset,
   resetPassword,
   updateProfile,
 } from '../controllers/auth.controller';
@@ -29,7 +29,7 @@ import {
   loginSchema,
   registerSchema,
   changePasswordSchema,
-  forgotPasswordSchema,
+  passwordResetRequestSchema,
   resetPasswordSchema,
 } from '../validators/schemas';
 
@@ -40,10 +40,10 @@ router.post('/login', authLimiter, validateBody(loginSchema), login);
 router.post('/register', authLimiter, validateBody(registerSchema), register);
 router.post('/refresh', refreshLimiter, refreshToken);
 router.post(
-  '/forgot-password',
+  '/password-reset-request',
   forgotPasswordLimiter,
-  validateBody(forgotPasswordSchema),
-  forgotPassword
+  validateBody(passwordResetRequestSchema),
+  requestPasswordReset
 );
 router.post('/reset-password', authLimiter, validateBody(resetPasswordSchema), resetPassword);
 router.post('/logout', authenticate, logout);

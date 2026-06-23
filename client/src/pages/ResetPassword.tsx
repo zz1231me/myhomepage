@@ -150,10 +150,10 @@ function ResetPassword() {
                 비밀번호 재설정 링크가 유효하지 않습니다.
               </p>
               <Link
-                to="/forgot-password"
+                to="/password-reset-request"
                 className="inline-flex items-center gap-2 py-2.5 px-6 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg transition-colors"
               >
-                재설정 다시 요청하기
+                초기화 다시 요청하기
               </Link>
             </div>
           ) : (

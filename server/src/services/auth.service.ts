@@ -463,21 +463,8 @@ export class AuthService extends BaseService {
     }
   }
 
-  // 비밀번호 재설정 토큰 생성 및 저장
-  async forgotPassword(email: string): Promise<{ token: string; user: UserInstance } | null> {
-    const user = await User.findOne({ where: { email, isActive: true, isDeleted: false } });
-    if (!user) {
-      // 타이밍 사이드채널 완화: 존재하지 않는 이메일에도 동등한 crypto 비용 수행 (계정 열거 방지)
-      // — 응답 메시지는 컨트롤러에서 이미 동일, rate limit(5/15분)와 함께 이중 방어
-      crypto.createHash('sha256').update(crypto.randomBytes(32)).digest('hex');
-      return null;
-    }
-
-    const token = await user.generatePasswordResetToken(); // 평문 토큰 반환, 내부에서 save() 호출
-    return { token, user };
-  }
-
   // 토큰 검증 후 비밀번호 변경
+  // (토큰 발급은 관리자 승인 흐름 passwordResetRequestService.approve에서 user.generatePasswordResetToken으로 수행)
   async resetPassword(token: string, newPassword: string): Promise<string | null> {
     // DB에는 SHA-256 해시가 저장되므로 입력 토큰을 해싱 후 비교
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');

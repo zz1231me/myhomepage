@@ -130,20 +130,20 @@ export async function register(id: string, password: string, name: string, email
   return data;
 }
 
-// 🔑 비밀번호 재설정 이메일 요청
-export async function forgotPassword(email: string): Promise<{ message: string }> {
-  const res = await fetch('/api/auth/forgot-password', {
+// 🔑 비밀번호 초기화 요청 (아이디로 요청 → 관리자 승인)
+export async function requestPasswordReset(loginId: string): Promise<{ message: string }> {
+  const res = await fetch('/api/auth/password-reset-request', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-Requested-With': 'XMLHttpRequest',
     },
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ loginId }),
   });
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.message || '비밀번호 재설정 요청 실패');
+    throw new Error(errorData.message || '비밀번호 초기화 요청 실패');
   }
 
   return res.json().catch(() => {

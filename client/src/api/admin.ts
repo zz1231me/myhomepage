@@ -1,7 +1,7 @@
 // client/src/api/admin.ts — 관리자 전용 API
 import api from './axios';
 import { unwrap } from './utils';
-import { User } from '../types/admin.types';
+import { User, PasswordResetRequestItem } from '../types/admin.types';
 
 // ─── 사용자 승인/거부/비활성화/복구 ───────────────────────────────────────
 
@@ -19,6 +19,22 @@ export const restoreUser = (userId: string): Promise<void> =>
 
 export const fetchDeletedUsers = (): Promise<User[]> =>
   api.get('/admin/users/deleted').then(unwrap);
+
+// ─── 비밀번호 초기화 요청 (사용자 요청 → 관리자 승인) ──────────────────────────
+
+export const fetchPasswordResetRequests = (
+  status: 'pending' | 'approved' | 'rejected' = 'pending'
+): Promise<PasswordResetRequestItem[]> =>
+  api.get('/admin/password-reset-requests', { params: { status } }).then(unwrap);
+
+/** 수락 — 일회용 재설정 토큰을 반환(관리자가 본인에게 링크 전달). */
+export const approvePasswordResetRequest = (
+  id: string
+): Promise<{ token: string; loginId: string }> =>
+  api.post(`/admin/password-reset-requests/${id}/approve`).then(unwrap);
+
+export const rejectPasswordResetRequest = (id: string): Promise<void> =>
+  api.post(`/admin/password-reset-requests/${id}/reject`).then(() => undefined);
 
 // ─── 보안 로그 ───────────────────────────────────────────────────────────────
 

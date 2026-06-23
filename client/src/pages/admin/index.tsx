@@ -11,6 +11,9 @@ const UserManagement = lazy(() => import('../../components/admin/tabs/UserManage
 const BoardManagement = lazy(() => import('../../components/admin/tabs/BoardManagement'));
 const RoleManagement = lazy(() => import('../../components/admin/tabs/RoleManagement'));
 const PermissionManagement = lazy(() => import('../../components/admin/tabs/PermissionManagement'));
+const PasswordResetRequestManagement = lazy(
+  () => import('../../components/admin/tabs/PasswordResetRequestManagement')
+);
 const EventManagement = lazy(() => import('../../components/admin/tabs/EventManagement'));
 const BookmarkManagement = lazy(() => import('../../components/admin/tabs/BookmarkManagement'));
 const SiteSettingsManagement = lazy(
@@ -100,6 +103,10 @@ const AdminUserPage = () => {
                   <Route path="boards" element={<BoardManagement />} />
                   <Route path="roles" element={<RoleManagement />} />
                   <Route path="permissions" element={<PermissionManagement />} />
+                  <Route
+                    path="password-reset-requests"
+                    element={<PasswordResetRequestManagement />}
+                  />
                   <Route path="events" element={<EventManagement />} />
                   <Route path="bookmarks" element={<BookmarkManagement />} />
                   <Route path="rate-limits" element={<RateLimitManagement />} />
