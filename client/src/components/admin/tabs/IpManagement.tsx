@@ -215,8 +215,8 @@ const IpManagement: React.FC = () => {
                 onChange={e => setFormType(e.target.value as IpRuleType)}
                 className="input-field w-full text-sm"
               >
-                <option value="blacklist">🚫 블랙리스트 (차단)</option>
-                <option value="whitelist">✅ 화이트리스트 (허용)</option>
+                <option value="blacklist">블랙리스트 (차단)</option>
+                <option value="whitelist">화이트리스트 (허용)</option>
               </select>
             </div>
             {/* IP */}
@@ -380,7 +380,7 @@ const IpManagement: React.FC = () => {
 
       {/* 안내 */}
       <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/40 rounded-xl p-4 text-xs text-amber-700 dark:text-amber-400 space-y-1">
-        <p className="font-semibold">⚠️ 적용 규칙</p>
+        <p className="font-semibold">적용 규칙</p>
         <p>
           1. <strong>블랙리스트가 최우선</strong> — 차단 목록에 있으면 화이트리스트와 무관하게 즉시
           거부됩니다.

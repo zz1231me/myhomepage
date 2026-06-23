@@ -1,5 +1,6 @@
 // client/src/components/admin/tabs/SiteSettingsManagement.tsx
 import React, { useState, useEffect, useRef, useCallback, KeyboardEvent } from 'react';
+import { AlertTriangle } from 'lucide-react';
 import {
   getSiteSettings,
   updateSiteSettings,
@@ -114,7 +115,7 @@ const AssetUploader: React.FC<AssetUploaderProps> = ({ label, hint, accept, valu
                   업로드 중...
                 </span>
               ) : (
-                '📁 파일 업로드'
+                '파일 업로드'
               )}
             </button>
 
@@ -469,9 +470,9 @@ export const SiteSettingsManagement = () => {
       // 캐시도 갱신 — 안 하면 변경 직후 새로고침 시 index.html 인라인 스크립트가 옛 제목을
       // 잠깐 적용했다 교체하는 깜빡임이 남는다.
       cacheSiteIdentity(updated.siteTitle, updated.faviconUrl);
-      showMessage('success', '✅ 설정이 저장되었습니다.');
+      showMessage('success', '설정이 저장되었습니다.');
     } catch {
-      showMessage('error', '❌ 설정 저장에 실패했습니다.');
+      showMessage('error', '설정 저장에 실패했습니다.');
     } finally {
       setSaving(false);
     }
@@ -502,7 +503,7 @@ export const SiteSettingsManagement = () => {
       )}
 
       {/* ── 1. 기본 정보 ─────────────────────────────────────────────────── */}
-      <AdminSection title="📋 기본 정보">
+      <AdminSection title="기본 정보">
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
@@ -551,7 +552,7 @@ export const SiteSettingsManagement = () => {
       </AdminSection>
 
       {/* ── 2. 브랜딩 ─────────────────────────────────────────────────────── */}
-      <AdminSection title="🎨 브랜딩">
+      <AdminSection title="브랜딩">
         <div className="space-y-6">
           <AssetUploader
             label="로고 이미지"
@@ -572,7 +573,7 @@ export const SiteSettingsManagement = () => {
       </AdminSection>
 
       {/* ── 3. 회원가입 설정 ───────────────────────────────────────────────── */}
-      <AdminSection title="👤 회원가입 설정">
+      <AdminSection title="회원가입 설정">
         <div className="space-y-4">
           <ToggleSwitch
             checked={settings.allowRegistration}
@@ -598,7 +599,7 @@ export const SiteSettingsManagement = () => {
       </AdminSection>
 
       {/* ── 4. 댓글 설정 ───────────────────────────────────────────────────── */}
-      <AdminSection title="💬 댓글 설정">
+      <AdminSection title="댓글 설정">
         <div className="space-y-4">
           <ToggleSwitch
             checked={settings.allowGuestComment}
@@ -666,11 +667,11 @@ export const SiteSettingsManagement = () => {
       </AdminSection>
 
       {/* ── 5. 점검 모드 ───────────────────────────────────────────────────── */}
-      <AdminSection title="🔧 점검 모드">
+      <AdminSection title="점검 모드">
         <div className="space-y-4">
           {settings.maintenanceMode && (
             <div className="flex items-start gap-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg text-yellow-800 dark:text-yellow-300 text-sm">
-              <span className="text-base flex-shrink-0">⚠️</span>
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
               <span>
                 점검 모드가 활성화되면 관리자/매니저를 제외한 모든 사용자가 서비스 이용 불가 상태가
                 됩니다.
@@ -705,7 +706,7 @@ export const SiteSettingsManagement = () => {
       </AdminSection>
 
       {/* ── 6. 로그인 페이지 설정 ─────────────────────────────────────────── */}
-      <AdminSection title="🔑 로그인 페이지 설정">
+      <AdminSection title="로그인 페이지 설정">
         <div>
           <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
             로그인 페이지 안내 메시지
@@ -724,12 +725,12 @@ export const SiteSettingsManagement = () => {
       </AdminSection>
 
       {/* ── 7. 시스템 설정 ────────────────────────────────────────────────── */}
-      <AdminSection title="⚙️ 시스템 설정">
+      <AdminSection title="시스템 설정">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* 보안 설정 */}
           <div className="space-y-4">
             <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 pb-2">
-              🔐 보안 설정
+              보안 설정
             </h4>
             <NumberInput
               label="비밀번호 최소 길이"
@@ -834,7 +835,7 @@ export const SiteSettingsManagement = () => {
           {/* 파일 & 게시글 설정 */}
           <div className="space-y-4">
             <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 pb-2">
-              📁 파일 &amp; 게시글
+              파일 &amp; 게시글
             </h4>
             <NumberInput
               label="첨부파일 최대 개수"
@@ -903,7 +904,7 @@ export const SiteSettingsManagement = () => {
           {/* 로그 설정 */}
           <div className="space-y-4 md:col-span-2">
             <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 pb-2">
-              📋 로그 보존 기간
+              로그 보존 기간
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <NumberInput
@@ -939,7 +940,7 @@ export const SiteSettingsManagement = () => {
       </AdminSection>
 
       {/* ── 8. 파일 크기 제한 ─────────────────────────────────────────────── */}
-      <AdminSection title="📦 파일 크기 제한 (카테고리별)">
+      <AdminSection title="파일 크기 제한 (카테고리별)">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           <NumberInput
             label="이미지 최대 크기"
@@ -981,9 +982,9 @@ export const SiteSettingsManagement = () => {
       </AdminSection>
 
       {/* ── 9. 허용 파일 확장자 ───────────────────────────────────────────── */}
-      <AdminSection title="🗂️ 허용 파일 확장자">
+      <AdminSection title="허용 파일 확장자">
         <div className="space-y-1 mb-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-xs">
-          <p className="font-medium">ℹ️ 안내</p>
+          <p className="font-medium">안내</p>
           <p>
             각 카테고리에서 허용할 확장자를 관리합니다. 확장자는 반드시 &apos;.&apos;으로 시작해야
             합니다. (예: .jpg)
@@ -995,25 +996,25 @@ export const SiteSettingsManagement = () => {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <ExtensionListEditor
-            label="🖼️ 이미지"
+            label="이미지"
             description="게시글 에디터 및 첨부 이미지에 허용할 확장자"
             value={settings.allowedImageExtensions}
             onChange={v => set('allowedImageExtensions', v)}
           />
           <ExtensionListEditor
-            label="📄 문서"
+            label="문서"
             description="PDF, Word, Excel 등 문서 파일에 허용할 확장자"
             value={settings.allowedDocumentExtensions}
             onChange={v => set('allowedDocumentExtensions', v)}
           />
           <ExtensionListEditor
-            label="🗜️ 압축파일"
+            label="압축파일"
             description="ZIP, RAR 등 압축 파일에 허용할 확장자"
             value={settings.allowedArchiveExtensions}
             onChange={v => set('allowedArchiveExtensions', v)}
           />
           <ExtensionListEditor
-            label="🎵 미디어"
+            label="미디어"
             description="MP3, MP4 등 오디오·비디오 파일에 허용할 확장자"
             value={settings.allowedMediaExtensions}
             onChange={v => set('allowedMediaExtensions', v)}
@@ -1022,10 +1023,10 @@ export const SiteSettingsManagement = () => {
       </AdminSection>
 
       {/* ── 10. 보안 고급 설정 ────────────────────────────────────────────── */}
-      <AdminSection title="🛡️ 보안 고급 설정">
+      <AdminSection title="보안 고급 설정">
         <div className="space-y-4">
           <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 text-xs">
-            <p className="font-medium">⚠️ 주의</p>
+            <p className="font-medium">주의</p>
             <p>
               bcrypt 라운드를 높이면 비밀번호 보안이 강화되지만, 로그인 시 처리 시간이 증가합니다.
               (10: 기본, 12: 권장, 14: 최고 보안)
@@ -1044,7 +1045,7 @@ export const SiteSettingsManagement = () => {
       </AdminSection>
 
       {/* ── 11. 아바타 처리 설정 ─────────────────────────────────────────── */}
-      <AdminSection title="🖼️ 아바타 처리 설정">
+      <AdminSection title="아바타 처리 설정">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <NumberInput
             label="아바타 리사이징 크기"
@@ -1068,9 +1069,9 @@ export const SiteSettingsManagement = () => {
       </AdminSection>
 
       {/* ── 12. Rate Limit 설정 ───────────────────────────────────────────── */}
-      <AdminSection title="🚦 요청 속도 제한 (Rate Limit)">
+      <AdminSection title="요청 속도 제한 (Rate Limit)">
         <div className="space-y-3 mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-xs">
-          <p className="font-medium">ℹ️ 안내</p>
+          <p className="font-medium">안내</p>
           <p>
             과도한 요청으로부터 서버를 보호합니다. 시간 창(window)은 고정이며, 최대 요청 수만 조정
             가능합니다.
@@ -1117,7 +1118,7 @@ export const SiteSettingsManagement = () => {
       </AdminSection>
 
       {/* ── 13. 에디터 설정 ───────────────────────────────────────────────── */}
-      <AdminSection title="✏️ 에디터 설정">
+      <AdminSection title="에디터 설정">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <NumberInput
             label="자동저장 주기"
@@ -1206,7 +1207,7 @@ export const SiteSettingsManagement = () => {
               저장 중...
             </>
           ) : (
-            '💾 설정 저장'
+            '설정 저장'
           )}
         </button>
       </div>

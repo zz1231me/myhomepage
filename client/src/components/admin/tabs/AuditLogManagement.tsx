@@ -125,7 +125,7 @@ export const AuditLogManagement = () => {
   return (
     <div className="space-y-6">
       <AdminSection
-        title="📋 감사 로그 (관리자 작업 이력)"
+        title="감사 로그 (관리자 작업 이력)"
         actions={
           <span className="text-sm text-slate-500 dark:text-slate-400">총 {totalLogs}건</span>
         }

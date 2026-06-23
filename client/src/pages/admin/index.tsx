@@ -76,46 +76,48 @@ const AdminUserPage = () => {
           }
         />
 
-        {/* ✅ 메인 컨텐츠 카드 */}
-        <div className="card overflow-hidden">
-          {/* 탭 네비게이션 */}
-          <div className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 px-6 pt-6">
-            <TabNavigation />
-          </div>
+        {/* 사이드바 네비게이션 + 콘텐츠 */}
+        <div className="flex flex-col gap-6 lg:flex-row">
+          <aside className="flex-shrink-0 lg:w-56">
+            <div className="card p-3 lg:sticky lg:top-6">
+              <TabNavigation />
+            </div>
+          </aside>
 
-          {/* 탭 컨텐츠 (라우팅) */}
-          <div className="p-6">
-            <Suspense
-              fallback={
-                <LoadingSpinner
-                  message="컴포넌트 로딩 중..."
-                  hint="🔄 같은 탭을 다시 클릭하면 새로고침됩니다"
-                />
-              }
-            >
-              <Routes>
-                <Route index element={<Navigate to="users" replace />} />
-                <Route path="users" element={<UserManagement />} />
-                <Route path="boards" element={<BoardManagement />} />
-                <Route path="roles" element={<RoleManagement />} />
-                <Route path="permissions" element={<PermissionManagement />} />
-                <Route path="events" element={<EventManagement />} />
-                <Route path="bookmarks" element={<BookmarkManagement />} />
-                <Route path="rate-limits" element={<RateLimitManagement />} />
-                <Route path="site-settings" element={<SiteSettingsManagement />} />
-                <Route path="security-logs" element={<SecurityLogManagement />} />
-                <Route path="error-logs" element={<ErrorLogManagement />} />
-                <Route path="tags" element={<TagManagement />} />
-                <Route path="login-history" element={<LoginHistoryManagement />} />
-                <Route path="audit-logs" element={<AuditLogManagement />} />
-                <Route path="reports" element={<ReportManagement />} />
-                <Route path="files" element={<FileManagement />} />
-                <Route path="ip-management" element={<IpManagement />} />
-                <Route path="board-managers" element={<BoardManagerManagement />} />
-                {/* 잘못된 경로는 users로 리다이렉트 */}
-                <Route path="*" element={<Navigate to="users" replace />} />
-              </Routes>
-            </Suspense>
+          <div className="min-w-0 flex-1">
+            <div className="card p-6">
+              <Suspense
+                fallback={
+                  <LoadingSpinner
+                    message="컴포넌트 로딩 중..."
+                    hint="같은 탭을 다시 클릭하면 새로고침됩니다"
+                  />
+                }
+              >
+                <Routes>
+                  <Route index element={<Navigate to="users" replace />} />
+                  <Route path="users" element={<UserManagement />} />
+                  <Route path="boards" element={<BoardManagement />} />
+                  <Route path="roles" element={<RoleManagement />} />
+                  <Route path="permissions" element={<PermissionManagement />} />
+                  <Route path="events" element={<EventManagement />} />
+                  <Route path="bookmarks" element={<BookmarkManagement />} />
+                  <Route path="rate-limits" element={<RateLimitManagement />} />
+                  <Route path="site-settings" element={<SiteSettingsManagement />} />
+                  <Route path="security-logs" element={<SecurityLogManagement />} />
+                  <Route path="error-logs" element={<ErrorLogManagement />} />
+                  <Route path="tags" element={<TagManagement />} />
+                  <Route path="login-history" element={<LoginHistoryManagement />} />
+                  <Route path="audit-logs" element={<AuditLogManagement />} />
+                  <Route path="reports" element={<ReportManagement />} />
+                  <Route path="files" element={<FileManagement />} />
+                  <Route path="ip-management" element={<IpManagement />} />
+                  <Route path="board-managers" element={<BoardManagerManagement />} />
+                  {/* 잘못된 경로는 users로 리다이렉트 */}
+                  <Route path="*" element={<Navigate to="users" replace />} />
+                </Routes>
+              </Suspense>
+            </div>
           </div>
         </div>
       </PageContainer>

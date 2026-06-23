@@ -83,7 +83,7 @@ export const LoginHistoryManagement = () => {
   return (
     <div className="space-y-6">
       <AdminSection
-        title="🔑 로그인 이력"
+        title="로그인 이력"
         actions={
           <span className="text-sm text-slate-500 dark:text-slate-400">총 {totalRecords}건</span>
         }

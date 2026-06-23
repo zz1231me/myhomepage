@@ -143,7 +143,7 @@ export const SecurityLogManagement = () => {
   return (
     <div className="space-y-6">
       <AdminSection
-        title="🛡️ 보안 로그"
+        title="보안 로그"
         actions={
           <div className="flex items-center gap-3">
             <button
