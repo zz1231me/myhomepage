@@ -87,29 +87,35 @@ export const AuditLogManagement = () => {
     overscan: 10,
   });
 
-  const fetchLogs = useCallback(async () => {
-    try {
-      setLoading(true);
-      const params: Record<string, string | number> = { page, limit: 20 };
-      if (debouncedAdminId) params.adminId = debouncedAdminId;
-      if (filterAction) params.action = filterAction;
-      if (filterTargetType) params.targetType = filterTargetType;
-      if (filterStartDate) params.startDate = filterStartDate;
-      if (filterEndDate) params.endDate = filterEndDate;
+  const fetchLogs = useCallback(
+    async (signal?: AbortSignal) => {
+      try {
+        setLoading(true);
+        const params: Record<string, string | number> = { page, limit: 20 };
+        if (debouncedAdminId) params.adminId = debouncedAdminId;
+        if (filterAction) params.action = filterAction;
+        if (filterTargetType) params.targetType = filterTargetType;
+        if (filterStartDate) params.startDate = filterStartDate;
+        if (filterEndDate) params.endDate = filterEndDate;
 
-      const data = await fetchAuditLogs(params);
-      setLogs(data.logs ?? []);
-      setTotalPages(data.totalPages ?? 1);
-      setTotalLogs(data.total ?? 0);
-    } catch {
-      // 에러 무시
-    } finally {
-      setLoading(false);
-    }
-  }, [page, debouncedAdminId, filterAction, filterTargetType, filterStartDate, filterEndDate]);
+        const data = await fetchAuditLogs(params, signal);
+        setLogs(data.logs ?? []);
+        setTotalPages(data.totalPages ?? 1);
+        setTotalLogs(data.total ?? 0);
+      } catch {
+        // 에러 무시 (취소(CanceledError) 포함)
+      } finally {
+        if (!signal?.aborted) setLoading(false);
+      }
+    },
+    [page, debouncedAdminId, filterAction, filterTargetType, filterStartDate, filterEndDate]
+  );
 
+  // 언마운트·재요청 시 진행 중 요청 취소 — 빠른 탭 전환 시 요청 누적/경쟁 방지
   useEffect(() => {
-    fetchLogs();
+    const controller = new AbortController();
+    fetchLogs(controller.signal);
+    return () => controller.abort();
   }, [fetchLogs]);
 
   const handleSearch = (e: React.FormEvent) => {

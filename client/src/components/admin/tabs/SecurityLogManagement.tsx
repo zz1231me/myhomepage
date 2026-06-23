@@ -50,32 +50,42 @@ export const SecurityLogManagement = () => {
     overscan: 10,
   });
 
-  const fetchLogs = useCallback(async () => {
-    try {
-      setLoading(true);
-      const res = await api.get('/admin/security-logs', {
-        params: {
-          page,
-          limit: 20,
-          userId: debouncedUserId || undefined,
-          action: filterAction || undefined,
-          ipAddress: debouncedIp || undefined,
-        },
-      });
-      const data = unwrap(res);
-      setLogs(data.logs ?? []);
-      setTotalPages(data.totalPages ?? 1);
-      setTotalLogs(data.total ?? 0);
-    } catch (error) {
-      if (error instanceof Error && (error.name === 'CanceledError' || error.name === 'AbortError'))
-        return;
-    } finally {
-      setLoading(false);
-    }
-  }, [page, debouncedUserId, filterAction, debouncedIp]);
+  const fetchLogs = useCallback(
+    async (signal?: AbortSignal) => {
+      try {
+        setLoading(true);
+        const res = await api.get('/admin/security-logs', {
+          params: {
+            page,
+            limit: 20,
+            userId: debouncedUserId || undefined,
+            action: filterAction || undefined,
+            ipAddress: debouncedIp || undefined,
+          },
+          signal,
+        });
+        const data = unwrap(res);
+        setLogs(data.logs ?? []);
+        setTotalPages(data.totalPages ?? 1);
+        setTotalLogs(data.total ?? 0);
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          (error.name === 'CanceledError' || error.name === 'AbortError')
+        )
+          return;
+      } finally {
+        if (!signal?.aborted) setLoading(false);
+      }
+    },
+    [page, debouncedUserId, filterAction, debouncedIp]
+  );
 
+  // 언마운트·재요청 시 진행 중 요청 취소 — 빠른 탭 전환 시 요청 누적/경쟁 방지
   useEffect(() => {
-    fetchLogs();
+    const controller = new AbortController();
+    fetchLogs(controller.signal);
+    return () => controller.abort();
   }, [fetchLogs]);
 
   const handleSearch = (e: React.FormEvent) => {

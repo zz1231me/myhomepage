@@ -48,28 +48,34 @@ export const LoginHistoryManagement = () => {
     overscan: 10,
   });
 
-  const fetchRecords = useCallback(async () => {
-    try {
-      setLoading(true);
-      const params: Record<string, string | number> = { page, limit: 20 };
-      if (debouncedUserId) params.userId = debouncedUserId;
-      if (filterStatus) params.status = filterStatus;
-      if (filterStartDate) params.startDate = filterStartDate;
-      if (filterEndDate) params.endDate = filterEndDate;
+  const fetchRecords = useCallback(
+    async (signal?: AbortSignal) => {
+      try {
+        setLoading(true);
+        const params: Record<string, string | number> = { page, limit: 20 };
+        if (debouncedUserId) params.userId = debouncedUserId;
+        if (filterStatus) params.status = filterStatus;
+        if (filterStartDate) params.startDate = filterStartDate;
+        if (filterEndDate) params.endDate = filterEndDate;
 
-      const data = await fetchLoginHistory(params);
-      setRecords(data.records ?? []);
-      setTotalPages(data.totalPages ?? 1);
-      setTotalRecords(data.total ?? 0);
-    } catch {
-      // 에러 무시 (이미 axios 인터셉터에서 처리)
-    } finally {
-      setLoading(false);
-    }
-  }, [page, debouncedUserId, filterStatus, filterStartDate, filterEndDate]);
+        const data = await fetchLoginHistory(params, signal);
+        setRecords(data.records ?? []);
+        setTotalPages(data.totalPages ?? 1);
+        setTotalRecords(data.total ?? 0);
+      } catch {
+        // 에러 무시 (취소(CanceledError) 포함 — axios 인터셉터에서 처리)
+      } finally {
+        if (!signal?.aborted) setLoading(false);
+      }
+    },
+    [page, debouncedUserId, filterStatus, filterStartDate, filterEndDate]
+  );
 
+  // 언마운트·재요청 시 진행 중 요청을 취소 — 빠른 탭 전환 시 요청 누적/경쟁 방지
   useEffect(() => {
-    fetchRecords();
+    const controller = new AbortController();
+    fetchRecords(controller.signal);
+    return () => controller.abort();
   }, [fetchRecords]);
 
   const handleSearch = (e: React.FormEvent) => {

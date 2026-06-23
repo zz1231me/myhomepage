@@ -61,16 +61,16 @@ export const deleteErrorLogs = (
 
 // ─── 로그인 이력 ───────────────────────────────────────────────────────────────
 
-export const fetchLoginHistory = (params?: Record<string, string | number>) =>
-  api.get('/admin/login-history', { params }).then(unwrap);
+export const fetchLoginHistory = (params?: Record<string, string | number>, signal?: AbortSignal) =>
+  api.get('/admin/login-history', { params, signal }).then(unwrap);
 
 export const fetchUserLoginHistory = (userId: string, params?: Record<string, string | number>) =>
   api.get(`/admin/users/${userId}/login-history`, { params }).then(unwrap);
 
 // ─── 감사 로그 ───────────────────────────────────────────────────────────────
 
-export const fetchAuditLogs = (params?: Record<string, string | number>) =>
-  api.get('/admin/audit-logs', { params }).then(unwrap);
+export const fetchAuditLogs = (params?: Record<string, string | number>, signal?: AbortSignal) =>
+  api.get('/admin/audit-logs', { params, signal }).then(unwrap);
 
 export const fetchUserAuditLogs = (userId: string, params?: Record<string, string | number>) =>
   api.get(`/admin/users/${userId}/audit-logs`, { params }).then(unwrap);
