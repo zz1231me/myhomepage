@@ -87,15 +87,8 @@ export const createBookmark = async (
     }
     const normalizedUrl = urlResult.url!;
 
-    let faviconUrl = icon;
-    if (!faviconUrl) {
-      try {
-        const domain = new URL(normalizedUrl).hostname;
-        faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=16`;
-      } catch {
-        faviconUrl = null;
-      }
-    }
+    // 파비콘 미사용 — google favicon 자동 생성이 일부 도메인에서 404를 유발해 제거함
+    const faviconUrl = icon ?? null;
 
     // order가 명시적으로 주어지지 않은 경우 Sequelize .max()로 계산
     // — dialect-aware 인용 부호(MySQL/PG/SQLite 공통)

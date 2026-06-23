@@ -253,18 +253,7 @@ export function DashboardSidebar({ isOpen, onClose }: DashboardSidebarProps) {
                                hover:text-slate-900 dark:hover:text-slate-100
                                transition-colors duration-150"
                   >
-                    {bookmark.icon ? (
-                      <img
-                        src={bookmark.icon}
-                        alt=""
-                        className="w-4 h-4 flex-shrink-0 rounded"
-                        onError={e => {
-                          e.currentTarget.style.display = 'none';
-                        }}
-                      />
-                    ) : (
-                      <Link className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                    )}
+                    <Link className="w-4 h-4 text-slate-400 flex-shrink-0" />
                     <span className="truncate flex-1 text-left text-base font-medium">
                       {bookmark.name}
                     </span>
