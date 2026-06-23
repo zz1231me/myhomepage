@@ -9,6 +9,8 @@ export interface PasswordResetRequestView {
   name: string | null;
   status: 'pending' | 'approved' | 'rejected';
   createdAt: Date;
+  resolvedBy: string | null;
+  resolvedAt: Date | null;
 }
 
 class PasswordResetRequestService {
@@ -36,8 +38,10 @@ class PasswordResetRequestService {
   async listRequests(
     status: 'pending' | 'approved' | 'rejected' = 'pending'
   ): Promise<PasswordResetRequestView[]> {
-    // 활성·미삭제 사용자의 요청만 노출(INNER JOIN). 비활성/삭제(익명화)된 계정의 요청은
-    // approve가 어차피 400으로 거부되므로, 처리 불가한 죽은 항목이 목록에 쌓이지 않게 거른다.
+    // 대기(pending)는 처리 가능한 항목만 보이도록 활성·미삭제 사용자로 INNER JOIN(비활성/삭제
+    // 계정 요청은 approve가 400이라 죽은 항목). 이력(approved/rejected)은 감사 목적상 전부
+    // 노출해야 하므로 LEFT JOIN — 이후 삭제된 사용자도 이름만 null로 보이게 둔다.
+    const onlyActionable = status === 'pending';
     const rows = await PasswordResetRequest.findAll({
       where: { status },
       include: [
@@ -45,8 +49,8 @@ class PasswordResetRequestService {
           model: User,
           as: 'user',
           attributes: ['id', 'name'],
-          where: { isActive: true, isDeleted: false },
-          required: true,
+          where: onlyActionable ? { isActive: true, isDeleted: false } : undefined,
+          required: onlyActionable,
         },
       ],
       order: [['createdAt', 'DESC']],
@@ -60,6 +64,8 @@ class PasswordResetRequestService {
         name: user?.name ?? null,
         status: r.status,
         createdAt: r.createdAt,
+        resolvedBy: r.resolvedBy ?? null,
+        resolvedAt: r.resolvedAt ?? null,
       };
     });
   }

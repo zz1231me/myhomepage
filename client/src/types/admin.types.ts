@@ -164,6 +164,8 @@ export interface PasswordResetRequestItem {
   name: string | null;
   status: 'pending' | 'approved' | 'rejected';
   createdAt: string;
+  resolvedBy: string | null;
+  resolvedAt: string | null;
 }
 
 export type TabType =
