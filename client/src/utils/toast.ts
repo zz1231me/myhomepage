@@ -123,5 +123,3 @@ export const toast = {
     showBrowserToast(message, 'warning');
   },
 };
-
-export default toast;

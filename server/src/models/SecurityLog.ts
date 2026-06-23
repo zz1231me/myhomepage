@@ -89,5 +89,3 @@ SecurityLog.init(
     ],
   }
 );
-
-export default SecurityLog;

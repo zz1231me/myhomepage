@@ -244,5 +244,3 @@ export const EncryptedPostView: React.FC<EncryptedPostViewProps> = ({
     </AnimatedPage>
   );
 };
-
-export default EncryptedPostView;

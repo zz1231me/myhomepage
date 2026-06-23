@@ -73,4 +73,3 @@ PostBookmarkModel.init(
 
 export const PostBookmark = PostBookmarkModel;
 export type PostBookmark = PostBookmarkModel;
-export default PostBookmarkModel;

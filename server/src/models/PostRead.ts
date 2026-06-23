@@ -55,4 +55,3 @@ PostReadModel.init(
 
 export const PostRead = PostReadModel;
 export type PostRead = PostReadModel;
-export default PostReadModel;

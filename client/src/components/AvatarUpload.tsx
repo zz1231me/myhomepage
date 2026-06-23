@@ -400,5 +400,3 @@ export const AvatarUpload: React.FC<AvatarUploadProps> = ({
     </div>
   );
 };
-
-export default AvatarUpload;

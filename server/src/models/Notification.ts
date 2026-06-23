@@ -101,4 +101,3 @@ NotificationModel.init(
 
 export const Notification = NotificationModel;
 export type Notification = NotificationModel;
-export default NotificationModel;

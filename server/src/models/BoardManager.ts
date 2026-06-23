@@ -52,4 +52,3 @@ BoardManagerModel.init(
 
 export const BoardManager = BoardManagerModel;
 export type BoardManager = BoardManagerModel;
-export default BoardManagerModel;

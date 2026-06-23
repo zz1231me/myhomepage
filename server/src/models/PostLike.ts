@@ -70,4 +70,3 @@ PostLikeModel.init(
 
 export const PostLike = PostLikeModel;
 export type PostLike = PostLikeModel;
-export default PostLikeModel;

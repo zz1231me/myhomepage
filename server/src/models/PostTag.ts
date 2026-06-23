@@ -24,4 +24,3 @@ PostTagModel.init(
 
 export const PostTag = PostTagModel;
 export type PostTag = PostTagModel;
-export default PostTagModel;

@@ -50,5 +50,3 @@ PasswordResetRequest.init(
     indexes: [{ fields: ['status'] }, { fields: ['userId'] }, { fields: ['userId', 'status'] }],
   }
 );
-
-export default PasswordResetRequest;

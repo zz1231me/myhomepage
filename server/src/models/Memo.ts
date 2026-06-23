@@ -55,4 +55,3 @@ MemoModel.init(
 
 export const Memo = MemoModel;
 export type Memo = MemoModel;
-export default MemoModel;

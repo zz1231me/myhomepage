@@ -51,5 +51,3 @@ export function initWebVitals(onReport?: ReportHandler) {
 
   if (import.meta.env.DEV) console.info('📊 [Web Vitals] 모니터링 시작됨');
 }
-
-export default initWebVitals;

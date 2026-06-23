@@ -47,4 +47,3 @@ TagModel.init(
 
 export const Tag = TagModel;
 export type Tag = TagModel;
-export default TagModel;

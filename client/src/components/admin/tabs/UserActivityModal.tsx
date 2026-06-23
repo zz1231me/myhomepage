@@ -459,5 +459,3 @@ export const UserActivityModal: React.FC<Props> = ({ userId, userName, onClose }
     </div>
   );
 };
-
-export default UserActivityModal;

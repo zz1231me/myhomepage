@@ -57,5 +57,3 @@ LoginHistory.init(
     ],
   }
 );
-
-export default LoginHistory;
