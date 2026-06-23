@@ -17,7 +17,7 @@ import {
 } from '../controllers/auth.controller';
 import { authenticate } from '../middlewares/auth.middleware';
 import { uploadAvatar } from '../middlewares/upload/avatar'; // ✅ 직접 import
-import { getOwnSessions } from '../controllers/userSession.controller';
+import { getOwnSessions, terminateOwnSession } from '../controllers/userSession.controller';
 
 import {
   authLimiter,
@@ -72,7 +72,8 @@ router.post(
 );
 router.delete('/avatar', authenticate, deleteAvatar);
 
-// 🖥️ 세션 조회 (본인)
+// 🖥️ 세션 조회/종료 (본인)
 router.get('/sessions', authenticate, getOwnSessions);
+router.delete('/sessions/:sessionId', authenticate, terminateOwnSession);
 
 export default router;

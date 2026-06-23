@@ -104,21 +104,6 @@ export class UserSessionService extends BaseService {
   }
 
   /**
-   * 세션 마지막 활동 시각 갱신 (레거시 — rotateSession 사용 권장)
-   */
-  async updateActivity(rawToken: string): Promise<void> {
-    try {
-      const sessionToken = this.hashToken(rawToken);
-      await UserSession.update(
-        { lastActiveAt: new Date() },
-        { where: { sessionToken, isActive: true } }
-      );
-    } catch (error) {
-      logError('세션 활동 갱신 실패', error);
-    }
-  }
-
-  /**
    * 세션 만료 (로그아웃 시 호출)
    */
   async expireSession(rawToken: string): Promise<void> {
@@ -142,9 +127,12 @@ export class UserSessionService extends BaseService {
   }
 
   /**
-   * 사용자의 활성 세션 목록 조회 (sessionToken 제외)
+   * 사용자의 활성 세션 목록 조회.
+   * currentRawToken을 주면(본인 조회) 현재 요청의 세션에 isCurrent=true를 표시한다.
+   * sessionToken은 매칭에만 내부 사용하고 응답에서는 제외한다(노출 금지).
    */
-  async getActiveSessions(userId: string) {
+  async getActiveSessions(userId: string, currentRawToken?: string) {
+    const currentHash = currentRawToken ? this.hashToken(currentRawToken) : null;
     const sessions = await UserSession.findAll({
       where: {
         userId,
@@ -159,10 +147,42 @@ export class UserSessionService extends BaseService {
         'lastActiveAt',
         'expiresAt',
         'createdAt',
+        'sessionToken',
       ],
       order: [['lastActiveAt', 'DESC']],
     });
-    return sessions;
+    return sessions.map(s => ({
+      id: s.id,
+      userId: s.userId,
+      ipAddress: s.ipAddress,
+      userAgent: s.userAgent,
+      lastActiveAt: s.lastActiveAt,
+      expiresAt: s.expiresAt,
+      createdAt: s.createdAt,
+      isCurrent: currentHash !== null && s.sessionToken === currentHash,
+    }));
+  }
+
+  /**
+   * 본인 세션 종료 — 소유권 확인 후 비활성화(refresh 차단). tokenVersion은 건드리지 않아
+   * 다른 세션은 영향 없음. 현재 세션은 이 경로로 종료 불가(로그아웃 사용).
+   * 반환: 'ok' | 'not_found' | 'forbidden' | 'is_current'
+   */
+  async terminateOwnSession(
+    userId: string,
+    sessionId: string,
+    currentRawToken?: string
+  ): Promise<'ok' | 'not_found' | 'forbidden' | 'is_current'> {
+    const session = await UserSession.findByPk(sessionId, {
+      attributes: ['id', 'userId', 'sessionToken', 'isActive'],
+    });
+    if (!session || !session.isActive) return 'not_found';
+    if (session.userId !== userId) return 'forbidden';
+    if (currentRawToken && session.sessionToken === this.hashToken(currentRawToken)) {
+      return 'is_current';
+    }
+    await session.update({ isActive: false });
+    return 'ok';
   }
 
   /**
