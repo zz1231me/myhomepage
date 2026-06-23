@@ -108,15 +108,15 @@ export const secretPostLimiter = rateLimit({
   },
 });
 
-// 비밀번호 찾기 전용 제한 (skipSuccessfulRequests 없음 — 항상 200 응답이라 카운터가 증가해야 함)
-export const forgotPasswordLimiter = rateLimit({
+// 비밀번호 초기화 요청 전용 제한 (skipSuccessfulRequests 없음 — 항상 200 응답이라 카운터가 증가해야 함)
+export const passwordResetLimiter = rateLimit({
   windowMs: RATE_LIMIT.WINDOW_MS,
   max: 5,
   standardHeaders: 'draft-6',
   legacyHeaders: false,
-  keyGenerator: req => `forgot:${ipKeyGenerator(req.ip ?? '')}`,
+  keyGenerator: req => `pwreset:${ipKeyGenerator(req.ip ?? '')}`,
   handler: (req, res) => {
-    logWarning('비밀번호 찾기 Rate limit 초과', { ip: req.ip });
+    logWarning('비밀번호 초기화 요청 Rate limit 초과', { ip: req.ip });
     res.status(429).json({
       success: false,
       message: '요청 횟수를 초과했습니다. 15분 후 다시 시도해주세요.',
