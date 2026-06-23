@@ -387,6 +387,9 @@ export const verify2FALogin = async (req: Request, res: Response): Promise<void>
           roleInfo: user.roleInfo,
           permissions: payload.permissions,
           createdAt: user.createdAt,
+          // 강제 비밀번호 변경 플래그를 일반 로그인(buildAuthData)과 동일하게 포함.
+          // 누락 시 2FA 사용자는 강제변경 화면으로 못 가고 서버 게이트에 막혀 소프트 락아웃됨.
+          mustChangePassword: user.mustChangePassword ?? false,
         },
         tokenInfo: {
           accessTokenExpiry: Date.now() + jwtAccessTokenHours * 60 * 60 * 1000,
