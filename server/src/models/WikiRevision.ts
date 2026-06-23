@@ -44,4 +44,3 @@ WikiRevisionModel.init(
 
 export const WikiRevision = WikiRevisionModel;
 export type WikiRevision = WikiRevisionModel;
-export default WikiRevisionModel;

@@ -62,5 +62,3 @@ ErrorLog.init(
     indexes: [{ fields: ['severity'] }, { fields: ['userId'] }, { fields: ['createdAt'] }],
   }
 );
-
-export default ErrorLog;

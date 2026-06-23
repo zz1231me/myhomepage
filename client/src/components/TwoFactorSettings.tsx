@@ -371,5 +371,3 @@ export const TwoFactorSettings = () => {
     </div>
   );
 };
-
-export default TwoFactorSettings;

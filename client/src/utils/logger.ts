@@ -157,4 +157,3 @@ export const boardLogger = createLogger('게시판');
 export const fileLogger = createLogger('파일');
 
 // 기본 내보내기
-export default logger;

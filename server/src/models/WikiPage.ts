@@ -73,4 +73,3 @@ WikiPageModel.init(
 
 export const WikiPage = WikiPageModel;
 export type WikiPage = WikiPageModel;
-export default WikiPageModel;

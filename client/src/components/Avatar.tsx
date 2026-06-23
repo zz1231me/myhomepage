@@ -227,4 +227,3 @@ export const Avatar: React.FC<AvatarProps> = React.memo(
 );
 
 // 기존 export와의 호환성을 위해 default로도 export
-export default Avatar;

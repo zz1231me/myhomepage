@@ -70,4 +70,3 @@ CommentLikeModel.init(
 
 export const CommentLike = CommentLikeModel;
 export type CommentLike = CommentLikeModel;
-export default CommentLikeModel;
