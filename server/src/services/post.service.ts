@@ -1068,9 +1068,12 @@ export class PostService extends BaseService {
         transaction: t,
       });
       const commentIds = commentRows.map(c => c.id);
-      if (commentIds.length > 0) {
+      // 댓글이 많은 글에서 IN(...) 바인드 변수가 SQLite 상한(보수적으로 999)을 넘지 않도록
+      // 청크 단위로 삭제(purgeExpiredPosts와 동일 방어). 빈 배열이면 루프가 돌지 않는다.
+      const COMMENT_LIKE_CHUNK = 500;
+      for (let i = 0; i < commentIds.length; i += COMMENT_LIKE_CHUNK) {
         await CommentLike.destroy({
-          where: { CommentId: { [Op.in]: commentIds } },
+          where: { CommentId: { [Op.in]: commentIds.slice(i, i + COMMENT_LIKE_CHUNK) } },
           transaction: t,
         });
       }
