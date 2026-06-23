@@ -12,6 +12,9 @@ export const useBoardManagement = () => {
   const inFlightRef = useRef<Set<string>>(new Set());
   // 저장 진행 중에 들어온 후속 변경의 "최신 상태"를 적재(coalescing). 저장이 끝나면 이어서 저장한다.
   const pendingRef = useRef<Map<string, BoardPermission[]>>(new Map());
+  // permissions의 최신 스냅샷(ref). setState updater의 비동기 실행에 의존해 토글 결과를 읽으면
+  // 저장이 누락될 수 있어, ref에서 동기적으로 최신 상태를 읽어 결정적으로 계산한다.
+  const permissionsRef = useRef<Record<string, BoardPermission[]>>({});
 
   const [fetchError, setFetchError] = useState<string | null>(null);
 
@@ -71,6 +74,7 @@ export const useBoardManagement = () => {
       if (import.meta.env.DEV) console.error('게시판 권한 일괄 조회 실패:', err);
       setFetchError('게시판 권한을 불러오지 못했습니다.');
     }
+    permissionsRef.current = permissionsState;
     setPermissions(permissionsState);
   };
 
@@ -102,48 +106,46 @@ export const useBoardManagement = () => {
     type: 'canRead' | 'canWrite' | 'canDelete',
     roles: Role[]
   ) => {
-    // 최신 permissions를 함수형 setState 안에서 읽어 낙관적 업데이트(연속 클릭도 누적 반영)
-    let updatedPerms: BoardPermission[] = [];
-    let skipped = false;
-    setPermissions(prev => {
-      const boardPerms = prev[boardId] || [];
-      const existingIndex = boardPerms.findIndex(p => p.roleId === roleId);
-      if (existingIndex >= 0) {
-        updatedPerms = boardPerms.map(p => {
-          if (p.roleId !== roleId) return p;
-          const next = { ...p, [type]: !p[type] };
-          // 읽기/쓰기/삭제 결합(서버 정규화와 일치): 읽기를 끄면 쓰기/삭제도 해제,
-          // 쓰기/삭제를 켜면 읽기 자동 부여. read 없는 write/delete는 실제로 무력화되기 때문.
-          if (type === 'canRead' && !next.canRead) {
-            next.canWrite = false;
-            next.canDelete = false;
-          } else if ((type === 'canWrite' || type === 'canDelete') && next[type]) {
-            next.canRead = true;
-          }
-          return next;
-        });
-      } else {
-        const role = roles.find(r => r.id === roleId);
-        if (!role) {
-          skipped = true;
-          return prev;
+    // ⚠️ 최신 상태를 ref에서 동기적으로 읽어 계산한다. 예전엔 setState updater 안에서 채운
+    //    updatedPerms를 setState 직후 동기적으로 읽었는데, React가 updater를 지연 실행하면
+    //    updatedPerms가 빈 배열인 채로 읽혀 저장이 스킵되고(낙관적 UI만 갱신) 새로고침 시
+    //    토글이 사라지는 간헐적 버그가 있었다.
+    const boardPerms = permissionsRef.current[boardId] || [];
+    const existingIndex = boardPerms.findIndex(p => p.roleId === roleId);
+    let updatedPerms: BoardPermission[];
+    if (existingIndex >= 0) {
+      updatedPerms = boardPerms.map(p => {
+        if (p.roleId !== roleId) return p;
+        const next = { ...p, [type]: !p[type] };
+        // 읽기/쓰기/삭제 결합(서버 정규화와 일치): 읽기를 끄면 쓰기/삭제도 해제,
+        // 쓰기/삭제를 켜면 읽기 자동 부여. read 없는 write/delete는 실제로 무력화되기 때문.
+        if (type === 'canRead' && !next.canRead) {
+          next.canWrite = false;
+          next.canDelete = false;
+        } else if ((type === 'canWrite' || type === 'canDelete') && next[type]) {
+          next.canRead = true;
         }
-        // 새 권한 행: 어떤 항목을 켜든 읽기는 전제이므로 canRead=true
-        updatedPerms = [
-          ...boardPerms,
-          {
-            roleId,
-            roleName: role.name,
-            canRead: true,
-            canWrite: type === 'canWrite',
-            canDelete: type === 'canDelete',
-          },
-        ];
-      }
-      return { ...prev, [boardId]: updatedPerms };
-    });
+        return next;
+      });
+    } else {
+      const role = roles.find(r => r.id === roleId);
+      if (!role) return;
+      // 새 권한 행: 어떤 항목을 켜든 읽기는 전제이므로 canRead=true
+      updatedPerms = [
+        ...boardPerms,
+        {
+          roleId,
+          roleName: role.name,
+          canRead: true,
+          canWrite: type === 'canWrite',
+          canDelete: type === 'canDelete',
+        },
+      ];
+    }
 
-    if (skipped || updatedPerms.length === 0) return;
+    const nextState = { ...permissionsRef.current, [boardId]: updatedPerms };
+    permissionsRef.current = nextState;
+    setPermissions(nextState);
 
     // 최신 상태를 대기열에 적재(직전 변경 coalescing). 진행 중 저장이 없으면 즉시 시작하고,
     // 진행 중이면 끝난 뒤 runSave가 이어서 저장하므로 토글이 드롭되지 않는다(기존 버그 수정).
@@ -171,7 +173,9 @@ export const useBoardManagement = () => {
       // 저장 실패 시 서버 상태로 롤백
       try {
         const res = await api.get(`/admin/boards/${boardId}/permissions`);
-        setPermissions(prev => ({ ...prev, [boardId]: res.data.data || res.data }));
+        const serverPerms = res.data.data || res.data;
+        permissionsRef.current = { ...permissionsRef.current, [boardId]: serverPerms };
+        setPermissions(prev => ({ ...prev, [boardId]: serverPerms }));
       } catch {
         // 롤백 실패 시 무시
       }

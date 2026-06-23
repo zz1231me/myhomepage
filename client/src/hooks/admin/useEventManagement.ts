@@ -26,6 +26,9 @@ export const useEventManagement = () => {
   // 저장 직렬화용 — 저장 진행 중 들어온 후속 토글의 최신 상태를 적재(coalescing)해 클릭 유실 방지
   const savingRef = useRef(false);
   const pendingRef = useRef<EventPermission[] | null>(null);
+  // permissions의 최신 스냅샷(ref). setState updater의 비동기 실행에 의존해 토글 결과를 읽으면
+  // 저장이 누락될 수 있어, ref에서 동기적으로 최신 상태를 읽어 결정적으로 계산한다.
+  const permissionsRef = useRef<EventPermission[]>([]);
 
   const [fetchError, setFetchError] = useState<string | null>(null);
 
@@ -48,7 +51,9 @@ export const useEventManagement = () => {
   const fetchPermissions = async () => {
     try {
       const res = await api.get('/admin/events/permissions');
-      setPermissions(res.data.data || res.data);
+      const data = res.data.data || res.data;
+      permissionsRef.current = data;
+      setPermissions(data);
     } catch (err) {
       if (import.meta.env.DEV) console.error('이벤트 권한 오류:', err);
     }
@@ -98,14 +103,15 @@ export const useEventManagement = () => {
     roleId: string,
     type: 'canCreate' | 'canRead' | 'canUpdate' | 'canDelete'
   ) => {
-    // ⚠ setState 업데이터 내부에서 API 호출 금지 (StrictMode 이중 실행). 업데이터로 낙관적 갱신 +
-    //    최신 상태 capture. 저장 중이면 드롭하지 않고 대기열에 적재해 이어서 저장한다(기존 드롭 버그 수정).
-    let updated: EventPermission[] = [];
-    setPermissions(prev => {
-      updated = prev.map(p => (p.roleId === roleId ? { ...p, [type]: !p[type] } : p));
-      return updated;
-    });
-    if (updated.length === 0) return;
+    // ⚠ setState 업데이터의 비동기 실행에 의존하지 않고 ref(최신 스냅샷)에서 동기적으로 계산한다.
+    //    예전엔 updater 안에서 채운 updated를 직후 동기 읽기 → 지연 실행 시 빈 배열로 읽혀
+    //    저장이 스킵되는 간헐적 버그가 있었다. 저장 중이면 대기열에 적재해 이어서 저장(드롭 방지).
+    if (permissionsRef.current.length === 0) return;
+    const updated = permissionsRef.current.map(p =>
+      p.roleId === roleId ? { ...p, [type]: !p[type] } : p
+    );
+    permissionsRef.current = updated;
+    setPermissions(updated);
     if (savingRef.current) {
       pendingRef.current = updated;
       return;
