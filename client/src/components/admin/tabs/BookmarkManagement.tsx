@@ -17,7 +17,7 @@ export function BookmarkManagement() {
   const [loading, setLoading] = useState(true);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ name: '', url: '', icon: '' });
+  const [formData, setFormData] = useState({ name: '', url: '' });
   const [editFormData, setEditFormData] = useState<Bookmark | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
@@ -45,7 +45,7 @@ export function BookmarkManagement() {
     try {
       await createBookmark(formData);
       toast.success('북마크가 추가되었습니다.');
-      setFormData({ name: '', url: '', icon: '' });
+      setFormData({ name: '', url: '' });
       loadBookmarks();
     } catch {
       toast.error('북마크 추가에 실패했습니다.');
@@ -153,18 +153,6 @@ export function BookmarkManagement() {
               placeholder="https://google.com"
             />
           </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
-              아이콘 URL <span className="text-slate-400">(선택)</span>
-            </label>
-            <input
-              type="text"
-              value={formData.icon}
-              onChange={e => setFormData({ ...formData, icon: e.target.value })}
-              className="w-44 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-              placeholder="비워두면 자동 생성"
-            />
-          </div>
           <button
             onClick={handleCreate}
             disabled={!formData.name || !formData.url}
@@ -186,9 +174,6 @@ export function BookmarkManagement() {
               <tr className="border-b border-slate-200 dark:border-slate-700">
                 <th className="text-center px-2 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-16">
                   순서
-                </th>
-                <th className="text-center px-2 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-10">
-                  아이콘
                 </th>
                 <th className="text-left px-3 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                   이름
@@ -263,18 +248,6 @@ export function BookmarkManagement() {
                           </svg>
                         </button>
                       </div>
-                    </td>
-                    <td className="px-2 py-3 text-center">
-                      {bookmark.icon ? (
-                        <img
-                          src={bookmark.icon}
-                          alt=""
-                          className="w-5 h-5 mx-auto"
-                          onError={e => (e.currentTarget.style.display = 'none')}
-                        />
-                      ) : (
-                        <div className="w-5 h-5 mx-auto rounded bg-slate-200 dark:bg-slate-600" />
-                      )}
                     </td>
                     <td className="px-3 py-3">
                       {editingId === bookmark.id ? (
