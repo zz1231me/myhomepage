@@ -56,6 +56,7 @@ export const useBoardManagement = () => {
     // 보드별 N요청 대신 1요청으로 전체 권한을 받아 boardId로 그룹핑(권한 없는 보드도 []로 표시).
     const permissionsState: Record<string, BoardPermission[]> = {};
     for (const board of boardList) permissionsState[board.id] = [];
+    setFetchError(null); // 재시도 시 이전 에러를 지워 성공 후 배너가 남지 않도록
     try {
       const res = await api.get('/admin/board-permissions');
       const rows = (res.data.data ?? res.data ?? []) as Array<
