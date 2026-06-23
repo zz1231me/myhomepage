@@ -3,7 +3,7 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 
 import { authenticate } from '../middlewares/auth.middleware';
-import { apiLimiter } from '../middlewares/rate-limit.middleware';
+import { apiLimiter, twoFactorLimiter } from '../middlewares/rate-limit.middleware';
 import {
   generate2FASecret,
   enable2FA,
@@ -31,11 +31,11 @@ router.get('/status', authenticate, get2FAStatus as any);
 // 2FA 비밀키 생성 (QR 코드 포함) - ✅ apiLimiter 추가 (반복 덮어쓰기 방지)
 router.post('/generate', apiLimiter, authenticate, generate2FASecret as any);
 
-// 2FA 활성화 - ✅ apiLimiter 추가
-router.post('/enable', apiLimiter, authenticate, enable2FA as any);
+// 2FA 활성화 - ✅ TOTP 검증이므로 사용자별 전용 limiter(authenticate 뒤에 배치)
+router.post('/enable', authenticate, twoFactorLimiter, enable2FA as any);
 
-// 2FA 비활성화 - ✅ apiLimiter 추가 (TOTP brute-force 방지)
-router.post('/disable', apiLimiter, authenticate, disable2FA as any);
+// 2FA 비활성화 - ✅ TOTP brute-force 방지: 사용자별 전용 limiter(authenticate 뒤에 배치)
+router.post('/disable', authenticate, twoFactorLimiter, disable2FA as any);
 
 // 2FA 로그인 검증 (토큰 발행) - 인증 불필요, Rate Limit 적용
 router.post('/verify-login', twoFaVerifyLimiter, verify2FALogin as any);

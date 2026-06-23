@@ -24,7 +24,7 @@ import {
   refreshLimiter,
   passwordResetLimiter,
 } from '../middlewares/rate-limit.middleware';
-import { validateBody } from '../middlewares/validate.middleware';
+import { validateBody, validateUuidParam } from '../middlewares/validate.middleware';
 import {
   loginSchema,
   registerSchema,
@@ -74,6 +74,11 @@ router.delete('/avatar', authenticate, deleteAvatar);
 
 // 🖥️ 세션 조회/종료 (본인)
 router.get('/sessions', authenticate, getOwnSessions);
-router.delete('/sessions/:sessionId', authenticate, terminateOwnSession);
+router.delete(
+  '/sessions/:sessionId',
+  authenticate,
+  validateUuidParam('sessionId'),
+  terminateOwnSession
+);
 
 export default router;
