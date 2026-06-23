@@ -17,16 +17,17 @@ interface PostListTableProps {
 const ColumnHeader = () => (
   <div
     role="rowgroup"
-    className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 px-4 sm:px-8 py-3 sm:py-4"
+    className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 px-4 sm:px-6 py-3 sm:py-4"
   >
+    {/* ⚠️ grid 칼럼 설정(cols/gap)을 PostListItem 행과 반드시 동일하게 유지해야 칼럼이 정렬됨 */}
     <div
       role="row"
-      className="grid grid-cols-12 gap-3 sm:gap-6 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider"
+      className="grid grid-cols-12 gap-2 sm:gap-4 items-center text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider"
     >
       <div role="columnheader" className="col-span-10 sm:col-span-8">
         제목
       </div>
-      <div role="columnheader" className="col-span-2 text-center hidden sm:block">
+      <div role="columnheader" className="col-span-2 hidden sm:block">
         작성자
       </div>
       <div role="columnheader" className="col-span-2 text-center">
