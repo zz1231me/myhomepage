@@ -21,7 +21,15 @@ export class TagService extends BaseService {
   }): Promise<Tag> {
     const name = data.name.toLowerCase().trim();
     const boardId = data.boardId ?? null;
-    // ✅ TOCTOU 방지: findOne 사전 체크 제거, UniqueConstraintError만 의존
+    // 전역 태그(boardId=null)는 (name, boardId) unique 인덱스가 NULL을 서로 distinct로 취급해
+    // 전 DB(SQLite/MySQL/MariaDB/PG)에서 중복을 막지 못한다 → null 케이스만 사전 체크로 방지.
+    if (boardId === null) {
+      const existing = await Tag.findOne({ where: { name, boardId: null } });
+      if (existing) {
+        throw new AppError(409, `태그 '${name}'이 이미 존재합니다.`);
+      }
+    }
+    // ✅ 보드 태그는 TOCTOU 방지를 위해 사전 체크 없이 UniqueConstraintError에 의존
     try {
       return await Tag.create({
         name,

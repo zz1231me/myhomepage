@@ -23,6 +23,7 @@ import { PostLike } from '../models/PostLike';
 import { PostTag } from '../models/PostTag';
 import { PostRead } from '../models/PostRead';
 import { PostBookmark } from '../models/PostBookmark';
+import { CommentLike } from '../models/CommentLike';
 import { Notification } from '../models/Notification';
 import { BaseService } from './base.service';
 import { AppError } from '../middlewares/error.middleware';
@@ -1058,6 +1059,24 @@ export class PostService extends BaseService {
     // ✅ 게시글은 paranoid(soft-delete)이므로 destroy 시 자식이 cascade되지 않는다.
     //    자식 정리를 하나의 트랜잭션으로 묶어 orphan(댓글/리액션/조회기록/태그/알림) 누적을 방지.
     await sequelize.transaction(async t => {
+      // 댓글의 CommentLike는 댓글이 soft-delete(UPDATE)라 onDelete:CASCADE가 발동하지 않으므로
+      // 명시적으로 정리한다(deleteComment와 동일 패턴). paranoid:false로 모든 댓글 id를 수집.
+      const commentRows = await Comment.findAll({
+        where: { PostId: post.id },
+        attributes: ['id'],
+        paranoid: false,
+        transaction: t,
+      });
+      const commentIds = commentRows.map(c => c.id);
+      // 댓글이 많은 글에서 IN(...) 바인드 변수가 SQLite 상한(보수적으로 999)을 넘지 않도록
+      // 청크 단위로 삭제(purgeExpiredPosts와 동일 방어). 빈 배열이면 루프가 돌지 않는다.
+      const COMMENT_LIKE_CHUNK = 500;
+      for (let i = 0; i < commentIds.length; i += COMMENT_LIKE_CHUNK) {
+        await CommentLike.destroy({
+          where: { CommentId: { [Op.in]: commentIds.slice(i, i + COMMENT_LIKE_CHUNK) } },
+          transaction: t,
+        });
+      }
       // 댓글도 paranoid → soft-delete (감사 추적 유지하되 '살아있는' 쿼리에서 제외)
       await Comment.destroy({ where: { PostId: post.id }, transaction: t });
       // 파생 데이터는 hard-delete (복구 가치 없음)

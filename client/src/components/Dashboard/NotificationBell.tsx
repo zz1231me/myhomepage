@@ -75,28 +75,37 @@ export function NotificationBell() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  // 페이지네이션 경합 가드: 패널 재오픈(fetchNotifications)이 in-flight loadMore보다 늦게
+  // 도착한 stale 페이지를 append 하지 않도록 세대(generation) 번호로 무효화한다.
+  const reqGenRef = useRef(0);
   const navigate = useNavigate();
 
   const fetchNotifications = useCallback(async () => {
+    const gen = ++reqGenRef.current;
     setLoading(true);
     setFetchError(false);
+    setLoadingMore(false); // 이전 페이지네이션 진행상태 초기화(아래 gen 가드와 함께 stale append 방지)
     try {
       const data = await getNotifications(undefined, 20);
+      if (reqGenRef.current !== gen) return;
       setNotifications(Array.isArray(data?.notifications) ? data.notifications : []);
       setStoreUnread(data?.unreadCount ?? 0);
       setNextCursor(data?.nextCursor ?? null);
     } catch {
-      setFetchError(true);
+      if (reqGenRef.current === gen) setFetchError(true);
     } finally {
-      setLoading(false);
+      if (reqGenRef.current === gen) setLoading(false);
     }
   }, [setStoreUnread]);
 
   const loadMore = useCallback(async () => {
     if (!nextCursor || loadingMore) return;
+    const gen = reqGenRef.current;
     setLoadingMore(true);
     try {
       const data = await getNotifications(nextCursor, 20);
+      // 패널 재오픈 등으로 목록이 교체됐다면(gen 변경) stale 페이지를 append 하지 않는다.
+      if (reqGenRef.current !== gen) return;
       setNotifications(prev => [
         ...prev,
         ...(Array.isArray(data?.notifications) ? data.notifications : []),
@@ -105,7 +114,7 @@ export function NotificationBell() {
     } catch {
       /* 알림 API 에러 무시 */
     } finally {
-      setLoadingMore(false);
+      if (reqGenRef.current === gen) setLoadingMore(false);
     }
   }, [nextCursor, loadingMore]);
 
