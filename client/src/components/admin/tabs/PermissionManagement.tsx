@@ -370,6 +370,7 @@ export const PermissionManagement = () => {
                                 <Toggle
                                   checked={permission.canRead}
                                   onChange={() => onPermissionToggle(board.id, role.id, 'canRead')}
+                                  disabled={saving}
                                   label={`${role.name} 읽기 권한`}
                                 />
                               </td>
@@ -377,6 +378,7 @@ export const PermissionManagement = () => {
                                 <Toggle
                                   checked={permission.canWrite}
                                   onChange={() => onPermissionToggle(board.id, role.id, 'canWrite')}
+                                  disabled={saving}
                                   label={`${role.name} 쓰기 권한`}
                                 />
                               </td>
@@ -386,6 +388,7 @@ export const PermissionManagement = () => {
                                   onChange={() =>
                                     onPermissionToggle(board.id, role.id, 'canDelete')
                                   }
+                                  disabled={saving}
                                   label={`${role.name} 삭제 권한`}
                                 />
                               </td>
