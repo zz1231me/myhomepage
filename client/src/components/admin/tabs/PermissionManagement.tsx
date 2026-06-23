@@ -28,11 +28,15 @@ export const PermissionManagement = () => {
   // 저장 직렬화용 — 저장 중 들어온 후속 토글의 최신 상태를 적재(coalescing)해 클릭 유실 방지
   const wikiSavingRef = useRef(false);
   const wikiPendingRef = useRef<string[] | null>(null);
+  // wikiRoles의 최신 스냅샷(ref) — setState updater 비동기 실행에 의존하지 않고 동기 계산하기 위함.
+  const wikiRolesRef = useRef<string[]>([]);
 
   const loadWikiPermissions = useCallback(async () => {
     try {
       const data = await fetchWikiPermissions();
-      setWikiRoles(data.roles ?? []);
+      const roles = data.roles ?? [];
+      wikiRolesRef.current = roles;
+      setWikiRoles(roles);
     } catch {
       // ignore
     }
@@ -46,7 +50,10 @@ export const PermissionManagement = () => {
       try {
         const data = await updateWikiPermissions(roles);
         // 대기 중 후속 변경이 없을 때만 서버 정규화 결과를 반영(있으면 그게 최신이므로 덮어쓰지 않음)
-        if (!wikiPendingRef.current && data.roles) setWikiRoles(data.roles);
+        if (!wikiPendingRef.current && data.roles) {
+          wikiRolesRef.current = data.roles;
+          setWikiRoles(data.roles);
+        }
       } catch (err) {
         if (import.meta.env.DEV) console.error('위키 권한 저장 실패', err);
         toast.error('위키 권한 저장에 실패했습니다.');
@@ -67,12 +74,13 @@ export const PermissionManagement = () => {
   );
 
   const toggleWikiRole = (roleId: string) => {
-    // 낙관적 토글(드롭하지 않음). 저장 중이면 최신 상태를 대기열에 적재해 이어서 저장(기존 드롭 버그 수정).
-    let next: string[] = [];
-    setWikiRoles(prev => {
-      next = prev.includes(roleId) ? prev.filter(r => r !== roleId) : [...prev, roleId];
-      return next;
-    });
+    // ref(최신 스냅샷)에서 동기 계산 — setState updater 지연 실행 시 next가 빈 배열로 읽혀
+    // 빈 역할 목록이 저장(전체 위키 권한 삭제)되던 버그 방지. 저장 중이면 대기열에 적재(드롭 방지).
+    const next = wikiRolesRef.current.includes(roleId)
+      ? wikiRolesRef.current.filter(r => r !== roleId)
+      : [...wikiRolesRef.current, roleId];
+    wikiRolesRef.current = next;
+    setWikiRoles(next);
     if (wikiSavingRef.current) {
       wikiPendingRef.current = next;
       return;
