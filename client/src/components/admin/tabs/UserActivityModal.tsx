@@ -32,6 +32,8 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   reject_user: '회원 거부',
   deactivate_user: '계정 비활성화',
   reset_password: '비밀번호 초기화',
+  approve_password_reset: '초기화 요청 승인',
+  reject_password_reset: '초기화 요청 거절',
   change_role: '역할 변경',
   create_board: '게시판 생성',
   update_board: '게시판 수정',

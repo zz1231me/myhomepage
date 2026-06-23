@@ -105,12 +105,29 @@ AuditLog.init(
         'delete_event',
         'update_event',
         'update_site_settings',
-        'force_logout'
+        'force_logout',
+        // 아래 값들은 AuditAction 유니온엔 있었으나 ENUM 목록에서 누락돼 있었다. SQLite는 ENUM을
+        // TEXT로 저장해 무관하지만, Postgres/MySQL은 enum 제약으로 INSERT가 거부돼 감사 로그가
+        // 조용히 유실됐다(logAudit이 fire-and-forget이라 무음). 유니온과 일치하도록 보강.
+        'delete_security_log',
+        'delete_error_log',
+        'create_ip_rule',
+        'update_ip_rule',
+        'delete_ip_rule'
       ),
       allowNull: false,
     },
     targetType: {
-      type: DataTypes.ENUM('user', 'board', 'role', 'event', 'setting'),
+      type: DataTypes.ENUM(
+        'user',
+        'board',
+        'role',
+        'event',
+        'setting',
+        'security_log',
+        'error_log',
+        'ip_rule'
+      ),
       allowNull: false,
     },
     targetId: { type: DataTypes.STRING(100), allowNull: true },

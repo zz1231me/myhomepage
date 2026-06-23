@@ -107,6 +107,8 @@ export type AuditAction =
   | 'reject_user'
   | 'deactivate_user'
   | 'reset_password'
+  | 'approve_password_reset'
+  | 'reject_password_reset'
   | 'change_role'
   | 'create_board'
   | 'update_board'
