@@ -13,6 +13,7 @@ import { PostBookmark } from '../models/PostBookmark';
 import { BoardManager } from '../models/BoardManager';
 import { CommentLike } from '../models/CommentLike';
 import { Notification } from '../models/Notification';
+import { Tag } from '../models/Tag';
 import { AccessibleBoard, PersonalFolderResult } from '../types/auth-request';
 import crypto from 'crypto';
 import fs from 'fs';
@@ -203,11 +204,13 @@ export class BoardService extends BaseService {
         });
       }
       await Post.destroy({ where: { boardType: boardId }, transaction: t, force: true });
-      // 게시판 권한(BoardAccess) + 담당자(BoardManager)도 명시적으로 정리 — onDelete:CASCADE는
-      // constraints:false + SQLite FK 미강제라 보장되지 않는다. 안 지우면 같은 id로 게시판 재생성 시
-      // 옛 권한/담당자가 되살아나 의도치 않은 접근 권한이 부활한다.
+      // 게시판 권한(BoardAccess) + 담당자(BoardManager) + 게시판 전용 태그(Tag)도 명시적으로 정리 —
+      // onDelete:CASCADE는 constraints:false + SQLite FK 미강제라 보장되지 않는다. 안 지우면 같은
+      // id로 게시판 재생성 시 옛 권한/담당자/태그가 되살아나 의도치 않게 부활한다.
+      // (PostTag 조인 행은 위 게시글 정리에서 제거됨. 전역 태그(boardId=null)는 영향 없음.)
       await BoardAccess.destroy({ where: { boardId }, transaction: t });
       await BoardManager.destroy({ where: { boardId }, transaction: t });
+      await Tag.destroy({ where: { boardId }, transaction: t });
       await board.destroy({ transaction: t });
     });
 
