@@ -89,10 +89,45 @@ export const getOwnSessions = async (req: Request, res: Response): Promise<void>
       sendError(res, 401, '인증 정보가 없습니다.');
       return;
     }
-    const sessions = await userSessionService.getActiveSessions(authReq.user.id);
+    // 현재 요청의 refresh_token으로 isCurrent 표시 (현재 기기 구분 + 자기 종료 차단)
+    const currentRaw = (req as unknown as { cookies?: Record<string, string | undefined> }).cookies
+      ?.refresh_token;
+    const sessions = await userSessionService.getActiveSessions(authReq.user.id, currentRaw);
     sendSuccess(res, sessions);
   } catch (error) {
     logError('내 세션 목록 조회 실패', error);
     sendError(res, 500, '세션 목록 조회 실패');
+  }
+};
+
+// 본인의 특정 세션 종료 (다른 기기 로그아웃). 현재 세션은 로그아웃 흐름을 사용해야 함.
+export const terminateOwnSession = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const authReq = req as unknown as AuthRequest;
+    const userId = authReq.user?.id;
+    if (!userId) {
+      sendError(res, 401, '인증 정보가 없습니다.');
+      return;
+    }
+    const { sessionId } = req.params;
+    const currentRaw = (req as unknown as { cookies?: Record<string, string | undefined> }).cookies
+      ?.refresh_token;
+    const result = await userSessionService.terminateOwnSession(userId, sessionId, currentRaw);
+    if (result === 'not_found') {
+      sendNotFound(res, '세션');
+      return;
+    }
+    if (result === 'forbidden') {
+      sendError(res, 403, '해당 세션에 대한 권한이 없습니다.');
+      return;
+    }
+    if (result === 'is_current') {
+      sendError(res, 400, '현재 사용 중인 세션입니다. 로그아웃을 이용해주세요.');
+      return;
+    }
+    sendSuccess(res, null, '세션을 종료했습니다.');
+  } catch (error) {
+    logError('내 세션 종료 실패', error);
+    sendError(res, 500, '세션 종료 실패');
   }
 };

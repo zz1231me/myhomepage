@@ -201,3 +201,23 @@ export async function deleteAvatar() {
   const res = await api.delete('/auth/avatar');
   return res.data;
 }
+
+// 🖥️ 본인 활성 세션
+export interface MySession {
+  id: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  lastActiveAt: string;
+  expiresAt: string;
+  createdAt: string;
+  isCurrent: boolean;
+}
+
+export async function fetchMySessions(): Promise<MySession[]> {
+  const res = await api.get('/auth/sessions');
+  return (res.data.data ?? res.data ?? []) as MySession[];
+}
+
+export async function terminateMySession(sessionId: string): Promise<void> {
+  await api.delete(`/auth/sessions/${sessionId}`);
+}

@@ -16,16 +16,49 @@ import {
   Check,
   X,
   LogOut,
+  Monitor,
 } from 'lucide-react';
 import { useAuth } from '../store/auth';
 import { useSiteSettings } from '../store/siteSettings';
 import { AvatarUpload } from '../components/AvatarUpload';
 import { TwoFactorSettings } from '../components/TwoFactorSettings';
-import { changePassword, updateProfile } from '../api/auth';
+import {
+  changePassword,
+  updateProfile,
+  fetchMySessions,
+  terminateMySession,
+  type MySession,
+} from '../api/auth';
 import { getMyPosts, getMyComments, getSecurityLogs } from '../api/users';
 import { toast } from '../utils/toast';
 import { getRoleBadgeClass, getRoleName } from '../utils/roleUtils';
-import { formatRelativeDate, formatDate, formatDateTime } from '../utils/date';
+import { formatRelativeDate, formatDate, formatDateTime, formatRelative } from '../utils/date';
+
+// user-agent를 간단한 기기 라벨로 요약
+const deviceLabel = (ua: string | null): string => {
+  if (!ua) return '알 수 없는 기기';
+  const browser = /Edg/.test(ua)
+    ? 'Edge'
+    : /Chrome/.test(ua)
+      ? 'Chrome'
+      : /Firefox/.test(ua)
+        ? 'Firefox'
+        : /Safari/.test(ua)
+          ? 'Safari'
+          : '브라우저';
+  const os = /Windows/.test(ua)
+    ? 'Windows'
+    : /Mac OS|Macintosh/.test(ua)
+      ? 'macOS'
+      : /Android/.test(ua)
+        ? 'Android'
+        : /iPhone|iPad|iOS/.test(ua)
+          ? 'iOS'
+          : /Linux/.test(ua)
+            ? 'Linux'
+            : '';
+  return os ? `${browser} · ${os}` : browser;
+};
 
 // ─── 탭 정의 ────────────────────────────────────────────────────────────────
 type TabId = 'profile' | 'posts' | 'comments' | 'security' | 'settings';
@@ -121,6 +154,12 @@ export default function Profile() {
   const [securityPage, setSecurityPage] = useState(1);
   const [securityTotalPages, setSecurityTotalPages] = useState(1);
 
+  // 활성 세션
+  const [sessions, setSessions] = useState<MySession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
+  const [terminatingId, setTerminatingId] = useState<string | null>(null);
+
   // 이름 변경
   const [nameInput, setNameInput] = useState('');
   const [isEditingName, setIsEditingName] = useState(false);
@@ -188,19 +227,47 @@ export default function Profile() {
     }
   }, []);
 
+  const loadSessions = useCallback(async () => {
+    setSessionsLoading(true);
+    try {
+      setSessions(await fetchMySessions());
+      setSessionsLoaded(true);
+    } catch {
+      toast.error('세션 목록을 불러오지 못했습니다.');
+    } finally {
+      setSessionsLoading(false);
+    }
+  }, []);
+
+  const handleTerminateSession = async (id: string) => {
+    setTerminatingId(id);
+    try {
+      await terminateMySession(id);
+      setSessions(prev => prev.filter(s => s.id !== id));
+      toast.success('세션을 종료했습니다.');
+    } catch {
+      toast.error('세션 종료에 실패했습니다.');
+    } finally {
+      setTerminatingId(null);
+    }
+  };
+
   // loaded 플래그 기반 초기 로드 — 성공 전까지 탭 재진입 시마다 재시도 가능
   useEffect(() => {
     if (activeTab === 'posts' && !postsLoaded) loadPosts(1);
     if (activeTab === 'comments' && !commentsLoaded) loadComments(1);
     if (activeTab === 'security' && !securityLoaded) loadSecurity(1);
+    if (activeTab === 'security' && !sessionsLoaded) loadSessions();
   }, [
     activeTab,
     postsLoaded,
     commentsLoaded,
     securityLoaded,
+    sessionsLoaded,
     loadPosts,
     loadComments,
     loadSecurity,
+    loadSessions,
   ]);
 
   // 탭 전환 시 상단으로 스크롤 (긴 탭→짧은 탭 전환 시 빈 화면 노출 방지)
@@ -581,6 +648,79 @@ export default function Profile() {
             )}
 
             {/* 4. 접속 기록 탭 */}
+            {activeTab === 'security' && (
+              <div className="mb-6 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-700">
+                  <h3 className="font-semibold text-slate-900 dark:text-slate-100">활성 세션</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    현재 로그인된 기기 목록 · 다른 기기는 종료할 수 있습니다
+                  </p>
+                </div>
+                {sessionsLoading ? (
+                  <LoadingRows />
+                ) : sessions.length === 0 ? (
+                  <EmptyState icon={<Monitor className="w-6 h-6" />} text="활성 세션이 없습니다." />
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-xs text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-700">
+                          <th className="px-5 py-3 font-medium">기기</th>
+                          <th className="px-5 py-3 font-medium">IP 주소</th>
+                          <th className="px-5 py-3 font-medium">최근 활동</th>
+                          <th className="px-5 py-3 font-medium text-right">관리</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                        {sessions.map(s => (
+                          <tr
+                            key={s.id}
+                            className="hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors"
+                          >
+                            <td className="px-5 py-3">
+                              <div className="flex items-center gap-2">
+                                <Monitor className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                                <span
+                                  className="text-slate-700 dark:text-slate-200 truncate max-w-[180px]"
+                                  title={s.userAgent ?? ''}
+                                >
+                                  {deviceLabel(s.userAgent)}
+                                </span>
+                                {s.isCurrent && (
+                                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">
+                                    현재 기기
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">
+                              {s.ipAddress ?? '-'}
+                            </td>
+                            <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
+                              {formatRelative(s.lastActiveAt)}
+                            </td>
+                            <td className="px-5 py-3 text-right">
+                              {s.isCurrent ? (
+                                <span className="text-xs text-slate-400">—</span>
+                              ) : (
+                                <button
+                                  onClick={() => handleTerminateSession(s.id)}
+                                  disabled={terminatingId === s.id}
+                                  className="px-2.5 py-1 text-xs rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50"
+                                >
+                                  {terminatingId === s.id ? '종료 중...' : '종료'}
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
             {activeTab === 'security' && (
               <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
                 <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-700">
