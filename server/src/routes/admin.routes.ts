@@ -38,6 +38,7 @@ import { authenticate } from '../middlewares/auth.middleware';
 import { isAdmin } from '../middlewares/isAdmin';
 import { ipWhitelistMiddleware } from '../middlewares/ipWhitelistMiddleware';
 import { adminLimiter } from '../middlewares/rate-limit.middleware';
+import { validateUuidParam } from '../middlewares/validate.middleware';
 import { getSecurityLogs, deleteSecurityLogs } from '../controllers/securityLog.controller';
 import { getErrorLogs, deleteErrorLogs } from '../controllers/errorLog.controller';
 import { getLoginHistory, getGlobalLoginHistory } from '../controllers/loginHistory.controller';
@@ -75,8 +76,16 @@ router.post('/users/:id/reset-password', resetPassword as RequestHandler);
 // 비밀번호 초기화 요청 (사용자 요청 → 관리자 승인). /:id 동적 라우트보다 먼저 두지 않아도
 // 경로가 'password-reset-requests'로 구체적이라 충돌 없음.
 router.get('/password-reset-requests', getPasswordResetRequests as RequestHandler);
-router.post('/password-reset-requests/:id/approve', approvePasswordResetRequest as RequestHandler);
-router.post('/password-reset-requests/:id/reject', rejectPasswordResetRequest as RequestHandler);
+router.post(
+  '/password-reset-requests/:id/approve',
+  validateUuidParam('id'),
+  approvePasswordResetRequest as RequestHandler
+);
+router.post(
+  '/password-reset-requests/:id/reject',
+  validateUuidParam('id'),
+  rejectPasswordResetRequest as RequestHandler
+);
 router.patch('/users/:userId/approve', approveUser as RequestHandler);
 router.delete('/users/:userId/reject', rejectUser as RequestHandler);
 router.patch('/users/:userId/deactivate', deactivateUser as RequestHandler);
@@ -131,7 +140,11 @@ router.get('/users/:userId/audit-logs', getUserAuditLogs as RequestHandler);
 
 // ===== 세션 관리 API =====
 router.get('/users/:userId/sessions', getUserSessions as RequestHandler);
-router.delete('/users/:userId/sessions/:sessionId', forceLogoutSession as RequestHandler);
+router.delete(
+  '/users/:userId/sessions/:sessionId',
+  validateUuidParam('sessionId'),
+  forceLogoutSession as RequestHandler
+);
 
 // ===== Rate Limiting 관리 =====
 router.use('/rate-limits', rateLimitAdminRoutes);
@@ -143,7 +156,7 @@ router.use('/tags', tagRoutes);
 router.get('/ip-rules/stats', getIpStats as RequestHandler);
 router.get('/ip-rules', getIpRules as RequestHandler);
 router.post('/ip-rules', addIpRule as RequestHandler);
-router.patch('/ip-rules/:id', patchIpRule as RequestHandler);
-router.delete('/ip-rules/:id', removeIpRule as RequestHandler);
+router.patch('/ip-rules/:id', validateUuidParam('id'), patchIpRule as RequestHandler);
+router.delete('/ip-rules/:id', validateUuidParam('id'), removeIpRule as RequestHandler);
 
 export default router;

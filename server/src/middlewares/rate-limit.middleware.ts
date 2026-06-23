@@ -124,6 +124,29 @@ export const passwordResetLimiter = rateLimit({
   },
 });
 
+// 2FA 활성화/비활성화 전용 제한 (TOTP brute-force 방지)
+// - 두 엔드포인트 모두 6자리 TOTP를 검증하므로 일반 apiLimiter보다 좁은 한도를 둔다.
+// - authenticate 이후에 배치해야 req.user가 채워져 사용자별 키가 동작한다(인증 전엔 IP fallback).
+// - skipSuccessfulRequests 없음: 성공/실패 모두 카운트(코드 섞기 우회 방지)
+export const twoFactorLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5분
+  max: 10,
+  standardHeaders: 'draft-6',
+  legacyHeaders: false,
+  keyGenerator: req => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const userId = (req as any).user?.id;
+    return userId ? `2fa:user:${userId}` : `2fa:ip:${ipKeyGenerator(req.ip ?? '')}`;
+  },
+  handler: (req, res) => {
+    logWarning('2FA 설정 변경 Rate limit 초과', { ip: req.ip });
+    res.status(429).json({
+      success: false,
+      message: '시도 횟수를 초과했습니다. 5분 후 다시 시도해주세요.',
+    });
+  },
+});
+
 // 파일 다운로드 제한
 export const downloadLimiter = rateLimit({
   windowMs: RATE_LIMIT.DOWNLOAD_WINDOW_MS,

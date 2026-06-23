@@ -13,6 +13,7 @@ import { userSessionService } from '../services/userSession.service';
 import { notificationService } from '../services/notification.service';
 import { getSettings } from '../utils/settingsCache';
 import { isCookieSecure } from '../utils/cookie';
+import { encryptSecret, decryptSecret } from '../utils/secretCrypto';
 import { logError, logSuccess, logWarning } from '../utils/logger';
 import {
   sendSuccess,
@@ -62,7 +63,8 @@ export const generate2FASecret = async (req: AuthRequest, res: Response): Promis
 
     const qrCodeUrl = await QRCode.toDataURL(secret.otpauth_url || '');
 
-    user.twoFactorSecret = secret.base32;
+    // at-rest 암호화 후 저장 (QR/응답에는 평문 base32를 전달 — 등록 화면에서 1회성으로 필요)
+    user.twoFactorSecret = encryptSecret(secret.base32);
     await user.save();
 
     sendSuccess(res, {
@@ -98,14 +100,13 @@ export const enable2FA = async (req: AuthRequest, res: Response): Promise<void> 
       return;
     }
 
-    const secret = user.twoFactorSecret;
-    if (!secret) {
+    if (!user.twoFactorSecret) {
       sendValidationError(res, 'twoFactor', '먼저 2FA 설정을 생성해주세요.');
       return;
     }
 
     const verified = speakeasy.totp.verify({
-      secret,
+      secret: decryptSecret(user.twoFactorSecret),
       encoding: 'base32',
       token,
       window: 1,
@@ -166,7 +167,7 @@ export const disable2FA = async (req: AuthRequest, res: Response): Promise<void>
     }
 
     const verified = speakeasy.totp.verify({
-      secret: user.twoFactorSecret!,
+      secret: decryptSecret(user.twoFactorSecret!),
       encoding: 'base32',
       token,
       window: 1,
@@ -268,7 +269,7 @@ export const verify2FALogin = async (req: Request, res: Response): Promise<void>
     }
 
     const verified = speakeasy.totp.verify({
-      secret: user.twoFactorSecret!,
+      secret: decryptSecret(user.twoFactorSecret!),
       encoding: 'base32',
       token,
       window: 1,
