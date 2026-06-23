@@ -16,6 +16,9 @@ export const PermissionManagement = () => {
     fetchBoards,
     fetchBoardPermissions,
     updatePermission,
+    saveAllPermissions,
+    discardChanges,
+    dirtyBoards,
     saving,
     loading: loadingBoards,
   } = useBoardManagement();
@@ -102,6 +105,17 @@ export const PermissionManagement = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boards]);
 
+  // 미저장 변경이 있으면 페이지 이탈(새로고침/닫기) 시 경고 — 자동저장이 아니므로 유실 방지
+  useEffect(() => {
+    if (dirtyBoards.size === 0) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [dirtyBoards]);
+
   if (loadingBoards || loadingRoles) return <LoadingSpinner message="권한 설정을 불러오는 중..." />;
 
   const onPermissionToggle = (
@@ -111,6 +125,17 @@ export const PermissionManagement = () => {
   ) => {
     updatePermission(boardId, roleId, type, roles);
   };
+
+  const handleSaveAll = async () => {
+    const { failed } = await saveAllPermissions();
+    if (failed.length === 0) {
+      toast.success('게시판 권한이 저장되었습니다.');
+    } else {
+      toast.error(`${failed.length}개 게시판 권한 저장에 실패했습니다.`);
+    }
+  };
+
+  const dirtyCount = dirtyBoards.size;
   const graphAccesses = Object.entries(boardPermissions).flatMap(([boardId, perms]) =>
     perms.map(p => ({
       boardId,
@@ -161,13 +186,33 @@ export const PermissionManagement = () => {
       <AdminSection
         title="⚙️ 게시판별 권한 설정"
         actions={
-          <button
-            type="button"
-            onClick={() => setShowGraph(v => !v)}
-            className="px-3 py-2 text-sm font-medium bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700 rounded-lg hover:bg-indigo-100 transition-colors"
-          >
-            {showGraph ? '📋 테이블 보기' : '🗺 관계도 보기'}
-          </button>
+          <div className="flex items-center gap-2">
+            {dirtyCount > 0 && (
+              <button
+                type="button"
+                onClick={discardChanges}
+                disabled={saving}
+                className="px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors disabled:opacity-50"
+              >
+                변경 취소
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleSaveAll}
+              disabled={saving || dirtyCount === 0}
+              className="px-4 py-2 text-sm font-semibold text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {saving ? '저장 중...' : dirtyCount > 0 ? `저장 (${dirtyCount})` : '저장됨'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowGraph(v => !v)}
+              className="px-3 py-2 text-sm font-medium bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700 rounded-lg hover:bg-indigo-100 transition-colors"
+            >
+              {showGraph ? '📋 테이블 보기' : '🗺 관계도 보기'}
+            </button>
+          </div>
         }
       >
         <div className="space-y-6">
@@ -187,17 +232,24 @@ export const PermissionManagement = () => {
                   </h3>
                   <span
                     className={`text-sm px-3 py-1 rounded-full ${
-                      saving[board.id]
-                        ? 'text-yellow-600 bg-yellow-50'
-                        : 'text-slate-500 bg-green-50'
+                      dirtyBoards.has(board.id)
+                        ? 'text-amber-700 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400'
+                        : 'text-slate-400 bg-slate-50 dark:bg-slate-700/40 dark:text-slate-500'
                     }`}
                   >
-                    {saving[board.id] ? '💾 저장 중...' : '✅ 자동 저장됨'}
+                    {dirtyBoards.has(board.id) ? '● 변경됨 (미저장)' : '저장됨'}
                   </span>
                 </div>
 
                 <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
+                  {/* 칼럼 폭 고정 — 게시판 카드마다 체크박스 칼럼이 동일 위치로 정렬되도록 */}
+                  <table className="w-full table-fixed text-sm">
+                    <colgroup>
+                      <col />
+                      <col style={{ width: '90px' }} />
+                      <col style={{ width: '90px' }} />
+                      <col style={{ width: '90px' }} />
+                    </colgroup>
                     <thead className="bg-slate-50 dark:bg-slate-700/50">
                       <tr>
                         <th className="px-4 py-2 text-left font-medium text-slate-700 dark:text-slate-300">

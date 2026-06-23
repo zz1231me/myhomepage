@@ -6,17 +6,15 @@ export const useBoardManagement = () => {
   const [boards, setBoards] = useState<Board[]>([]);
   const [permissions, setPermissions] = useState<Record<string, BoardPermission[]>>({});
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [dataLoaded, setDataLoaded] = useState(false);
-  // 저장 직렬화용 — 한 게시판에 저장이 진행 중인지 추적(out-of-order 저장 방지).
-  const inFlightRef = useRef<Set<string>>(new Set());
-  // 저장 진행 중에 들어온 후속 변경의 "최신 상태"를 적재(coalescing). 저장이 끝나면 이어서 저장한다.
-  const pendingRef = useRef<Map<string, BoardPermission[]>>(new Map());
-  // permissions의 최신 스냅샷(ref). setState updater의 비동기 실행에 의존해 토글 결과를 읽으면
-  // 저장이 누락될 수 있어, ref에서 동기적으로 최신 상태를 읽어 결정적으로 계산한다.
-  const permissionsRef = useRef<Record<string, BoardPermission[]>>({});
-
   const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // permissions의 최신 스냅샷(ref). 토글 시 setState updater의 비동기 실행에 의존하지 않고
+  // ref에서 동기적으로 최신 상태를 읽어 결정적으로 계산한다(연속 클릭 누적 + 누락 방지).
+  const permissionsRef = useRef<Record<string, BoardPermission[]>>({});
+  // 변경됐지만 아직 저장 안 된 게시판 id 집합 — 자동저장 대신 '저장' 버튼으로 일괄 저장한다.
+  const [dirtyBoards, setDirtyBoards] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
 
   const fetchBoards = async () => {
     if (loading) return;
@@ -55,12 +53,9 @@ export const useBoardManagement = () => {
   };
 
   const fetchBoardPermissions = async (boardList: Board[]) => {
-    // 보드별 N요청(GET /boards/:id/permissions) 대신 1요청으로 전체 권한을 받아 boardId로 그룹핑.
-    // 이전엔 보드 수만큼 병렬 GET이 adminLimiter(100/15분)에 걸려 일부 보드가 빈 권한으로
-    // 로드되고, 그 상태로 토글하면 부분 저장이 일어나는 트리거가 됐다(PR: 부분 저장 보존으로
-    // 데이터 유실은 막았지만, 빈 로드 자체를 예방).
+    // 보드별 N요청 대신 1요청으로 전체 권한을 받아 boardId로 그룹핑(권한 없는 보드도 []로 표시).
     const permissionsState: Record<string, BoardPermission[]> = {};
-    for (const board of boardList) permissionsState[board.id] = []; // 권한 없는 보드도 표시
+    for (const board of boardList) permissionsState[board.id] = [];
     try {
       const res = await api.get('/admin/board-permissions');
       const rows = (res.data.data ?? res.data ?? []) as Array<
@@ -76,40 +71,16 @@ export const useBoardManagement = () => {
     }
     permissionsRef.current = permissionsState;
     setPermissions(permissionsState);
+    setDirtyBoards(new Set()); // 새로 로드하면 미저장 표시 초기화
   };
 
-  // 대기열(pendingRef)의 최신 상태를 직렬로 저장. 저장이 끝나면 그 사이 쌓인 변경을 이어서 저장한다.
-  const runSave = (boardId: string) => {
-    const perms = pendingRef.current.get(boardId);
-    if (!perms) return;
-    pendingRef.current.delete(boardId);
-    inFlightRef.current.add(boardId);
-    setSaving(s => ({ ...s, [boardId]: true }));
-    savePermissions(boardId, perms)
-      .catch(() => {
-        if (import.meta.env.DEV) console.error('권한 저장 실패 — 서버 상태로 롤백됨');
-      })
-      .finally(() => {
-        inFlightRef.current.delete(boardId);
-        // 저장 중 들어온 후속 변경이 있으면 최신 상태로 이어서 저장(클릭 유실 방지)
-        if (pendingRef.current.has(boardId)) {
-          runSave(boardId);
-        } else {
-          setSaving(s => ({ ...s, [boardId]: false }));
-        }
-      });
-  };
-
+  // 체크박스 토글 — 로컬 상태만 변경하고 해당 게시판을 dirty로 표시한다(저장은 saveAllPermissions에서 일괄).
   const updatePermission = (
     boardId: string,
     roleId: string,
     type: 'canRead' | 'canWrite' | 'canDelete',
     roles: Role[]
   ) => {
-    // ⚠️ 최신 상태를 ref에서 동기적으로 읽어 계산한다. 예전엔 setState updater 안에서 채운
-    //    updatedPerms를 setState 직후 동기적으로 읽었는데, React가 updater를 지연 실행하면
-    //    updatedPerms가 빈 배열인 채로 읽혀 저장이 스킵되고(낙관적 UI만 갱신) 새로고침 시
-    //    토글이 사라지는 간헐적 버그가 있었다.
     const boardPerms = permissionsRef.current[boardId] || [];
     const existingIndex = boardPerms.findIndex(p => p.roleId === roleId);
     let updatedPerms: BoardPermission[];
@@ -146,41 +117,44 @@ export const useBoardManagement = () => {
     const nextState = { ...permissionsRef.current, [boardId]: updatedPerms };
     permissionsRef.current = nextState;
     setPermissions(nextState);
-
-    // 최신 상태를 대기열에 적재(직전 변경 coalescing). 진행 중 저장이 없으면 즉시 시작하고,
-    // 진행 중이면 끝난 뒤 runSave가 이어서 저장하므로 토글이 드롭되지 않는다(기존 버그 수정).
-    pendingRef.current.set(boardId, updatedPerms);
-    if (!inFlightRef.current.has(boardId)) {
-      runSave(boardId);
-    }
+    setDirtyBoards(prev => {
+      const next = new Set(prev);
+      next.add(boardId);
+      return next;
+    });
   };
 
-  const savePermissions = async (boardId: string, perms: BoardPermission[]) => {
-    try {
-      // Filter valid perms
-      const validPermissions = perms.map(p => ({
-        roleId: p.roleId,
-        canRead: p.canRead,
-        canWrite: p.canWrite,
-        canDelete: p.canDelete,
-      }));
-
-      await api.put(`/admin/boards/${boardId}/permissions`, {
-        permissions: validPermissions,
-      });
-    } catch (err) {
-      if (import.meta.env.DEV) console.error('권한 저장 실패:', err);
-      // 저장 실패 시 서버 상태로 롤백
+  // 변경된 모든 게시판 권한을 서버에 일괄 저장. 성공한 게시판은 dirty 해제, 실패한 것만 유지한다.
+  const saveAllPermissions = async (): Promise<{ failed: string[] }> => {
+    if (saving) return { failed: [...dirtyBoards] };
+    const targets = [...dirtyBoards];
+    if (targets.length === 0) return { failed: [] };
+    setSaving(true);
+    const failed: string[] = [];
+    for (const boardId of targets) {
       try {
-        const res = await api.get(`/admin/boards/${boardId}/permissions`);
-        const serverPerms = res.data.data || res.data;
-        permissionsRef.current = { ...permissionsRef.current, [boardId]: serverPerms };
-        setPermissions(prev => ({ ...prev, [boardId]: serverPerms }));
-      } catch {
-        // 롤백 실패 시 무시
+        const perms = permissionsRef.current[boardId] || [];
+        await api.put(`/admin/boards/${boardId}/permissions`, {
+          permissions: perms.map(p => ({
+            roleId: p.roleId,
+            canRead: p.canRead,
+            canWrite: p.canWrite,
+            canDelete: p.canDelete,
+          })),
+        });
+      } catch (err) {
+        if (import.meta.env.DEV) console.error(`권한 저장 실패: ${boardId}`, err);
+        failed.push(boardId);
       }
-      throw err;
     }
+    setDirtyBoards(new Set(failed));
+    setSaving(false);
+    return { failed };
+  };
+
+  // 미저장 변경 폐기 — 서버 상태로 다시 로드.
+  const discardChanges = async () => {
+    await fetchBoardPermissions(boards);
   };
 
   return {
@@ -189,13 +163,16 @@ export const useBoardManagement = () => {
     loading,
     saving,
     dataLoaded,
+    dirtyBoards,
+    fetchError,
     fetchBoards,
     addBoard,
     updateBoard,
     deleteBoard,
     fetchBoardPermissions,
     updatePermission,
+    saveAllPermissions,
+    discardChanges,
     setDataLoaded,
-    fetchError,
   };
 };
