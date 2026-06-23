@@ -39,6 +39,16 @@ export const PasswordResetRequestManagement = () => {
     load();
   }, [load]);
 
+  // 결과 모달이 열려 있을 때 Esc로 닫기
+  useEffect(() => {
+    if (!result) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setResult(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [result]);
+
   const handleApprove = async (req: PasswordResetRequestItem) => {
     if (busyId) return;
     setBusyId(req.id);
@@ -182,10 +192,16 @@ export const PasswordResetRequestManagement = () => {
           onClick={() => setResult(null)}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="prr-result-title"
             className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-800"
             onClick={e => e.stopPropagation()}
           >
-            <h3 className="mb-1 text-lg font-bold text-slate-900 dark:text-white">
+            <h3
+              id="prr-result-title"
+              className="mb-1 text-lg font-bold text-slate-900 dark:text-white"
+            >
               재설정 링크 생성됨
             </h3>
             <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
@@ -202,6 +218,7 @@ export const PasswordResetRequestManagement = () => {
               />
               <button
                 type="button"
+                autoFocus
                 onClick={copyLink}
                 className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-700"
               >

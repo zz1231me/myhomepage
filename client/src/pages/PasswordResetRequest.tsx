@@ -23,11 +23,16 @@ function PasswordResetRequest() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const trimmed = loginId.trim();
+    if (!trimmed) {
+      setError('아이디를 입력해주세요.');
+      return;
+    }
     setError('');
     setIsLoading(true);
 
     try {
-      const result = await requestPasswordReset(loginId.trim());
+      const result = await requestPasswordReset(trimmed);
       setSuccessMessage(result.message);
       setSubmitted(true);
     } catch (err) {

@@ -1,6 +1,7 @@
 import { PasswordResetRequest } from '../models/PasswordResetRequest';
 import { User, UserInstance } from '../models/User';
 import { AppError } from '../middlewares/error.middleware';
+import { sequelize } from '../config/sequelize';
 
 export interface PasswordResetRequestView {
   id: string;
@@ -61,31 +62,43 @@ class PasswordResetRequestService {
     requestId: string,
     adminId: string
   ): Promise<{ token: string; user: UserInstance }> {
-    const request = await PasswordResetRequest.findByPk(requestId);
-    if (!request) throw new AppError(404, '요청을 찾을 수 없습니다.');
-    if (request.status !== 'pending') throw new AppError(400, '이미 처리된 요청입니다.');
-    // 자기 자신의 요청을 자가 승인하는 것은 차단(신원 검증 우회 방지). 본인은 프로필에서 변경.
-    if (request.userId === adminId) {
-      throw new AppError(400, '자기 자신의 초기화 요청은 승인할 수 없습니다.');
-    }
+    // 트랜잭션 + 행 잠금으로 동시 승인 직렬화. 두 관리자가 같은 요청을 동시에 수락하면
+    // 잠금 없이는 둘 다 status 검사를 통과해 토큰을 두 번 발급(나중 토큰이 앞 토큰을 덮어
+    // 먼저 받은 관리자의 링크가 죽음)하는 레이스가 있었다. 잠금으로 두 번째 호출은 첫 호출의
+    // 커밋 후 status='approved'를 보고 거부된다.
+    return sequelize.transaction(async t => {
+      const request = await PasswordResetRequest.findByPk(requestId, {
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
+      if (!request) throw new AppError(404, '요청을 찾을 수 없습니다.');
+      if (request.status !== 'pending') throw new AppError(400, '이미 처리된 요청입니다.');
+      // 자기 자신의 요청을 자가 승인하는 것은 차단(신원 검증 우회 방지). 본인은 프로필에서 변경.
+      if (request.userId === adminId) {
+        throw new AppError(400, '자기 자신의 초기화 요청은 승인할 수 없습니다.');
+      }
 
-    const user = await User.findOne({
-      where: { id: request.userId, isActive: true, isDeleted: false },
+      const user = await User.findOne({
+        where: { id: request.userId, isActive: true, isDeleted: false },
+        transaction: t,
+      });
+      if (!user) throw new AppError(400, '대상 사용자를 찾을 수 없거나 비활성 상태입니다.');
+
+      request.status = 'approved';
+      request.resolvedBy = adminId;
+      request.resolvedAt = new Date();
+      await request.save({ transaction: t });
+
+      // 토큰 발급(user.save 포함)을 같은 트랜잭션에 묶는다. SQLite 단일 writer라 트랜잭션 밖
+      // save는 SQLITE_BUSY 교착을 일으킨다. 요청 행 잠금으로 단일 호출만 여기 도달한다.
+      const token = await user.generatePasswordResetToken({ transaction: t });
+
+      return { token, user };
     });
-    if (!user) throw new AppError(400, '대상 사용자를 찾을 수 없거나 비활성 상태입니다.');
-
-    const token = await user.generatePasswordResetToken(); // 강한 랜덤 토큰(평문 반환, DB엔 해시 저장)
-
-    request.status = 'approved';
-    request.resolvedBy = adminId;
-    request.resolvedAt = new Date();
-    await request.save();
-
-    return { token, user };
   }
 
-  /** 관리자 거절 — 요청을 rejected로 표시. */
-  async reject(requestId: string, adminId: string): Promise<void> {
+  /** 관리자 거절 — 요청을 rejected로 표시. 감사 로그용으로 대상 userId를 반환. */
+  async reject(requestId: string, adminId: string): Promise<{ userId: string }> {
     const request = await PasswordResetRequest.findByPk(requestId);
     if (!request) throw new AppError(404, '요청을 찾을 수 없습니다.');
     if (request.status !== 'pending') throw new AppError(400, '이미 처리된 요청입니다.');
@@ -94,6 +107,7 @@ class PasswordResetRequestService {
     request.resolvedBy = adminId;
     request.resolvedAt = new Date();
     await request.save();
+    return { userId: request.userId };
   }
 }
 

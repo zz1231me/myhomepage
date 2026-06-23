@@ -376,8 +376,8 @@ export const rejectPasswordResetRequest = async (req: Request, res: Response): P
   try {
     const { id } = req.params;
     const adminId = (req as unknown as AuthRequest).user?.id ?? 'unknown';
-    await passwordResetRequestService.reject(id, adminId);
-    logAudit(req, 'reject_password_reset', { targetType: 'user', targetId: id });
+    const { userId } = await passwordResetRequestService.reject(id, adminId);
+    logAudit(req, 'reject_password_reset', { targetType: 'user', targetId: userId });
     sendSuccess(res, null, '요청을 거절했습니다.');
   } catch (error) {
     const appErr = toAppError(error);
