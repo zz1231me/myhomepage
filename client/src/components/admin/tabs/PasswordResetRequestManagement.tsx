@@ -1,5 +1,5 @@
 // PasswordResetRequestManagement.tsx - 비밀번호 초기화 요청 (사용자 요청 → 관리자 승인)
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Check, X, Copy, RotateCw } from 'lucide-react';
 import {
   fetchPasswordResetRequests,
@@ -52,15 +52,19 @@ export const PasswordResetRequestManagement = () => {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [result, setResult] = useState<ApprovalResult | null>(null);
 
+  // 필터를 빠르게 바꾸면 여러 load가 경쟁한다. 세대(gen) 카운터로 최신 요청 결과만 반영해
+  // 느린 이전 응답이 새 결과를 덮어쓰지 않도록 한다.
+  const loadGenRef = useRef(0);
   const load = useCallback(async () => {
+    const gen = ++loadGenRef.current;
     try {
       setLoading(true);
       const data = await fetchPasswordResetRequests(statusFilter);
-      setRequests(data);
+      if (gen === loadGenRef.current) setRequests(data);
     } catch {
-      toast.error('요청 목록을 불러오지 못했습니다.');
+      if (gen === loadGenRef.current) toast.error('요청 목록을 불러오지 못했습니다.');
     } finally {
-      setLoading(false);
+      if (gen === loadGenRef.current) setLoading(false);
     }
   }, [statusFilter]);
 

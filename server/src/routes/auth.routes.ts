@@ -22,7 +22,7 @@ import { getOwnSessions } from '../controllers/userSession.controller';
 import {
   authLimiter,
   refreshLimiter,
-  forgotPasswordLimiter,
+  passwordResetLimiter,
 } from '../middlewares/rate-limit.middleware';
 import { validateBody } from '../middlewares/validate.middleware';
 import {
@@ -41,7 +41,7 @@ router.post('/register', authLimiter, validateBody(registerSchema), register);
 router.post('/refresh', refreshLimiter, refreshToken);
 router.post(
   '/password-reset-request',
-  forgotPasswordLimiter,
+  passwordResetLimiter,
   validateBody(passwordResetRequestSchema),
   requestPasswordReset
 );
