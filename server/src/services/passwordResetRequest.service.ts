@@ -36,9 +36,19 @@ class PasswordResetRequestService {
   async listRequests(
     status: 'pending' | 'approved' | 'rejected' = 'pending'
   ): Promise<PasswordResetRequestView[]> {
+    // 활성·미삭제 사용자의 요청만 노출(INNER JOIN). 비활성/삭제(익명화)된 계정의 요청은
+    // approve가 어차피 400으로 거부되므로, 처리 불가한 죽은 항목이 목록에 쌓이지 않게 거른다.
     const rows = await PasswordResetRequest.findAll({
       where: { status },
-      include: [{ model: User, as: 'user', attributes: ['id', 'name'], required: false }],
+      include: [
+        {
+          model: User,
+          as: 'user',
+          attributes: ['id', 'name'],
+          where: { isActive: true, isDeleted: false },
+          required: true,
+        },
+      ],
       order: [['createdAt', 'DESC']],
       limit: 200,
     });
