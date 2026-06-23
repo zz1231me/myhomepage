@@ -135,6 +135,8 @@ export const UserManagement = () => {
     // 본인 역할 변경은 서버에서 차단됨(자기 권한 박탈 방지) — 클라에서 먼저 안내해 무음 원복 방지
     if (userId === currentUser?.id) {
       toast.error('자신의 역할은 변경할 수 없습니다.');
+      // 컨트롤드 select가 선택한(거부된) 값에 멈추지 않도록 실제 역할로 원복(리렌더 유도)
+      fetchUsers();
       return;
     }
     try {
@@ -143,6 +145,8 @@ export const UserManagement = () => {
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } } };
       toast.error(e.response?.data?.message ?? '역할 변경에 실패했습니다.');
+      // 서버 거부(비활성/미존재 역할 등) 시 select가 거부된 값에 남는 문제 방지 — 실제 역할로 원복
+      fetchUsers();
     }
   };
 
