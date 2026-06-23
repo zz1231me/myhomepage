@@ -71,7 +71,10 @@ function ResetPassword() {
       // 성공 시 로그인 페이지로 이동 (성공 메시지와 함께)
       navigate('/', {
         replace: true,
-        state: { message: '비밀번호가 성공적으로 변경되었습니다. 새 비밀번호로 로그인해주세요.' },
+        state: {
+          title: '비밀번호 변경 완료',
+          message: '비밀번호가 성공적으로 변경되었습니다. 새 비밀번호로 로그인해주세요.',
+        },
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : '비밀번호 재설정에 실패했습니다.';

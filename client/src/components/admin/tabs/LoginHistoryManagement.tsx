@@ -80,8 +80,10 @@ export const LoginHistoryManagement = () => {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
+    // setPage(1)만 — 실제 조회는 useEffect(취소 가능한 signal 경유)가 수행한다.
+    // 여기서 fetchRecords()를 직접 부르면 (1)디바운스 이전 값으로 조회되고 (2)취소 불가한
+    // 요청이 effect의 signaled 요청과 경쟁하거나 언마운트 후 setState하는 문제가 있었다.
     setPage(1);
-    fetchRecords();
   };
 
   if (loading && records.length === 0) return <LoadingSpinner />;

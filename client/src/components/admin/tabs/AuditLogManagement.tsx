@@ -16,6 +16,8 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   reject_user: '회원 거부',
   deactivate_user: '계정 비활성화',
   reset_password: '비밀번호 초기화',
+  approve_password_reset: '초기화 요청 승인',
+  reject_password_reset: '초기화 요청 거절',
   change_role: '역할 변경',
   create_board: '게시판 생성',
   update_board: '게시판 수정',
@@ -44,6 +46,9 @@ const ACTION_COLORS: Record<string, string> = {
   reject_user: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300',
   deactivate_user: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300',
   reset_password: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
+  approve_password_reset:
+    'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
+  reject_password_reset: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300',
   change_role: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300',
   create_board: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
   update_board: 'bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300',
@@ -120,8 +125,9 @@ export const AuditLogManagement = () => {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
+    // setPage(1)만 — 실제 조회는 useEffect(취소 가능한 signal 경유)가 수행한다.
+    // 직접 fetchLogs()를 부르면 디바운스 이전 값 조회 + 취소 불가 요청 경쟁/언마운트 setState 문제.
     setPage(1);
-    fetchLogs();
   };
 
   const toggleExpand = (id: string) => setExpandedId(expandedId === id ? null : id);

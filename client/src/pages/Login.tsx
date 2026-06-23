@@ -20,6 +20,7 @@ function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [successTitle, setSuccessTitle] = useState('회원가입 완료');
   // Register에서 회원가입 직후 관리자 승인 대기 상태로 넘어왔는지 표시
   const [showApprovalInfo, setShowApprovalInfo] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -49,11 +50,13 @@ function Login() {
   useEffect(() => {
     const state = location.state as {
       message?: string;
+      title?: string;
       registeredId?: string;
       showApprovalInfo?: boolean;
     } | null;
     if (state?.message) {
       setSuccessMessage(state.message);
+      if (state.title) setSuccessTitle(state.title);
       if (state.registeredId) setId(state.registeredId);
       if (state.showApprovalInfo) setShowApprovalInfo(true);
       window.history.replaceState({}, document.title);
@@ -178,7 +181,7 @@ function Login() {
               <Info className="w-5 h-5 text-sky-500 flex-shrink-0 mt-0.5" />
               <div>
                 <p className="text-sm font-semibold text-sky-800 dark:text-sky-300">
-                  회원가입 완료
+                  {successTitle}
                 </p>
                 <p className="text-sm text-sky-700 dark:text-sky-400 mt-0.5">{successMessage}</p>
               </div>
