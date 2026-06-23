@@ -418,7 +418,7 @@ export class PostService extends BaseService {
     userId?: string,
     tagIds?: number[]
   ) {
-    const andConditions: ReturnType<typeof literal>[] = [];
+    const andConditions: (ReturnType<typeof literal> | WhereOptions<PostInstance>)[] = [];
 
     if (tagIds && tagIds.length > 0) {
       // sequelize.escape()로 각 ID를 이스케이프하여 파라미터화된 쿼리와 동등한 안전성 확보
@@ -430,20 +430,27 @@ export class PostService extends BaseService {
       );
     }
 
+    if (search) {
+      const escapedSearch = search.replace(/[%_\\]/g, '\\$&');
+      andConditions.push({
+        [Op.or]: [
+          { title: { [Op.like]: `%${escapedSearch}%` } },
+          // contentText(평문) 검색 — 원본 HTML 태그로 인한 매칭 누락 방지
+          { contentText: { [Op.like]: `%${escapedSearch}%` } },
+        ],
+      });
+      // 검색은 타 사용자 비밀글의 제목/본문을 매칭하면 안 된다 — 매칭 여부 자체가 비밀 내용의
+      // 정보유출 오라클이 되기 때문. 비밀글은 소유자에게만 검색되도록 스코프(globalSearch와 동일 정책).
+      andConditions.push(
+        userId ? { [Op.or]: [{ isSecret: false }, { UserId: userId }] } : { isSecret: false }
+      );
+    }
+
     const whereCondition: WhereOptions<PostInstance> & { [key: symbol]: unknown } = {
       boardType,
       status: 'published', // 초안/보관 게시글은 목록에서 제외
       ...(andConditions.length > 0 ? { [Op.and]: andConditions } : {}),
     };
-
-    if (search) {
-      const escapedSearch = search.replace(/[%_\\]/g, '\\$&');
-      whereCondition[Op.or] = [
-        { title: { [Op.like]: `%${escapedSearch}%` } },
-        // contentText(평문) 검색 — 원본 HTML 태그로 인한 매칭 누락 방지
-        { contentText: { [Op.like]: `%${escapedSearch}%` } },
-      ];
-    }
 
     const offset = (page - 1) * limit;
 
@@ -507,7 +514,9 @@ export class PostService extends BaseService {
         ],
         limit,
         offset,
-        subQuery: false,
+        // subQuery 기본값(true) 사용 — Tag(belongsToMany) include와 함께 subQuery:false면 LIMIT이
+        // 조인된 행에 적용돼 태그가 여러 개인 글이 LIMIT 슬롯을 여러 개 차지, 페이지에 글이 누락되고
+        // 마지막 페이지의 글에 도달 못 하는 버그가 있었다. 태그 필터는 WHERE EXISTS라 영향 없음.
       }),
     ]);
 
