@@ -1,7 +1,7 @@
 // PermissionManagement.tsx - 권한 관리 컴포넌트
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Loader2, Info, Map, Table2 } from 'lucide-react';
+import { Check, Loader2, Info, Map, Table2, AlertTriangle, RotateCw } from 'lucide-react';
 import { useBoardManagement } from '../../../hooks/admin/useBoardManagement';
 import { useRoleManagement } from '../../../hooks/admin/useRoleManagement';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -69,6 +69,7 @@ export const PermissionManagement = () => {
     dirtyBoards,
     saving,
     loading: loadingBoards,
+    fetchError,
   } = useBoardManagement();
 
   const { roles, fetchRoles, loading: loadingRoles } = useRoleManagement();
@@ -195,6 +196,23 @@ export const PermissionManagement = () => {
 
   return (
     <div className="space-y-8">
+      {fetchError && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800/50 dark:bg-red-900/20 dark:text-red-300">
+          <span className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+            {fetchError} 표시된 권한이 실제와 다를 수 있으니 저장 전 다시 불러오세요.
+          </span>
+          <button
+            type="button"
+            onClick={() => fetchBoards()}
+            disabled={loadingBoards}
+            className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-md border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/40"
+          >
+            <RotateCw className={`h-3.5 w-3.5 ${loadingBoards ? 'animate-spin' : ''}`} />
+            다시 불러오기
+          </button>
+        </div>
+      )}
       <AdminSection title="위키 편집 권한">
         <div className="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-700 dark:bg-slate-800">
           <div className="mb-4 flex items-center justify-between">
