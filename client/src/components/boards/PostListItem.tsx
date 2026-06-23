@@ -157,24 +157,22 @@ export const PostListItem: React.FC<PostListItemProps> = ({
           </span>
         </div>
 
-        {/* 작성자 - 데스크탑 전용 */}
-        <div className="col-span-2 text-center hidden sm:block">
-          <div className="inline-flex items-center gap-1.5">
-            <Avatar
-              user={{
-                id: post.user?.id || '',
-                name: post.author,
-                avatar: post.user?.avatar || null,
-              }}
-              size="xs"
-            />
-            <span
-              title={post.author}
-              className="text-sm text-slate-600 dark:text-slate-400 truncate max-w-[4rem] font-medium"
-            >
-              {post.author}
-            </span>
-          </div>
+        {/* 작성자 - 데스크탑 전용 (좌측 정렬 → 아바타가 행마다 일렬로 맞음) */}
+        <div className="col-span-2 hidden sm:flex items-center gap-1.5 min-w-0">
+          <Avatar
+            user={{
+              id: post.user?.id || '',
+              name: post.author,
+              avatar: post.user?.avatar || null,
+            }}
+            size="xs"
+          />
+          <span
+            title={post.author}
+            className="text-sm text-slate-600 dark:text-slate-400 truncate font-medium"
+          >
+            {post.author}
+          </span>
         </div>
 
         {/* 작성일 - 데스크탑 전용 */}

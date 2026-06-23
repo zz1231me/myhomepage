@@ -234,7 +234,16 @@ export const SecurityLogManagement = () => {
         <div className="bg-white dark:bg-slate-800 shadow rounded-lg overflow-hidden">
           {/* Table header (fixed, not virtualized) */}
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+            <table className="w-full table-fixed divide-y divide-slate-200 dark:divide-slate-700">
+              {/* 칼럼 폭을 헤더와 모든 가상스크롤 행 table에 동일하게 고정해 정렬 일치 */}
+              <colgroup>
+                <col style={{ width: '170px' }} />
+                <col />
+                <col style={{ width: '170px' }} />
+                <col style={{ width: '210px' }} />
+                <col style={{ width: '120px' }} />
+                <col style={{ width: '96px' }} />
+              </colgroup>
               <thead className="bg-slate-50 dark:bg-slate-700">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-300 uppercase tracking-wider">
@@ -287,7 +296,15 @@ export const SecurityLogManagement = () => {
                     ref={rowVirtualizer.measureElement}
                     data-index={virtualRow.index}
                   >
-                    <table className="min-w-full">
+                    <table className="w-full table-fixed">
+                      <colgroup>
+                        <col style={{ width: '170px' }} />
+                        <col />
+                        <col style={{ width: '170px' }} />
+                        <col style={{ width: '210px' }} />
+                        <col style={{ width: '120px' }} />
+                        <col style={{ width: '96px' }} />
+                      </colgroup>
                       <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
                         <tr className="hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
                           <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400 w-[160px]">
