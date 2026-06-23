@@ -2,8 +2,7 @@
 
 React + Express + SQLite/MySQL/MariaDB/PostgreSQL 기반의 풀스택 웹 애플리케이션
 
-<!-- CI 배지: 아래 URL을 실제 GitHub 레포지토리 경로로 변경하세요 -->
-<!-- [![CI](https://github.com/<owner>/<repo>/actions/workflows/ci.yml/badge.svg)](https://github.com/<owner>/<repo>/actions/workflows/ci.yml) -->
+[![CI](https://github.com/zz1231me/myhomepage/actions/workflows/ci.yml/badge.svg)](https://github.com/zz1231me/myhomepage/actions/workflows/ci.yml)
 
 ---
 
@@ -29,6 +28,7 @@ React + Express + SQLite/MySQL/MariaDB/PostgreSQL 기반의 풀스택 웹 애플
 ### 인증 & 권한 관리
 - JWT 기반 인증 (HttpOnly 쿠키, 자동 토큰 갱신)
 - 2단계 인증 (2FA/TOTP) 지원
+- 관리자 비밀번호 초기화 → 임시 비밀번호 발급 → 최초 로그인 시 강제 변경
 - 역할 기반 접근 제어 (RBAC)
 - 멀티탭 자동 로그아웃 (storage event 동기화)
 - 기기 지문 기반 세션 관리
@@ -37,14 +37,15 @@ React + Express + SQLite/MySQL/MariaDB/PostgreSQL 기반의 풀스택 웹 애플
 - 다중 게시판 (권한별 접근 제어, 비활성 게시판 차단)
 - CKEditor 5 WYSIWYG 에디터
 - 파일 첨부 (이미지, 문서), 이미지 인라인 업로드
-- 중첩 댓글 시스템 (낙관적 업데이트)
-- 이모지 리액션 (like/love/haha/wow/sad/angry)
+- 중첩 댓글 시스템 (낙관적 업데이트), 댓글 좋아요
+- 게시글 좋아요
 - 게시글 태그 (색상 지정 가능)
 - 비밀 게시글 (비밀번호 보호)
 - 게시글 고정 (관리자/매니저)
 - 읽음 표시 (파란 점), 북마크
 - 자동저장 (30초), 이중 제출 방지, 임시저장 복원
 - OG 메타태그 동적 업데이트
+- 삭제 게시글 보관 후 자동 영구삭제 (보관 기간은 사이트 설정에서 관리)
 
 ### 위키
 - 슬러그 기반 계층형 위키 페이지
@@ -80,6 +81,7 @@ React + Express + SQLite/MySQL/MariaDB/PostgreSQL 기반의 풀스택 웹 애플
 - 사이트 설정
 
 ### UI/UX
+- 프로필 아바타 (이미지 업로드 또는 사진 없이 랜덤 그래픽 생성)
 - 다크/라이트 모드
 - 반응형 디자인
 - 가상 스크롤 (대용량 목록 최적화)
@@ -150,9 +152,8 @@ React + Express + SQLite/MySQL/MariaDB/PostgreSQL 기반의 풀스택 웹 애플
 ### 1. 저장소 클론
 
 ```bash
-# 아래 URL을 실제 레포지토리 주소로 변경하세요
-git clone https://github.com/<owner>/<repo>.git
-cd <repo>
+git clone https://github.com/zz1231me/myhomepage.git
+cd myhomepage
 ```
 
 ### 2. 서버 설정
@@ -211,7 +212,7 @@ myhome/
 │   │   ├── components/        # React 컴포넌트
 │   │   │   ├── Dashboard/     # 사이드바, 알림 등 대시보드 레이아웃
 │   │   │   ├── admin/         # 관리자 탭 컴포넌트
-│   │   │   ├── boards/        # 게시판 컴포넌트 (PostListItem, ReactionPicker, TagBadge 등)
+│   │   │   ├── boards/        # 게시판 컴포넌트 (PostListItem, PostListTable, TagBadge, ReportButton 등)
 │   │   │   ├── common/        # 공통 컴포넌트 (LoadingStates, ErrorBoundary 등)
 │   │   │   ├── editor/        # CKEditor 래퍼, 파일 업로드
 │   │   │   └── wiki/          # 위키 컴포넌트 (DiffViewer, History)
@@ -241,7 +242,7 @@ myhome/
 │   │   ├── controllers/       # HTTP 요청/응답 처리
 │   │   ├── middlewares/       # 인증, 권한, 보안, Rate Limit
 │   │   │   └── upload/        # Multer 파일 업로드 미들웨어 (file/image/avatar)
-│   │   ├── models/            # Sequelize 모델 (30개)
+│   │   ├── models/            # Sequelize 모델 (29개)
 │   │   ├── routes/            # 라우트 정의
 │   │   ├── services/          # 비즈니스 로직
 │   │   ├── types/             # TypeScript 타입 확장
@@ -330,19 +331,19 @@ NODE_ENV=development
 
 ## 아키텍처
 
-### 데이터 모델 (Sequelize, 30개)
+### 데이터 모델 (Sequelize, 29개)
 
 | 도메인 | 모델 |
 |--------|------|
 | **인증·사용자** | `User`, `Role`, `UserSession`, `LoginHistory` |
-| **게시판·게시글** | `Board`, `BoardAccess`, `BoardManager`, `Post`, `PostTag`, `PostRead`, `PostLike`, `PostReaction`, `PostBookmark`, `Bookmark` |
-| **댓글** | `Comment`, `CommentReaction` |
+| **게시판·게시글** | `Board`, `BoardAccess`, `BoardManager`, `Post`, `PostTag`, `PostRead`, `PostLike`, `PostBookmark`, `Bookmark` |
+| **댓글** | `Comment`, `CommentLike` |
 | **위키·메모** | `WikiPage`, `WikiRevision`, `Memo` |
 | **이벤트** | `Event`, `EventPermission` |
 | **태그·알림·신고** | `Tag`, `Notification`, `Report` |
 | **운영·보안** | `SiteSettings`, `RateLimitSettings`, `IpRule`, `SecurityLog`, `ErrorLog`, `AuditLog` |
 
-- `Post`·`Comment`은 `paranoid`(soft-delete). 게시글 삭제 시 자식(댓글/리액션/조회기록/태그)은 트랜잭션으로 함께 정리됩니다.
+- `Post`·`Comment`은 `paranoid`(soft-delete). 게시글 삭제 시 자식(댓글/좋아요/조회기록/태그/북마크)은 트랜잭션으로 함께 정리됩니다.
 - 첨부파일은 `Post.attachments`에 JSON으로 저장(`{filename, originalname, size, mimetype, path}`), 파일은 `{timestamp}_{랜덤}` 형식(확장자 제거)으로 `uploads/files`에 저장됩니다.
 
 ### 권한 모델 (RBAC)
@@ -643,4 +644,4 @@ MIT License
 2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
 3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
 4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request to `https://github.com/<owner>/<repo>`
+5. Open a Pull Request to `https://github.com/zz1231me/myhomepage`
