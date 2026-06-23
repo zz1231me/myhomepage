@@ -13,6 +13,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { Avatar } from '../../components/Avatar';
+import { useAccessibleBoards } from '../../hooks/useAccessibleBoards';
 const CommentSection = React.lazy(() => import('./CommentSection'));
 import AttachmentList from '../../components/AttachmentList';
 import ImageViewer from '../../components/ImageViewer';
@@ -104,6 +105,11 @@ const PostDetail = () => {
     handleToggleLike,
   } = usePostDetail({ boardType, id });
 
+  // 실제 게시판 이름 우선 — getBoardTitle은 하드코딩 게시판만 알아 커스텀 게시판은 id를 노출하므로,
+  // 접근 가능 게시판 목록(API 이름)에서 먼저 찾고 없으면 getBoardTitle로 폴백.
+  const { getBoardById } = useAccessibleBoards();
+  const boardTitle = getBoardById(boardType ?? '')?.name || getBoardTitle(boardType!);
+
   const { imageViewer, closeImageViewer } = useContentImageHandler();
   const { getUserRole } = useAuth();
   // 페이지 타이틀에 쓸 사이트 정체성 — 하드코딩 'MyHome' 대신 관리자 설정값을 사용
@@ -189,7 +195,7 @@ const PostDetail = () => {
     if (lockedMeta.isEncrypted && lockedMeta.ciphertext) {
       return (
         <EncryptedPostView
-          boardTitle={getBoardTitle(boardType!)}
+          boardTitle={boardTitle}
           postTitle={lockedMeta.title}
           ciphertext={lockedMeta.ciphertext}
           onDecrypt={handleVerifyPassword}
@@ -217,7 +223,7 @@ const PostDetail = () => {
     <PageContainer>
       {/* ✅ 표준화된 페이지 헤더 적용 */}
       <PageHeader
-        title={getBoardTitle(boardType!)}
+        title={boardTitle}
         icon={<FileText className="w-6 h-6 text-primary-600 dark:text-primary-400" />}
       >
         <button onClick={handleBack} aria-label="목록으로 돌아가기" className="btn-secondary">

@@ -55,8 +55,10 @@ const PostEditor = ({ mode }: Props) => {
 
   // 게시판 이동(수정 모드) — 쓰기 권한 있는 일반 게시판 목록 + 선택값
   const [targetBoard, setTargetBoard] = useState(boardType ?? '');
-  const { regularBoards } = useAccessibleBoards();
+  const { regularBoards, getBoardById } = useAccessibleBoards();
   const moveTargets = regularBoards.filter(b => b.permissions.canWrite);
+  // 실제 게시판 이름 우선(커스텀 게시판은 getBoardTitle이 id를 노출) — API 이름 → getBoardTitle 폴백
+  const boardTitle = getBoardById(boardType ?? '')?.name || getBoardTitle(boardType || '');
 
   // 태그 상태
   const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
@@ -474,7 +476,7 @@ const PostEditor = ({ mode }: Props) => {
           </button>
           <div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-              {getBoardTitle(boardType || '')} - {isEditMode ? '게시글 수정' : '새 게시글'}
+              {boardTitle} - {isEditMode ? '게시글 수정' : '새 게시글'}
             </h1>
           </div>
         </div>
@@ -537,7 +539,7 @@ const PostEditor = ({ mode }: Props) => {
               >
                 {/* 현재 게시판이 쓰기권한 목록에 없을 수 있으므로 항상 선택지로 포함 */}
                 {boardType && !moveTargets.some(b => b.id === boardType) && (
-                  <option value={boardType}>{getBoardTitle(boardType)} (현재)</option>
+                  <option value={boardType}>{boardTitle} (현재)</option>
                 )}
                 {moveTargets.map(b => (
                   <option key={b.id} value={b.id}>
@@ -595,9 +597,7 @@ const PostEditor = ({ mode }: Props) => {
                   onImageUpload={handleImageUpload}
                   initialContent={initialContent}
                   placeholder={
-                    boardType
-                      ? `${getBoardTitle(boardType)}의 내용을 작성해주세요...`
-                      : '내용을 작성해주세요...'
+                    boardType ? `${boardTitle}의 내용을 작성해주세요...` : '내용을 작성해주세요...'
                   }
                   onChange={html => {
                     if (splitView) setPreviewHtml(sanitizeHTML(html));
@@ -610,7 +610,7 @@ const PostEditor = ({ mode }: Props) => {
                     initialContent={initialContent}
                     placeholder={
                       boardType
-                        ? `${getBoardTitle(boardType)}의 내용을 작성해주세요...`
+                        ? `${boardTitle}의 내용을 작성해주세요...`
                         : '내용을 작성해주세요...'
                     }
                     onChange={html => {
@@ -643,9 +643,7 @@ const PostEditor = ({ mode }: Props) => {
               onImageUpload={handleImageUpload}
               initialContent={initialContent}
               placeholder={
-                boardType
-                  ? `${getBoardTitle(boardType)}의 내용을 작성해주세요...`
-                  : '내용을 작성해주세요...'
+                boardType ? `${boardTitle}의 내용을 작성해주세요...` : '내용을 작성해주세요...'
               }
               onChange={html => setPreviewHtml(sanitizeHTML(html))}
             >
@@ -655,9 +653,7 @@ const PostEditor = ({ mode }: Props) => {
                 onImageUpload={handleImageUpload}
                 initialContent={initialContent}
                 placeholder={
-                  boardType
-                    ? `${getBoardTitle(boardType)}의 내용을 작성해주세요...`
-                    : '내용을 작성해주세요...'
+                  boardType ? `${boardTitle}의 내용을 작성해주세요...` : '내용을 작성해주세요...'
                 }
                 onChange={html => setPreviewHtml(sanitizeHTML(html))}
               />
