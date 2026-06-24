@@ -7,9 +7,51 @@ import { getSettings } from '../utils/settingsCache';
 
 const MAX_SESSIONS_PER_USER = 10;
 
+// 세션 종료(종료/강제로그아웃)를 액세스 토큰에도 즉시 반영하기 위한 상태 캐시.
+// 인증 미들웨어가 매 요청 isSessionRevoked()로 확인하므로 DB 부하를 줄이려 짧게 캐싱하고,
+// 종료 시점에는 해당 항목을 즉시 무효화해 다음 요청에서 곧바로 차단되게 한다.
+// TTL은 인증 미들웨어 userCache(30초)와 동일하게 맞춘다.
+const SESSION_STATUS_TTL_MS = 30_000;
+
 export class UserSessionService extends BaseService {
   private hashToken(token: string): string {
     return crypto.createHash('sha256').update(token).digest('hex');
+  }
+
+  // sessionToken(해시) → { revoked, at }. revoked=true면 종료된 세션.
+  private statusCache = new Map<string, { revoked: boolean; at: number }>();
+
+  /** 종료된 세션 캐시 항목을 즉시 제거(다음 요청에서 최신 상태 재조회). */
+  private invalidateStatus(sessionToken: string): void {
+    this.statusCache.delete(sessionToken);
+  }
+
+  /**
+   * 이 refresh_token이 가리키는 DB 세션이 "종료됨" 상태인지 확인한다(인증 미들웨어용).
+   * - 세션 행이 존재하고 isActive=false이거나 만료됨 → true(종료됨, 요청 거부)
+   * - 세션 행이 없으면 false(미추적/로그인 직후 race → 액세스 토큰 자체 검증에 위임, 오탐 방지)
+   * 결과는 짧게 캐싱하고, 종료 시점엔 invalidateStatus로 즉시 무효화한다.
+   */
+  async isSessionRevoked(rawToken: string): Promise<boolean> {
+    const sessionToken = this.hashToken(rawToken);
+    const cached = this.statusCache.get(sessionToken);
+    if (cached && Date.now() - cached.at < SESSION_STATUS_TTL_MS) {
+      return cached.revoked;
+    }
+    try {
+      const session = await UserSession.findOne({
+        where: { sessionToken },
+        attributes: ['isActive', 'expiresAt'],
+      });
+      // 행이 없으면 종료로 보지 않음(로그인 직후 세션 생성 전 race, 미추적 세션 허용)
+      const revoked = session !== null && (!session.isActive || session.expiresAt <= new Date());
+      this.statusCache.set(sessionToken, { revoked, at: Date.now() });
+      return revoked;
+    } catch (error) {
+      logError('세션 상태 확인 실패', error);
+      // 조회 실패 시 보수적으로 차단하지 않음(액세스 토큰 자체 검증에 위임 — 가용성 우선)
+      return false;
+    }
   }
 
   /**
@@ -110,6 +152,7 @@ export class UserSessionService extends BaseService {
     try {
       const sessionToken = this.hashToken(rawToken);
       await UserSession.update({ isActive: false }, { where: { sessionToken } });
+      this.invalidateStatus(sessionToken);
     } catch (error) {
       logError('세션 만료 처리 실패', error);
     }
@@ -182,6 +225,8 @@ export class UserSessionService extends BaseService {
       return 'is_current';
     }
     await session.update({ isActive: false });
+    // 종료를 액세스 토큰에도 즉시 반영 — 해당 기기의 다음 요청에서 곧바로 차단됨
+    this.invalidateStatus(session.sessionToken);
     return 'ok';
   }
 
@@ -193,6 +238,8 @@ export class UserSessionService extends BaseService {
       const session = await UserSession.findByPk(sessionId);
       if (!session) return false;
       await session.update({ isActive: false });
+      // 강제 종료를 액세스 토큰에도 즉시 반영
+      this.invalidateStatus(session.sessionToken);
       return true;
     } catch (error) {
       logError('강제 세션 종료 실패', error);

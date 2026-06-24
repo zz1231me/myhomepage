@@ -12,6 +12,7 @@ import { logInfo, logWarning, logError } from '../utils/logger';
 import { sendUnauthorized, sendForbidden, sendError } from '../utils/response';
 import { env } from '../config/env';
 import { JWT_ALGORITHM } from '../config/constants';
+import { userSessionService } from '../services/userSession.service';
 
 // ✅ 인증 미들웨어 캐시 (DB 조회 부하 감소)
 // TTL: 30초 — 로그아웃 무효화는 최대 30초 내에 반영됨
@@ -165,6 +166,18 @@ export const authenticate = async (
     if (!cachedUser.roleInfo.isActive) {
       logWarning(`인증 실패: 비활성화된 역할 (role: ${cachedUser.roleInfo.name})`);
       sendForbidden(res, '비활성화된 역할입니다.');
+      return;
+    }
+
+    // 세션 단위 무효화: 이 요청의 refresh_token이 가리키는 DB 세션이 종료(isActive=false)됐으면
+    // 액세스 토큰이 아직 유효해도 거부한다. tokenVersion(전체 무효화)과 달리 특정 세션만 끊는
+    // '다른 기기 세션 종료/강제 로그아웃'이 액세스 토큰에도 즉시 반영되게 한다.
+    // (refresh_token이 없으면 검사 생략 → 액세스 토큰 자체 검증에 위임. 로그인 직후 세션 생성 전
+    //  race나 미추적 세션에서 정상 요청이 오인 차단되는 것을 방지)
+    const refreshToken = req.cookies?.refresh_token;
+    if (refreshToken && (await userSessionService.isSessionRevoked(refreshToken))) {
+      logWarning(`인증 실패: 종료된 세션 (userId: ${cachedUser.id})`);
+      sendUnauthorized(res, '세션이 종료되었습니다. 다시 로그인해주세요.');
       return;
     }
 
